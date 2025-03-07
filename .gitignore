@@ -1,0 +1,49 @@
+# Development and Build Configuration (keep it magical)
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+.nyc_output/
+*.log
+.DS_Store
+package.json
+package-lock.json
+bun.lockb
+tsconfig.json
+scripts/
+*.sh
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Documentation sources (but keep README.md)
+docs/
+HOUSEKEEPING.md
+findings/
+
+# Proprietary code (excluded from git but included in npm)
+src/
+proto/
+tests/
+
+# Test artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/coverage/
+*.test.js.snap
+
+# IDE
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Temporary files
+*.swp
+*.swo
+.tmp/
+temp/
