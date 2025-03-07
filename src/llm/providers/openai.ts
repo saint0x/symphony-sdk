@@ -1,18 +1,10 @@
 import { logger, LogCategory } from '../../utils/logger';
-import { LLMProvider, LLMConfig, LLMRequest, LLMResponse } from '../types';
+import { LLMConfig, LLMRequest, LLMResponse, LLMProvider } from '../types';
+import { createMetricsTracker } from '../../utils/metrics';
+import { getCache } from '../../cache';
 
-interface OpenAIResponse {
-    model: string;
-    choices: Array<{
-        message: {
-            content: string;
-            function_call?: {
-                name: string;
-                arguments: string;
-            };
-        };
-        finish_reason: string;
-    }>;
+interface OpenAICompletion {
+    content: string;
     usage: {
         prompt_tokens: number;
         completion_tokens: number;
@@ -21,83 +13,65 @@ interface OpenAIResponse {
 }
 
 export class OpenAIProvider implements LLMProvider {
+    name = 'openai';
+    supportsStreaming = true;
     private config: LLMConfig;
-    private initialized: boolean = false;
-    readonly name: string = 'openai';
+    private model: string;
 
     constructor(config: LLMConfig) {
         this.config = config;
+        this.model = config.model || 'gpt-3.5-turbo'; // Default model if not specified
     }
 
     async initialize(): Promise<void> {
-        if (!this.config.apiKey) {
-            throw new Error('OpenAI API key is required');
-        }
-        this.initialized = true;
-        logger.info(LogCategory.AI, 'OpenAI provider initialized');
+        // OpenAI doesn't require initialization
     }
 
     async complete(request: LLMRequest): Promise<LLMResponse> {
-        if (!this.initialized) {
-            throw new Error('Provider not initialized');
-        }
-
-        logger.debug(LogCategory.AI, 'Sending request to OpenAI', {
-            metadata: {
-                model: this.config.model,
-                messages: request.messages.length
-            }
-        });
+        const metrics = createMetricsTracker();
+        const cache = getCache();
 
         try {
+            metrics.trackOperation('request_preparation');
+            const cacheKey = `openai:${this.model}:${JSON.stringify(request.messages)}`;
+            
+            // Check cache
+            const cached = await cache.get(cacheKey);
+            if (cached && this.isOpenAICompletion(cached)) {
+                return this.formatResponse(cached);
+            }
+
+            metrics.trackOperation('api_request');
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.config.apiKey}`
+                    'Authorization': `Bearer ${this.config.apiKey || process.env.OPENAI_API_KEY || ''}`
                 },
                 body: JSON.stringify({
-                    model: this.config.model,
+                    model: this.model,
                     messages: request.messages,
-                    temperature: request.temperature ?? this.config.temperature ?? 0.7,
-                    max_tokens: request.maxTokens ?? this.config.maxTokens,
-                    functions: request.functions,
-                    function_call: request.functionCall
+                    temperature: this.config.temperature || 0.7,
+                    max_tokens: this.config.maxTokens || 2000
                 })
             });
 
+            metrics.trackOperation('response_processing');
             if (!response.ok) {
-                const error = await response.text();
-                throw new Error(`OpenAI API error: ${error}`);
+                const error = await response.json();
+                throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
             }
 
-            const result = await response.json() as OpenAIResponse;
-
-            logger.info(LogCategory.AI, 'Received response from OpenAI', {
-                metadata: {
-                    model: result.model,
-                    usage: result.usage,
-                    finishReason: result.choices[0].finish_reason
-                }
-            });
-
-            return {
-                content: [{
-                    type: 'text',
-                    text: result.choices[0].message.content
-                }],
-                model: result.model,
-                role: 'assistant',
-                usage: {
-                    input_tokens: result.usage.prompt_tokens,
-                    output_tokens: result.usage.completion_tokens,
-                    total_tokens: result.usage.total_tokens
-                },
-                functionCall: result.choices[0].message.function_call ? {
-                    name: result.choices[0].message.function_call.name,
-                    arguments: result.choices[0].message.function_call.arguments
-                } : undefined
+            const data = await response.json();
+            const completion: OpenAICompletion = {
+                content: data.choices[0].message.content,
+                usage: data.usage
             };
+
+            // Cache successful responses
+            await cache.set(cacheKey, completion);
+
+            return this.formatResponse(completion);
         } catch (error) {
             logger.error(LogCategory.AI, 'OpenAI API error', {
                 metadata: {
@@ -108,85 +82,90 @@ export class OpenAIProvider implements LLMProvider {
         }
     }
 
-    async *completeStream(request: LLMRequest): AsyncGenerator<LLMResponse, void, unknown> {
-        if (!this.initialized) {
-            throw new Error('Provider not initialized');
-        }
-
-        logger.debug(LogCategory.AI, 'Starting streaming request to OpenAI', {
-            metadata: {
-                model: this.config.model,
-                messages: request.messages.length
+    private formatResponse(completion: OpenAICompletion): LLMResponse {
+        const now = Date.now();
+        return {
+            content: completion.content,
+            model: this.model,
+            role: 'assistant',
+            usage: {
+                prompt_tokens: completion.usage.prompt_tokens,
+                completion_tokens: completion.usage.completion_tokens,
+                total_tokens: completion.usage.total_tokens
+            },
+            metrics: {
+                duration: 0, // Will be set by the metrics tracker
+                startTime: now,
+                endTime: now,
+                tokenUsage: {
+                    input: completion.usage.prompt_tokens,
+                    output: completion.usage.completion_tokens,
+                    total: completion.usage.total_tokens
+                }
             }
-        });
+        };
+    }
+
+    async *completeStream(request: LLMRequest): AsyncIterable<LLMResponse> {
+        const metrics = createMetricsTracker();
 
         try {
+            metrics.trackOperation('stream_preparation');
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.config.apiKey}`
+                    'Authorization': `Bearer ${this.config.apiKey || process.env.OPENAI_API_KEY || ''}`
                 },
                 body: JSON.stringify({
-                    model: this.config.model,
+                    model: this.model,
                     messages: request.messages,
-                    temperature: request.temperature ?? this.config.temperature ?? 0.7,
-                    max_tokens: request.maxTokens ?? this.config.maxTokens,
+                    temperature: this.config.temperature || 0.7,
+                    max_tokens: this.config.maxTokens || 2000,
                     stream: true
                 })
             });
 
             if (!response.ok) {
-                const error = await response.text();
-                throw new Error(`OpenAI API error: ${error}`);
+                const error = await response.json();
+                throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
             }
 
             if (!response.body) {
-                throw new Error('No response body from OpenAI API');
+                throw new Error('No response body received');
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '';
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        if (data === '[DONE]') break;
-
-                        try {
-                            const result = JSON.parse(data) as OpenAIResponse;
-                            yield {
-                                content: [{
-                                    type: 'text',
-                                    text: result.choices[0].message.content
-                                }],
-                                model: result.model,
-                                role: 'assistant',
-                                usage: {
-                                    input_tokens: result.usage.prompt_tokens,
-                                    output_tokens: result.usage.completion_tokens,
-                                    total_tokens: result.usage.total_tokens
-                                }
-                            };
-                        } catch (parseError) {
-                            logger.warn(LogCategory.AI, 'Failed to parse streaming response', {
-                                metadata: {
-                                    data,
-                                    error: parseError instanceof Error ? parseError.message : 'Unknown error'
-                                }
-                            });
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.choices?.[0]?.delta?.content) {
+                                yield {
+                                    content: data.choices[0].delta.content,
+                                    model: this.model,
+                                    role: 'assistant',
+                                    usage: {
+                                        prompt_tokens: 0,
+                                        completion_tokens: 0,
+                                        total_tokens: 0
+                                    }
+                                };
+                            }
                         }
                     }
                 }
+            } finally {
+                reader.releaseLock();
             }
         } catch (error) {
             logger.error(LogCategory.AI, 'OpenAI streaming error', {
@@ -196,5 +175,17 @@ export class OpenAIProvider implements LLMProvider {
             });
             throw error;
         }
+    }
+
+    private isOpenAICompletion(obj: any): obj is OpenAICompletion {
+        return (
+            typeof obj === 'object' &&
+            obj !== null &&
+            typeof obj.content === 'string' &&
+            typeof obj.usage === 'object' &&
+            typeof obj.usage.prompt_tokens === 'number' &&
+            typeof obj.usage.completion_tokens === 'number' &&
+            typeof obj.usage.total_tokens === 'number'
+        );
     }
 } 

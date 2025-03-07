@@ -9,7 +9,14 @@ export enum LogCategory {
     AI = 'ai',
     AUTH = 'auth',
     BUSINESS = 'business',
-    GRPC = 'grpc'
+    GRPC = 'grpc',
+    TOOL = 'tool',
+    AGENT = 'agent',
+    TEAM = 'team',
+    PIPELINE = 'pipeline',
+    METRICS = 'metrics',
+    VALIDATION = 'validation',
+    ERROR = 'error'
 }
 
 // Log entry structure
@@ -18,7 +25,8 @@ export interface LogEntry {
     level: LogLevel;
     category: LogCategory;
     message: string;
-    data?: any;
+    metadata?: Record<string, any>;
+    error?: Error | unknown;
     trace?: string;
     service?: string;
     request_id?: string;
@@ -43,6 +51,11 @@ const DEFAULT_CONFIG: LoggerConfig = {
     verboseMode: false,
     serviceContext: 'default'
 };
+
+export interface LogMetadata {
+    metadata?: any;
+    error?: Error | unknown;
+}
 
 // Logger implementation
 export class Logger {
@@ -90,8 +103,8 @@ export class Logger {
         
         let message = `[${timestamp}] ${level} [${category}] [${service}] ${entry.message}`;
         
-        if (entry.data) {
-            message += `\n  Data: ${JSON.stringify(entry.data, null, 2)}`;
+        if (entry.metadata) {
+            message += `\n  Metadata: ${JSON.stringify(entry.metadata, null, 2)}`;
         }
         
         if (entry.trace && this.config.verboseMode) {
@@ -134,79 +147,51 @@ export class Logger {
         }
     }
 
-    debug(category: LogCategory, message: string, data?: { metadata?: any }): void {
+    debug(category: LogCategory, message: string, data?: LogMetadata): void {
         if (!this.shouldLog(LogLevel.DEBUG)) return;
-
-        const entry: LogEntry = {
-            timestamp: Date.now(),
-            level: LogLevel.DEBUG,
-            category,
-            message,
-            data: data?.metadata
-        };
-
-        if (this.config.enableConsole) {
-            console.debug(this.formatMessage(entry));
-        }
-
+        const entry = this.createLogEntry(LogLevel.DEBUG, category, message, data);
+        this.formatMessage(entry);
         this.persistLog(entry);
         this.recordMetrics(entry);
+        console.debug(`[${category}] ${message}`, data);
     }
 
-    info(category: LogCategory, message: string, data?: { metadata?: any }): void {
+    info(category: LogCategory, message: string, data?: LogMetadata): void {
         if (!this.shouldLog(LogLevel.NORMAL)) return;
-
-        const entry: LogEntry = {
-            timestamp: Date.now(),
-            level: LogLevel.NORMAL,
-            category,
-            message,
-            data: data?.metadata
-        };
-
-        if (this.config.enableConsole) {
-            console.info(this.formatMessage(entry));
-        }
-
+        const entry = this.createLogEntry(LogLevel.NORMAL, category, message, data);
+        this.formatMessage(entry);
         this.persistLog(entry);
         this.recordMetrics(entry);
+        console.info(`[${category}] ${message}`, data);
     }
 
-    warn(category: LogCategory, message: string, data?: { metadata?: any }): void {
+    warn(category: LogCategory, message: string, data?: LogMetadata): void {
         if (!this.shouldLog(LogLevel.VERBOSE)) return;
-
-        const entry: LogEntry = {
-            timestamp: Date.now(),
-            level: LogLevel.VERBOSE,
-            category,
-            message,
-            data: data?.metadata
-        };
-
-        if (this.config.enableConsole) {
-            console.warn(this.formatMessage(entry));
-        }
-
+        const entry = this.createLogEntry(LogLevel.VERBOSE, category, message, data);
+        this.formatMessage(entry);
         this.persistLog(entry);
         this.recordMetrics(entry);
+        console.warn(`[${category}] ${message}`, data);
     }
 
-    error(category: LogCategory, message: string, data?: { metadata?: any }): void {
-        const entry: LogEntry = {
-            timestamp: Date.now(),
-            level: LogLevel.DEBUG,
-            category,
-            message,
-            data: data?.metadata,
-            trace: new Error().stack
-        };
-
-        if (this.config.enableConsole) {
-            console.error(this.formatMessage(entry));
-        }
-
+    error(category: LogCategory, message: string, data?: LogMetadata): void {
+        const entry = this.createLogEntry(LogLevel.ERROR, category, message, data);
+        this.formatMessage(entry);
         this.persistLog(entry);
         this.recordMetrics(entry);
+        console.error(`[${category}] ${message}`, data);
+    }
+
+    private createLogEntry(level: LogLevel, category: LogCategory, message: string, data?: LogMetadata): LogEntry {
+        return {
+            timestamp: Date.now(),
+            level,
+            category,
+            message,
+            metadata: data?.metadata,
+            error: data?.error,
+            service: this.config.serviceContext
+        };
     }
 }
 

@@ -1,5 +1,3 @@
-import { ExecutionMetrics } from '../types/sdk';
-
 export interface LLMConfig {
     provider: 'openai' | 'anthropic' | 'google';
     apiKey: string;
@@ -10,53 +8,25 @@ export interface LLMConfig {
 }
 
 export interface LLMMessage {
-    role: 'system' | 'user' | 'assistant' | 'function';
+    role: 'system' | 'user' | 'assistant';
     content: string;
-    name?: string;
-}
-
-export interface LLMFunctionDefinition {
-    name: string;
-    description: string;
-    parameters: {
-        type: 'object';
-        properties: Record<string, any>;
-        required?: string[];
-    };
 }
 
 export interface LLMRequest {
     messages: LLMMessage[];
-    functions?: LLMFunctionDefinition[];
-    functionCall?: {
-        name: string;
-        arguments: any;
-    };
     temperature?: number;
     maxTokens?: number;
     stream?: boolean;
-    provider?: string;
 }
 
 export interface LLMResponse {
     content: string;
     model: string;
     role: 'assistant';
-    functionCall?: {
-        name: string;
-        arguments: string;
-    };
     usage: {
         prompt_tokens: number;
         completion_tokens: number;
         total_tokens: number;
-    };
-    metrics?: ExecutionMetrics & {
-        tokenUsage: {
-            input: number;
-            output: number;
-            total: number;
-        };
     };
 }
 

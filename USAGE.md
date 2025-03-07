@@ -42,16 +42,266 @@ Tools are the fundamental building blocks of Symphonic. They represent discrete 
 You can create custom tools using the `symphony.tools.create()` method:
 
 ```typescript
-const myTool = symphony.tools.create({
-    name: "myTool",
-    description: "Performs a specific task",
-    inputs: ["param1", "param2"],
+const processFileTool = symphony.tools.create({
+    name: "processFile",
+    description: "Process a file with validation and transformation",
+    inputs: ["filePath", "options"],
+    outputs: ["processedContent", "metadata"],
     handler: async (params) => {
-        // Your tool logic here
-        return { success: true, result: "output" };
+        const startTime = Date.now();
+        const metrics = {
+            startTime,
+            operations: {
+                validation: 0,
+                processing: 0,
+                transformation: 0
+            }
+        };
+
+        try {
+            // Input validation
+            if (!params.filePath || typeof params.filePath !== 'string') {
+                throw new Error('Invalid file path');
+            }
+
+            const options = {
+                validateContent: true,
+                transformFormat: 'json',
+                maxSize: 1024 * 1024, // 1MB
+                ...params.options
+            };
+
+            // File validation
+            const validationStart = Date.now();
+            const stats = await fs.stat(params.filePath);
+            if (stats.size > options.maxSize) {
+                throw new Error('File too large');
+            }
+            metrics.operations.validation = Date.now() - validationStart;
+
+            // Content processing
+            const processingStart = Date.now();
+            const content = await fs.readFile(params.filePath, 'utf-8');
+            let processedContent = content;
+            metrics.operations.processing = Date.now() - processingStart;
+
+            // Content transformation
+            const transformStart = Date.now();
+            if (options.transformFormat === 'json') {
+                try {
+                    processedContent = JSON.parse(content);
+                } catch (e) {
+                    throw new Error('Invalid JSON content');
+                }
+            }
+            metrics.operations.transformation = Date.now() - transformStart;
+
+            // Success response with detailed metrics
+            return {
+                success: true,
+                result: {
+                    processedContent,
+                    metadata: {
+                        originalSize: stats.size,
+                        processedSize: JSON.stringify(processedContent).length,
+                        format: options.transformFormat,
+                        lastModified: stats.mtime
+                    }
+                },
+                metrics: {
+                    ...metrics,
+                    duration: Date.now() - startTime,
+                    endTime: Date.now(),
+                    resourceUsage: process.memoryUsage()
+                }
+            };
+        } catch (error) {
+            // Detailed error response with partial metrics
+            return {
+                success: false,
+                error: error instanceof Error ? error : new Error(String(error)),
+                metrics: {
+                    ...metrics,
+                    duration: Date.now() - startTime,
+                    endTime: Date.now(),
+                    failurePoint: Object.entries(metrics.operations)
+                        .find(([_, time]) => time === 0)?.[0] || 'unknown'
+                }
+            };
+        }
+    },
+    // Advanced configuration
+    timeout: 30000,
+    retry: {
+        enabled: true,
+        maxAttempts: 3,
+        delay: 1000,
+        backoffFactor: 2,
+        retryableErrors: ['ENOENT', 'EACCES']
+    },
+    cache: {
+        enabled: true,
+        ttl: 3600,
+        maxSize: 100
+    },
+    validation: {
+        schema: {
+            filePath: { type: 'string', required: true },
+            options: {
+                type: 'object',
+                properties: {
+                    validateContent: { type: 'boolean' },
+                    transformFormat: { type: 'string', enum: ['json', 'yaml', 'xml'] },
+                    maxSize: { type: 'number' }
+                }
+            }
+        }
+    },
+    monitoring: {
+        collectMetrics: true,
+        logLevel: 'info',
+        alertOnFailure: true
     }
 });
-```
+
+// Example of a cognitive processing tool
+const analyzeTextTool = symphony.tools.create({
+    name: "analyzeText",
+    description: "Perform deep analysis of text content with NLP",
+    inputs: ["text", "analysisOptions"],
+    outputs: ["analysis", "insights"],
+    handler: async (params) => {
+        const startTime = Date.now();
+        const metrics = {
+            startTime,
+            stages: {
+                preprocessing: 0,
+                analysis: 0,
+                synthesis: 0
+            }
+        };
+
+        try {
+            // Input validation and preprocessing
+            const preprocessStart = Date.now();
+            if (!params.text || typeof params.text !== 'string') {
+                throw new Error('Invalid text input');
+            }
+
+            const options = {
+                language: 'en',
+                analyzeSentiment: true,
+                extractEntities: true,
+                summarize: false,
+                ...params.analysisOptions
+            };
+
+            const cleanText = await preprocessText(params.text);
+            metrics.stages.preprocessing = Date.now() - preprocessStart;
+
+            // Core analysis
+            const analysisStart = Date.now();
+            const [sentiment, entities] = await Promise.all([
+                options.analyzeSentiment ? analyzeSentiment(cleanText) : null,
+                options.extractEntities ? extractEntities(cleanText) : null
+            ]);
+            metrics.stages.analysis = Date.now() - analysisStart;
+
+            // Results synthesis
+            const synthesisStart = Date.now();
+            const insights = generateInsights({ sentiment, entities });
+            metrics.stages.synthesis = Date.now() - synthesisStart;
+
+            // Success response with comprehensive results
+            return {
+                success: true,
+                result: {
+                    analysis: {
+                        sentiment,
+                        entities,
+                        textStats: {
+                            length: cleanText.length,
+                            wordCount: cleanText.split(/\s+/).length,
+                            language: options.language
+                        }
+                    },
+                    insights
+                },
+                metrics: {
+                    ...metrics,
+                    duration: Date.now() - startTime,
+                    endTime: Date.now(),
+                    modelVersions: {
+                        sentiment: 'v2.1',
+                        entities: 'v1.4'
+                    },
+                    resourceUsage: {
+                        memory: process.memoryUsage(),
+                        modelLoads: {
+                            sentiment: true,
+                            entities: true
+                        }
+                    }
+                }
+            };
+        } catch (error) {
+            // Detailed error handling with stage information
+            return {
+                success: false,
+                error: error instanceof Error ? error : new Error(String(error)),
+                metrics: {
+                    ...metrics,
+                    duration: Date.now() - startTime,
+                    endTime: Date.now(),
+                    failureStage: Object.entries(metrics.stages)
+                        .find(([_, time]) => time === 0)?.[0] || 'unknown',
+                    errorContext: {
+                        inputLength: params.text?.length,
+                        options: params.analysisOptions
+                    }
+                }
+            };
+        }
+    },
+    // Advanced configuration
+    timeout: 60000,
+    retry: {
+        enabled: true,
+        maxAttempts: 2,
+        delay: 2000,
+        backoffFactor: 1.5,
+        retryableErrors: ['RATE_LIMIT', 'MODEL_LOADING']
+    },
+    cache: {
+        enabled: true,
+        ttl: 1800,
+        maxSize: 50,
+        keyGenerator: (params) => `${hash(params.text)}-${JSON.stringify(params.analysisOptions)}`
+    },
+    validation: {
+        schema: {
+            text: { type: 'string', required: true, maxLength: 10000 },
+            analysisOptions: {
+                type: 'object',
+                properties: {
+                    language: { type: 'string', enum: ['en', 'es', 'fr'] },
+                    analyzeSentiment: { type: 'boolean' },
+                    extractEntities: { type: 'boolean' },
+                    summarize: { type: 'boolean' }
+                }
+            }
+        }
+    },
+    monitoring: {
+        collectMetrics: true,
+        logLevel: 'debug',
+        alertOnFailure: true,
+        performanceThresholds: {
+            duration: 10000,
+            memoryUsage: 500 * 1024 * 1024 // 500MB
+        }
+    }
+});
 
 ### Standard Tools
 
@@ -102,7 +352,15 @@ const myAgent = symphony.agent.create({
     description: "Handles file operations",
     task: "read and process files",
     tools: ["readFile", "writeFile", "parseDocument"],
-    llm: "gpt-4"
+    llm: {
+        provider: "openai",
+        model: "gpt-4",
+        temperature: 0.7,
+        maxTokens: 2000
+    },
+    maxCalls: 10,
+    requireApproval: false,
+    timeout: 30000
 });
 ```
 
@@ -167,10 +425,18 @@ You can create agents using the `symphony.agent.create()` method:
 ```typescript
 const myAgent = symphony.agent.create({
     name: "myAgent",
-    description: "Handles specific tasks",
-    task: "perform data analysis",
-    tools: [myTool, "readFile", "webSearch"],
-    llm: "gpt-4"
+    description: "Handles file operations",
+    task: "read and process files",
+    tools: ["readFile", "writeFile", "parseDocument"],
+    llm: {
+        provider: "openai",
+        model: "gpt-4",
+        temperature: 0.7,
+        maxTokens: 2000
+    },
+    maxCalls: 10,
+    requireApproval: false,
+    timeout: 30000
 });
 ```
 
@@ -203,7 +469,23 @@ const myTeam = symphony.team.create({
     description: "Collaborates on complex tasks",
     agents: [agent1, agent2],
     manager: true,
-    log: { inputs: true, outputs: true }
+    strategy: {
+        name: "roundRobin",
+        description: "Distribute tasks evenly among agents",
+        assignmentLogic: async (task, agents) => {
+            // Task distribution logic
+            return agents;
+        },
+        coordinationRules: {
+            maxParallelTasks: 3,
+            taskTimeout: 5000
+        }
+    },
+    log: {
+        inputs: true,
+        outputs: true,
+        metrics: true
+    }
 });
 ```
 
@@ -246,18 +528,45 @@ const myPipeline = symphony.pipeline.create({
             description: "Read input file",
             chained: 1,
             expects: { path: "string" },
-            outputs: { content: "string" }
+            outputs: { content: "string" },
+            retry: {
+                maxAttempts: 3,
+                delay: 1000
+            }
         },
         {
             name: "step2",
             tool: myCustomTool,
             description: "Process file content",
-            chained: 2,
+            chained: 2.1,
             expects: { content: "string" },
-            outputs: { result: "object" }
+            outputs: { result: "object" },
+            conditions: {
+                requiredFields: ["content"],
+                validateOutput: (output) => output.result !== null
+            }
         },
-        // More steps...
-    ]
+        {
+            name: "step3",
+            tool: "writeFile",
+            description: "Save processed results",
+            chained: 3,
+            expects: { 
+                path: "string",
+                content: "object"
+            },
+            outputs: { success: "boolean" }
+        }
+    ],
+    onError: async (error, context) => {
+        // Error handling logic
+        return { retry: true, delay: 1000 };
+    },
+    metrics: {
+        enabled: true,
+        detailed: true,
+        trackMemory: true
+    }
 });
 ```
 
@@ -377,14 +686,20 @@ This pattern is particularly useful for:
 For long-running operations, you can use streaming execution:
 
 ```typescript
-const stream = myAgent.executeStream("perform complex analysis");
-
-for await (const update of stream) {
-    console.log(`Progress: ${update.status}`);
-    if (update.result) {
-        console.log(`Partial result: ${JSON.stringify(update.result)}`);
+const stream = await myAgent.executeStream("perform complex analysis", {
+    onProgress: (update) => {
+        console.log(`Progress: ${update.status}`);
+        if (update.result) {
+            console.log(`Partial result: ${JSON.stringify(update.result)}`);
+        }
+    },
+    onMetrics: (metrics) => {
+        console.log(`Metrics update: ${JSON.stringify(metrics)}`);
+    },
+    onError: (error) => {
+        console.error(`Error during execution: ${error.message}`);
     }
-}
+});
 ```
 
 ## Examples

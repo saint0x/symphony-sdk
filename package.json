@@ -2,16 +2,50 @@
   "name": "symphonic",
   "version": "0.1.0",
   "description": "A TypeScript SDK for building AI-powered applications with tools, agents, teams and pipelines",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./tools": {
+      "require": "./dist/tools/index.js",
+      "import": "./dist/tools/index.mjs",
+      "types": "./dist/tools/index.d.ts"
+    },
+    "./agents": {
+      "require": "./dist/agents/index.js",
+      "import": "./dist/agents/index.mjs", 
+      "types": "./dist/agents/index.d.ts"
+    },
+    "./teams": {
+      "require": "./dist/teams/index.js",
+      "import": "./dist/teams/index.mjs",
+      "types": "./dist/teams/index.d.ts"
+    },
+    "./pipelines": {
+      "require": "./dist/pipelines/index.js",
+      "import": "./dist/pipelines/index.mjs",
+      "types": "./dist/pipelines/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
     "docs": "typedoc src/index.ts",
     "clean": "rimraf dist",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepack": "npm run build"
   },
   "keywords": [
     "ai",
@@ -44,9 +78,11 @@
     "rimraf": "^5.0.1",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.1",
+    "tsup": "^8.0.0",
     "typedoc": "^0.24.8",
     "typescript": "^5.1.6"
   },
+  "sideEffects": false,
   "engines": {
     "node": ">=18.0.0"
   }

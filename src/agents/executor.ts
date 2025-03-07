@@ -117,7 +117,7 @@ export class AgentExecutor {
 
                 return {
                     success: true,
-                    response: finalResponse.content[0].text,
+                    response: finalResponse.content,
                     toolUsed: tool.metadata.name,
                     toolResult: toolResult.data
                 };
@@ -126,7 +126,7 @@ export class AgentExecutor {
             // Direct response without tool use
             return {
                 success: true,
-                response: llmResponse.content[0].text
+                response: llmResponse.content
             };
 
         } catch (error: any) {
@@ -149,12 +149,13 @@ export class AgentExecutor {
         }
     }
 
-    private async loadTools(toolIds: string[]) {
+    private async loadTools(toolConfigs: Array<string | { name: string; [key: string]: any }>) {
         const tools = [];
-        for (const id of toolIds) {
-            const tool = this.serviceRegistry.getService(id);
+        for (const config of toolConfigs) {
+            const toolId = typeof config === 'string' ? config : config.name;
+            const tool = this.serviceRegistry.getService(toolId);
             if (!tool) {
-                throw new Error(`Tool not found: ${id}`);
+                throw new Error(`Tool not found: ${toolId}`);
             }
             tools.push(tool);
         }

@@ -5,6 +5,7 @@ import { ChainExecutor } from '../../../services/chain';
 import { RateLimiter } from './middleware/rate-limiter';
 import { CircuitBreaker } from './middleware/circuit-breaker';
 import { AuthHandler } from './middleware/auth-handler';
+import { ToolConfig, AgentConfig, TeamConfig, PipelineConfig } from '../../../types/sdk';
 
 /**
  * Custom UntypedServiceImplementation that doesn't require an index signature
@@ -166,48 +167,61 @@ export interface ComponentService {
     externalAPIs?: Record<string, ExternalAPIConfig>;
 }
 
+export interface ServiceRegistryConfig {
+    enableMetrics?: boolean;
+    enableHealthChecks?: boolean;
+    enableCircuitBreakers?: boolean;
+    enableRateLimiting?: boolean;
+    enableAuthentication?: boolean;
+}
+
+export interface ServiceRegistry {
+    executeCall(serviceId: string, methodName: string, request: any): Promise<CallResult>;
+    registerService(service: ComponentService): Promise<void>;
+    getService(serviceId: string): ComponentService | undefined;
+    listServices(): ServiceMetadata[];
+    getServiceHealth(serviceId: string): ServiceHealth | undefined;
+    createTool(config: ToolConfig): Promise<ComponentService>;
+    createAgent(config: AgentConfig): Promise<ComponentService>;
+    createTeam(config: TeamConfig): Promise<ComponentService>;
+    createPipeline(config: PipelineConfig): Promise<ComponentService>;
+}
+
+export interface ServiceDefinition {
+    metadata: {
+        id: string;
+        name: string;
+        version: string;
+        type: 'TOOL' | 'AGENT' | 'TEAM' | 'PIPELINE';
+        status: 'ACTIVE' | 'INACTIVE';
+        customMetadata?: Record<string, any>;
+    };
+    methods: Record<string, (...args: any[]) => Promise<any>>;
+}
+
 // Service Registry Implementation
 export class ServiceRegistry {
-    private services: Map<string, ComponentService>;
-    private contextManager: any; // Will be properly typed once circular dependency is resolved
-    private metricsCollector: any; // Will be properly typed once circular dependency is resolved
-    private healthChecks: Map<string, ServiceHealth>;
-    private chainExecutor: ChainExecutor;
-    private rateLimiters: Map<string, RateLimiter>;
-    private circuitBreakers: Map<string, CircuitBreaker>;
-    private authHandlers: Map<string, AuthHandler>;
     private static instance: ServiceRegistry | null = null;
+    private services: Map<string, ComponentService> = new Map();
+    private chainExecutor: ChainExecutor;
+    private healthChecks: Map<string, ServiceHealth> = new Map();
+    private contextManager: any;
+    private rateLimiters: Map<string, RateLimiter> = new Map();
+    private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+    private authHandlers: Map<string, AuthHandler> = new Map();
 
     private constructor() {
-        this.services = new Map();
-        this.healthChecks = new Map();
         this.chainExecutor = new ChainExecutor();
-        this.rateLimiters = new Map();
-        this.circuitBreakers = new Map();
-        this.authHandlers = new Map();
-        logger.debug(LogCategory.SYSTEM, 'ServiceRegistry instance created');
     }
 
-    public async initialize(): Promise<void> {
-        logger.debug(LogCategory.SYSTEM, 'Initializing ServiceRegistry');
-        const { ContextManager } = await import('./cache/context');
-        const { MetricsCollector } = await import('./metrics');
-        
-        this.contextManager = ContextManager.getInstance();
-        this.metricsCollector = MetricsCollector.getInstance();
-        logger.info(LogCategory.SYSTEM, 'ServiceRegistry initialized successfully', {
-            metadata: {
-                contextManager: String(!!this.contextManager),
-                metricsCollector: String(!!this.metricsCollector)
-            }
-        });
-    }
-
-    public static async getInstance(): Promise<ServiceRegistry> {
+    static async getInstance(): Promise<ServiceRegistry>;
+    static async getInstance(config?: ServiceRegistryConfig): Promise<ServiceRegistry> {
         if (!ServiceRegistry.instance) {
-            logger.debug(LogCategory.SYSTEM, 'Creating new ServiceRegistry instance');
             ServiceRegistry.instance = new ServiceRegistry();
-            await ServiceRegistry.instance.initialize();
+            // Initialize with config if provided
+            if (config) {
+                // Config initialization logic here
+            }
         }
         return ServiceRegistry.instance;
     }

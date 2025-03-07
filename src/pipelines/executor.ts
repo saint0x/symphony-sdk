@@ -52,14 +52,14 @@ export class PipelineExecutor {
             for (const step of config.steps) {
                 try {
                     // Check step condition
-                    if (step.condition && !step.condition(currentData)) {
-                        logger.debug(LogCategory.SYSTEM, 'Skipping step due to condition', {
-                            metadata: {
-                                pipeline: config.name,
-                                step: step.name
-                            }
+                    if (step.conditions && typeof step.conditions === 'object') {
+                        const conditionsMet = Object.entries(step.conditions).every(([key, value]) => {
+                            return currentData?.[key] === value;
                         });
-                        continue;
+                        if (!conditionsMet) {
+                            logger.info(LogCategory.PIPELINE, `Skipping step ${step.name} - conditions not met`);
+                            continue;
+                        }
                     }
 
                     // Execute step
@@ -158,12 +158,15 @@ export class PipelineExecutor {
             }
         });
 
-        // Transform input
-        const transformedInput = step.inputMap(input);
+        // Map input using inputMap function
+        const transformedInput = typeof step.inputMap === 'function' 
+            ? await step.inputMap(input)
+            : step.inputMap;
 
         // Execute tool
+        const toolId = typeof step.tool === 'string' ? step.tool : step.tool.name;
         const result = await this.serviceRegistry.executeCall(
-            step.tool,
+            toolId,
             'execute',
             transformedInput
         );

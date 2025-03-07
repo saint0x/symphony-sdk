@@ -25,7 +25,11 @@ export interface ExtendedLLMRequest extends LLMRequest {
 
 export interface ExtendedLLMResponse extends LLMResponse {
     metrics?: ExecutionMetrics & {
-        usage: LLMResponse['usage'];
+        tokenUsage: {
+            input: number;
+            output: number;
+            total: number;
+        };
     };
 }
 

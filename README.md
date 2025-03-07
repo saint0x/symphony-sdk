@@ -18,14 +18,39 @@ import { symphony } from "symphonic";
 
 3. Create your first tool:
 ```typescript
+// Simple example of a tool
 const myTool = symphony.tools.create({
     name: "example",
     description: "does something useful",
     inputs: ["data"],
-    handler: async (data) => {
-        return { result: data, success: true };
+    handler: async (params) => {
+        try {
+            // Tool implementation
+            const result = await processData(params.data);
+            return { 
+                success: true,
+                result
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error : new Error(String(error))
+            };
+        }
     }
 });
+
+// Usage
+try {
+    const result = await myTool.run({ data: "example input" });
+    if (result.success) {
+        console.log("Success:", result.result);
+    } else {
+        console.error("Error:", result.error.message);
+    }
+} catch (error) {
+    console.error("Execution error:", error);
+}
 ```
 
 4. Build up from there!
@@ -40,20 +65,55 @@ Tools are the fundamental units of work in Symphonic. They are pure functions th
 
 ```typescript
 const myTool = symphony.tools.create({
-    name: "toolName",          // Unique identifier
-    description: "what it does", // Used by agents for tool selection
-    inputs: ["param1", "param2"], // Expected input parameters
-    handler: async (param1, param2) => {
-        // Your logic here
-        return {
-            result: returnedOutput,  // The function's expected output
-            success: true          // Operation status
-        };
-    }
+    name: "toolName",
+    description: "what it does",
+    inputs: ["param1", "param2"],
+    handler: async (params) => {
+        const startTime = Date.now();
+        try {
+            // Your logic here
+            const result = await processParams(params.param1, params.param2);
+            return {
+                result,
+                success: true,
+                metrics: {
+                    duration: Date.now() - startTime,
+                    startTime,
+                    endTime: Date.now()
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error : new Error(String(error)),
+                metrics: {
+                    duration: Date.now() - startTime,
+                    startTime,
+                    endTime: Date.now()
+                }
+            };
+        }
+    },
+    retry: {
+        enabled: true,
+        maxAttempts: 3,
+        delay: 1000
+    },
+    timeout: 5000
 });
 
-// Usage
-await myTool.run({ param1: value1, param2: value2 });
+// Usage with error handling
+try {
+    const result = await myTool.run({ 
+        param1: value1, 
+        param2: value2 
+    });
+    if (!result.success) {
+        console.error(`Tool error: ${result.error?.message}`);
+    }
+} catch (error) {
+    console.error(`Execution error: ${error.message}`);
+}
 ```
 
 Tools follow these principles:
@@ -75,12 +135,27 @@ const myAgent = symphony.agent.create({
     name: "agentName",
     description: "agent purpose",
     task: "specific task description",
-    tools: [tool1, tool2],    // Tools this agent can use
-    llm: "gpt-4"              // Language model to use
+    tools: [tool1, tool2],
+    llm: {
+        provider: "openai",
+        model: "gpt-4",
+        temperature: 0.7,
+        maxTokens: 2000
+    },
+    maxCalls: 10,
+    requireApproval: false,
+    timeout: 30000
 });
 
-// Usage
-await myAgent.run("natural language task description");
+// Usage with streaming
+const result = await myAgent.run("natural language task description", {
+    onProgress: (update) => {
+        console.log(`Progress: ${update.status}`);
+    },
+    onMetrics: (metrics) => {
+        console.log(`Metrics: ${JSON.stringify(metrics)}`);
+    }
+});
 ```
 
 Agent features:
@@ -103,15 +178,37 @@ const myTeam = symphony.team.create({
     name: "teamName",
     description: "team purpose",
     agents: [agent1, agent2],
-    manager: true,           // Enable team coordination -- if false, all agents return their own data 
-    log: {                   // Logging configuration
+    manager: true,
+    strategy: {
+        name: "roundRobin",
+        description: "Distribute tasks evenly",
+        assignmentLogic: async (task, agents) => agents,
+        coordinationRules: {
+            maxParallelTasks: 3,
+            taskTimeout: 5000
+        }
+    },
+    log: {
         inputs: true,
-        outputs: true
+        outputs: true,
+        metrics: true
     }
 });
 
-// Usage
-await myTeam.run("complex task description");
+// Usage with error handling
+try {
+    const result = await myTeam.run("complex task description", {
+        timeout: 60000,
+        onProgress: (update) => {
+            console.log(`Team progress: ${update.status}`);
+        }
+    });
+    if (!result.success) {
+        console.error(`Team error: ${result.error?.message}`);
+    }
+} catch (error) {
+    console.error(`Team execution error: ${error.message}`);
+}
 ```
 
 Team capabilities:
@@ -130,7 +227,7 @@ Pipelines define fixed sequences of operations with:
 - Performance optimization
 
 ```typescript
-const myPipeline = symphonic.pipeline.create({
+const myPipeline = symphony.pipeline.create({
     name: "pipelineName",
     description: "pipeline purpose",
     steps: [
@@ -138,21 +235,46 @@ const myPipeline = symphonic.pipeline.create({
             name: "step1",
             tool: tool1,
             description: "step purpose",
-            chained: 1,           // Execution order
-            target: "step2",      // Next step
-            expects: {            // Input type definitions
-                param1: "string"
-            },
-            outputs: {           // Output type definitions
-                result: "object"
+            chained: 1,
+            expects: { param1: "string" },
+            outputs: { result: "object" },
+            retry: {
+                maxAttempts: 3,
+                delay: 1000
             }
         },
-        // Additional steps...
-    ]
+        {
+            name: "step2",
+            tool: tool2,
+            description: "step purpose",
+            chained: 2.1,
+            expects: { result: "object" },
+            outputs: { processed: "object" },
+            conditions: {
+                requiredFields: ["result"],
+                validateOutput: (output) => output.processed !== null
+            }
+        }
+    ],
+    onError: async (error, context) => {
+        return { retry: true, delay: 1000 };
+    },
+    metrics: {
+        enabled: true,
+        detailed: true,
+        trackMemory: true
+    }
 });
 
-// Usage
-await myPipeline.run({ initialInput: value });
+// Usage with monitoring
+const result = await myPipeline.run({ initialInput: value }, {
+    onStepComplete: (step, result) => {
+        console.log(`Step ${step.name} complete: ${result.success}`);
+    },
+    onMetrics: (metrics) => {
+        console.log(`Pipeline metrics: ${JSON.stringify(metrics)}`);
+    }
+});
 ```
 
 Pipeline features:
