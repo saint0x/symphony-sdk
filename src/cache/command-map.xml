@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Command Map for Symphonic Agent System
+  
+  This is our high-performance pattern matching system that maps natural language
+  to tool executions. It acts as a deterministic fast-path for known patterns,
+  reducing the need for full LLM inference when confidence is high.
+  
+  Key features:
+  - Pattern-based tool dispatch
+  - Confidence scoring and evolution
+  - Variable capture and type safety
+  - Usage statistics for optimization
+  - Grouped by tool domains
+-->
+<CommandMap version="1.0">
+    <PatternGroup type="file_operations">
+        <Pattern id="FILE_SEARCH" confidence="0.95">
+            <Linguistic>
+                <Trigger>search for * in *</Trigger>
+                <Variables>
+                    <Variable name="query" position="1">
+                        <Type>string</Type>
+                        <Description>The search term or pattern</Description>
+                    </Variable>
+                    <Variable name="target" position="2">
+                        <Type>string</Type>
+                        <Description>File or directory to search in</Description>
+                    </Variable>
+                </Variables>
+                <Examples>
+                    <Example>search for TODO in src/</Example>
+                    <Example>search for interface in types.ts</Example>
+                </Examples>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>codebase_search</Tool>
+                <Parameters>
+                    <Parameter name="query" value="${query}"/>
+                    <Parameter name="target_directories" value="[${target}]"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>42</SuccessCount>
+                <FailureCount>3</FailureCount>
+                <LastUsed>2024-03-14T16:30:00Z</LastUsed>
+                <AverageLatency>150ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+
+        <Pattern id="FILE_READ" confidence="0.92">
+            <Linguistic>
+                <Trigger>read lines * to * from *</Trigger>
+                <Variables>
+                    <Variable name="start" position="1">
+                        <Type>number</Type>
+                        <Description>Starting line number</Description>
+                    </Variable>
+                    <Variable name="end" position="2">
+                        <Type>number</Type>
+                        <Description>Ending line number</Description>
+                    </Variable>
+                    <Variable name="file" position="3">
+                        <Type>string</Type>
+                        <Description>File path to read</Description>
+                    </Variable>
+                </Variables>
+                <Examples>
+                    <Example>read lines 10 to 20 from src/main.ts</Example>
+                </Examples>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>read_file</Tool>
+                <Parameters>
+                    <Parameter name="relative_workspace_path" value="${file}"/>
+                    <Parameter name="start_line_one_indexed" value="${start}"/>
+                    <Parameter name="end_line_one_indexed_inclusive" value="${end}"/>
+                    <Parameter name="should_read_entire_file" value="false"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>67</SuccessCount>
+                <FailureCount>5</FailureCount>
+                <LastUsed>2024-03-14T16:45:00Z</LastUsed>
+                <AverageLatency>85ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+    </PatternGroup>
+
+    <PatternGroup type="code_editing">
+        <Pattern id="EDIT_FILE" confidence="0.90">
+            <Linguistic>
+                <Trigger>edit * to add *</Trigger>
+                <Variables>
+                    <Variable name="file" position="1">
+                        <Type>string</Type>
+                        <Description>File to edit</Description>
+                    </Variable>
+                    <Variable name="content" position="2">
+                        <Type>string</Type>
+                        <Description>Content to add</Description>
+                    </Variable>
+                </Variables>
+                <Examples>
+                    <Example>edit src/types.ts to add interface User</Example>
+                </Examples>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>edit_file</Tool>
+                <Parameters>
+                    <Parameter name="target_file" value="${file}"/>
+                    <Parameter name="code_edit" value="${content}"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>89</SuccessCount>
+                <FailureCount>8</FailureCount>
+                <LastUsed>2024-03-14T17:00:00Z</LastUsed>
+                <AverageLatency>200ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+
+        <Pattern id="DELETE_FILE" confidence="0.97">
+            <Linguistic>
+                <Trigger>delete file *</Trigger>
+                <Variables>
+                    <Variable name="file" position="1">
+                        <Type>string</Type>
+                        <Description>File to delete</Description>
+                    </Variable>
+                </Variables>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>delete_file</Tool>
+                <Parameters>
+                    <Parameter name="target_file" value="${file}"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>34</SuccessCount>
+                <FailureCount>1</FailureCount>
+                <LastUsed>2024-03-14T15:20:00Z</LastUsed>
+                <AverageLatency>50ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+    </PatternGroup>
+
+    <PatternGroup type="search_operations">
+        <Pattern id="GREP_SEARCH" confidence="0.94">
+            <Linguistic>
+                <Trigger>find exact * in * files</Trigger>
+                <Variables>
+                    <Variable name="pattern" position="1">
+                        <Type>string</Type>
+                        <Description>Exact text or regex to find</Description>
+                    </Variable>
+                    <Variable name="file_type" position="2">
+                        <Type>string</Type>
+                        <Description>File type or pattern</Description>
+                    </Variable>
+                </Variables>
+                <Examples>
+                    <Example>find exact TODO in typescript files</Example>
+                </Examples>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>grep_search</Tool>
+                <Parameters>
+                    <Parameter name="query" value="${pattern}"/>
+                    <Parameter name="include_pattern" value="*.${file_type}"/>
+                    <Parameter name="case_sensitive" value="true"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>156</SuccessCount>
+                <FailureCount>12</FailureCount>
+                <LastUsed>2024-03-14T17:15:00Z</LastUsed>
+                <AverageLatency>180ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+
+        <Pattern id="FUZZY_FILE_SEARCH" confidence="0.96">
+            <Linguistic>
+                <Trigger>find files named *</Trigger>
+                <Variables>
+                    <Variable name="name" position="1">
+                        <Type>string</Type>
+                        <Description>Partial or full filename</Description>
+                    </Variable>
+                </Variables>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>file_search</Tool>
+                <Parameters>
+                    <Parameter name="query" value="${name}"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>203</SuccessCount>
+                <FailureCount>7</FailureCount>
+                <LastUsed>2024-03-14T17:30:00Z</LastUsed>
+                <AverageLatency>65ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+    </PatternGroup>
+
+    <PatternGroup type="terminal_operations">
+        <Pattern id="RUN_COMMAND" confidence="0.88">
+            <Linguistic>
+                <Trigger>run command * in *</Trigger>
+                <Variables>
+                    <Variable name="command" position="1">
+                        <Type>string</Type>
+                        <Description>Command to execute</Description>
+                    </Variable>
+                    <Variable name="background" position="2">
+                        <Type>string</Type>
+                        <Description>Background or foreground</Description>
+                        <Validation>
+                            <AllowedValues>
+                                <Value>background</Value>
+                                <Value>foreground</Value>
+                            </AllowedValues>
+                        </Validation>
+                    </Variable>
+                </Variables>
+                <Examples>
+                    <Example>run command npm install in foreground</Example>
+                </Examples>
+            </Linguistic>
+
+            <ToolMapping>
+                <Tool>run_terminal_cmd</Tool>
+                <Parameters>
+                    <Parameter name="command" value="${command}"/>
+                    <Parameter name="is_background" value="${background == 'background'}"/>
+                    <Parameter name="require_user_approval" value="true"/>
+                </Parameters>
+            </ToolMapping>
+
+            <UsageStats>
+                <SuccessCount>78</SuccessCount>
+                <FailureCount>6</FailureCount>
+                <LastUsed>2024-03-14T17:45:00Z</LastUsed>
+                <AverageLatency>120ms</AverageLatency>
+            </UsageStats>
+        </Pattern>
+    </PatternGroup>
+</CommandMap> 

@@ -1,0 +1,180 @@
+{
+    "agent_state": {
+        "active_tools": [
+            {
+                "id": "codebase_search",
+                "status": "ready",
+                "last_check": "2024-03-14T17:45:00Z",
+                "health": {
+                    "success_rate": 0.97,
+                    "avg_latency": "150ms",
+                    "error_rate": 0.03
+                }
+            },
+            {
+                "id": "read_file",
+                "status": "ready",
+                "last_check": "2024-03-14T17:44:30Z",
+                "health": {
+                    "success_rate": 0.99,
+                    "avg_latency": "85ms",
+                    "error_rate": 0.01
+                }
+            },
+            {
+                "id": "edit_file",
+                "status": "ready",
+                "last_check": "2024-03-14T17:44:45Z",
+                "health": {
+                    "success_rate": 0.92,
+                    "avg_latency": "200ms",
+                    "error_rate": 0.08
+                }
+            },
+            {
+                "id": "grep_search",
+                "status": "ready",
+                "last_check": "2024-03-14T17:45:15Z",
+                "health": {
+                    "success_rate": 0.95,
+                    "avg_latency": "180ms",
+                    "error_rate": 0.05
+                }
+            }
+        ],
+        "type_registry": {
+            "string": {
+                "validators": ["non_empty", "max_length_1000"],
+                "transformers": ["trim", "normalize_path"]
+            },
+            "number": {
+                "validators": ["positive", "max_value_1000000"],
+                "transformers": ["parse_int", "clamp"]
+            },
+            "boolean": {
+                "validators": ["strict_bool"],
+                "transformers": ["to_boolean"]
+            }
+        }
+    },
+
+    "runtime": {
+        "system": {
+            "os": "darwin",
+            "memory_available": "16GB",
+            "cpu_cores": 8,
+            "workspace_path": "/Users/saint/Desktop/symphonic"
+        },
+        "metrics": {
+            "tool_calls": 487,
+            "pattern_matches": 423,
+            "cache_hits": 368,
+            "avg_response_time": "175ms",
+            "success_rate": 0.94
+        },
+        "constraints": {
+            "max_concurrent_tools": 4,
+            "max_memory_per_tool": "1GB",
+            "max_execution_time": "30s",
+            "require_approval": ["delete_file", "run_terminal_cmd"]
+        }
+    },
+
+    "execution": {
+        "active_patterns": [
+            {
+                "id": "FILE_SEARCH",
+                "confidence": 0.95,
+                "last_success": "2024-03-14T17:43:00Z",
+                "vars": {
+                    "query": "interface",
+                    "target": "src/"
+                }
+            }
+        ],
+        "current_tools": [
+            {
+                "id": "tool_exec_789",
+                "tool": "codebase_search",
+                "start_time": "2024-03-14T17:45:20Z",
+                "status": "running",
+                "params": {
+                    "query": "interface",
+                    "target_directories": ["src/"]
+                }
+            }
+        ],
+        "recent_results": [
+            {
+                "id": "tool_exec_788",
+                "tool": "read_file",
+                "success": true,
+                "latency": "82ms",
+                "pattern_id": "FILE_READ",
+                "timestamp": "2024-03-14T17:45:15Z"
+            },
+            {
+                "id": "tool_exec_787",
+                "tool": "edit_file",
+                "success": true,
+                "latency": "195ms",
+                "pattern_id": "EDIT_FILE",
+                "timestamp": "2024-03-14T17:44:30Z"
+            }
+        ]
+    },
+
+    "learning": {
+        "pattern_evolution": {
+            "threshold": 0.8,
+            "min_samples": 10,
+            "learning_rate": 0.05,
+            "decay_rate": 0.01
+        },
+        "type_inference": {
+            "confidence_threshold": 0.9,
+            "sample_size": 50,
+            "update_frequency": "1h"
+        },
+        "performance_optimization": {
+            "cache_ttl": "1h",
+            "prune_threshold": 0.7,
+            "max_patterns": 100,
+            "min_confidence": 0.85
+        }
+    },
+
+    "validation": {
+        "rules": {
+            "tool_execution": [
+                "type_check",
+                "permission_check",
+                "resource_check",
+                "safety_check"
+            ],
+            "pattern_matching": [
+                "confidence_threshold",
+                "variable_binding",
+                "context_consistency"
+            ],
+            "state_updates": [
+                "atomic_operation",
+                "rollback_support",
+                "audit_logging"
+            ]
+        },
+        "thresholds": {
+            "min_confidence": 0.8,
+            "max_latency": "500ms",
+            "error_threshold": 0.1,
+            "warning_threshold": 0.05
+        }
+    },
+
+    "meta": {
+        "version": "1.0.0",
+        "last_update": "2024-03-14T17:45:30Z",
+        "update_frequency": "1s",
+        "maintenance_window": "0 0 * * *"
+    }
+} 

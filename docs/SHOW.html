@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Symphonic Logger Output Preview</title>
+    <style>
+        body {
+            background: #1E1E1E;
+            color: #FFFFFF;
+            font-family: 'SF Mono', Monaco, Menlo, Consolas, 'Ubuntu Mono', monospace;
+            padding: 20px;
+            line-height: 1.5;
+        }
+        pre {
+            margin: 0;
+            padding: 20px;
+            background: #2D2D2D;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .comment {
+            color: #6A9955;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        /* Terminal Colors */
+        .main-blue { color: #5FADEB; font-weight: bold; }
+        .secondary-blue { color: #4A9BD9; }
+        .white { color: #FFFFFF; }
+        .light-gray { color: #CCCCCC; }
+        .dim-gray { color: #808080; }
+        .success { color: #4EC9B0; }
+        .warn { color: #CCA700; }
+        .error { color: #F14C4C; }
+        .progress-bar {
+            color: #5FADEB;
+            background: #808080;
+        }
+        .timing {
+            float: right;
+        }
+    </style>
+</head>
+<body>
+<div class="comment">// standard installation flow</div>
+<pre>
+<span class="white">│ cloning</span> <span class="main-blue">symphonic</span> <span class="dim-gray timing">[14ms]</span>
+  <span class="white">│ resolving dependencies</span>
+    <span class="dim-gray">│ @grpc/grpc-js@1.9.0 (2.1mb)</span>
+    <span class="dim-gray">│ typescript@5.0.0 (1.8mb)</span>
+    <span class="dim-gray">│ uuid@9.0.0 (0.2mb)</span>
+
+  <span class="success">✓ dependencies resolved</span> <span class="dim-gray timing">[156ms]</span>
+    <span class="white">3 packages installed</span>
+    <span class="main-blue">████████████████████████████</span> <span class="secondary-blue">100%</span>
+</pre>
+
+<div class="comment">// progress with context</div>
+<pre>
+<span class="white">│ building</span> <span class="main-blue">symphonic</span>
+  <span class="white">│ compiling typescript</span> <span class="dim-gray timing">[892ms]</span>
+    <span class="main-blue">███████████████</span><span class="dim-gray">░░░░░░░░░░░░</span> <span class="secondary-blue">52%</span>
+  <span class="dim-gray">using tsconfig.json from root directory</span>
+</pre>
+
+<div class="comment">// success with metrics</div>
+<pre>
+<span class="success">✓ build completed</span> <span class="dim-gray timing">[1.2s]</span>
+  <span class="dim-gray">│ size: 4.2mb</span>
+  <span class="dim-gray">│ memory: 245mb</span>
+</pre>
+
+<div class="comment">// warning with help text</div>
+<pre>
+<span class="warn">! missing type definitions</span>
+  <span class="dim-gray">│ run 'bun add -d @types/node' to install missing types</span>
+  <span class="white">│ continuing with partial typings...</span>
+</pre>
+
+<div class="comment">// error with details</div>
+<pre>
+<span class="error">✕ connection failed</span> <span class="dim-gray timing">[5000ms]</span>
+  <span class="dim-gray">│ connection refused</span>
+  <span class="dim-gray">│ check your api key in .env file</span>
+</pre>
+
+<div class="comment">// debug output (only in verbose mode)</div>
+<pre>
+<span class="white">│ initializing</span> <span class="main-blue">symphonic</span>
+  <span class="dim-gray">│ preparing packages...</span>
+  <span class="dim-gray">│ validating configurations</span>
+  <span class="dim-gray">│ configuring endpoints...</span>
+</pre>
+
+<div class="comment">// loading states</div>
+<pre>
+<span class="white">│ starting</span> <span class="main-blue">symphonic</span>
+  <span class="main-blue">⠋</span> <span class="dim-gray">analyzing dependencies...</span>
+  <span class="main-blue">⠙</span> <span class="dim-gray">generating types...</span>
+  <span class="main-blue">⠹</span> <span class="dim-gray">bundling modules...</span>
+</pre>
+
+<div class="comment">// complex operation</div>
+<pre>
+<span class="white">│ deploying</span> <span class="main-blue">symphonic</span>
+  <span class="white">│ environment check</span>
+    <span class="dim-gray">│ node.js v18.0.0</span> <span class="success timing">✓</span>
+    <span class="dim-gray">│ typescript 5.0.0</span> <span class="success timing">✓</span>
+    <span class="dim-gray">│ bun version</span> <span class="warn timing">!</span>
+  <span class="white">│ building assets</span> <span class="dim-gray timing">[2.1s]</span>
+    <span class="main-blue">████████████████████████████</span> <span class="secondary-blue">100%</span>
+  <span class="success">✓ optimization complete</span>
+    <span class="dim-gray">│ reduced from 5.1mb to 2.4mb</span>
+</pre>
+
+<div class="comment">// error stack</div>
+<pre>
+<span class="error">✕ build failed</span>
+  <span class="dim-gray">│ src/index.ts:15:23</span>
+  <span class="dim-gray">│ cannot find module './config'</span>
+  <span class="dim-gray">│ running in production mode</span>
+</pre>
+
+<div class="comment">// performance metrics</div>
+<pre>
+<span class="white">│ performance</span> <span class="main-blue">symphonic</span>
+  <span class="dim-gray">│ response time: 123ms</span>
+  <span class="dim-gray">│ memory: 256mb</span>
+  <span class="dim-gray">│ cache hits: 89%</span>
+  <span class="main-blue">████████████████████████</span><span class="dim-gray">░░░░░</span> <span class="secondary-blue">85%</span>
+</pre>
+
+<div class="comment">// service status</div>
+<pre>
+<span class="white">│ preparing</span> <span class="main-blue">symphonic</span>
+  <span class="dim-gray">│ preparing packages...</span>
+  <span class="dim-gray">│ packages</span> <span class="success timing">✓</span> <span class="dim-gray">[234ms]</span>
+  <span class="dim-gray">│ modules</span> <span class="success timing">✓</span> <span class="dim-gray">[89ms]</span>
+  <span class="dim-gray">│ services</span> <span class="warn timing">!</span> <span class="dim-gray">[high latency]</span>
+  <span class="dim-gray">│ runtime</span> <span class="error timing">✕</span> <span class="dim-gray">[down]</span>
+  <span class="dim-gray">3/4 modules ready</span>
+</pre>
+
+<div class="comment">// streaming data</div>
+<pre>
+<span class="white">│ stream</span> <span class="main-blue">symphonic</span>
+  <span class="dim-gray">│ received: 1,420 records</span>
+  <span class="dim-gray">│ processed: 1,200 records</span>
+  <span class="dim-gray">│ failed: 0 records</span>
+  <span class="main-blue">██████████████████</span><span class="dim-gray">░░░░░░░░░░</span> <span class="secondary-blue">60%</span>
+</pre>
+
+<div class="comment">// runtime validation flow</div>
+<pre>
+<span class="white">│ validating</span> <span class="main-blue">symphonic</span> <span class="dim-gray timing">[14ms]</span>
+  <span class="white">│ checking project structure</span>
+    <span class="dim-gray">│ src/tools ✓</span>
+    <span class="dim-gray">│ src/agents ✓</span>
+    <span class="dim-gray">│ src/teams ✓</span>
+    <span class="dim-gray">│ src/pipelines ✓</span>
+  <span class="success">✓ structure valid</span>
+</pre>
+
+<div class="comment">// standard tool loading</div>
+<pre>
+<span class="white">│ loading tool:</span> <span class="main-blue">webSearch</span>
+  <span class="dim-gray">│ validating API key</span> <span class="success">✓</span>
+  <span class="dim-gray">│ testing connection</span> <span class="success">✓</span>
+  <span class="success">✓ standard tool ready</span> <span class="dim-gray timing">[45ms]</span>
+</pre>
+
+<div class="comment">// custom tool registration</div>
+<pre>
+<span class="white">│ registering custom tool:</span> <span class="main-blue">databaseQuery</span>
+  <span class="dim-gray">│ validating implementation</span> <span class="success">✓</span>
+  <span class="dim-gray">│ checking connection</span> <span class="success">✓</span>
+  <span class="dim-gray">│ adding to registry</span> <span class="success">✓</span>
+  <span class="success">✓ custom tool registered</span> <span class="dim-gray timing">[89ms]</span>
+</pre>
+
+<div class="comment">// tool dependency warning</div>
+<pre>
+<span class="warn">! standard tool requires setup</span>
+  <span class="dim-gray">│ tool 'webSearch' needs configuration</span>
+  <span class="dim-gray">│ add SEARCH_API_KEY to .env file</span>
+  <span class="dim-gray">│ see: docs/tools/webSearch.md</span>
+</pre>
+
+<div class="comment">// agent initialization</div>
+<pre>
+<span class="white">│ initializing agent:</span> <span class="main-blue">researchAgent</span>
+  <span class="dim-gray">│ loading tools</span> <span class="success">✓</span>
+  <span class="dim-gray">│ connecting to llm</span> <span class="success">✓</span>
+  <span class="success">✓ agent ready</span> <span class="dim-gray timing">[234ms]</span>
+</pre>
+
+<div class="comment">// team assembly</div>
+<pre>
+<span class="white">│ assembling team:</span> <span class="main-blue">researchTeam</span>
+  <span class="dim-gray">│ loading agents</span> <span class="success">✓</span>
+  <span class="dim-gray">│ establishing coordination</span> <span class="success">✓</span>
+  <span class="success">✓ team ready</span> <span class="dim-gray timing">[156ms]</span>
+</pre>
+
+<div class="comment">// pipeline setup</div>
+<pre>
+<span class="white">│ building pipeline:</span> <span class="main-blue">researchPipeline</span>
+  <span class="dim-gray">│ validating steps</span> <span class="success">✓</span>
+  <span class="dim-gray">│ checking connections</span> <span class="success">✓</span>
+  <span class="success">✓ pipeline ready</span> <span class="dim-gray timing">[123ms]</span>
+</pre>
+
+<div class="comment">// validation error example</div>
+<pre>
+<span class="error">✕ validation failed</span>
+  <span class="dim-gray">│ missing required directory: src/tools</span>
+  <span class="dim-gray">│ run 'mkdir -p src/tools' to create</span>
+  <span class="dim-gray">│ see: docs/structure.md for more info</span>
+</pre>
+
+<div class="comment">// verbose mode output</div>
+<pre>
+<span class="white">│ verbose logging enabled</span>
+  <span class="dim-gray">│ cache status: 89% hit rate</span>
+  <span class="dim-gray">│ memory usage: 256mb</span>
+  <span class="dim-gray">│ active components: 3 tools, 2 agents</span>
+</pre>
+</body>
+</html> 
