@@ -13,16 +13,14 @@ export interface ServiceInstance {
 export class Registry extends BaseManager {
     private services = new Map<string, ServiceInstance>();
     private capabilities = new Map<string, Set<string>>();
+    private teams = new Map<string, any>();
+    private tools = new Map<string, any>();
+    private agents = new Map<string, any>();
+    private directories = new Map<string, any>();
     private logger: Logger;
-    private teams: Map<string, any>;
-    private tools: Map<string, any>;
-    private agents: Map<string, any>;
 
     constructor(symphony: ISymphony) {
         super(symphony, 'Registry');
-        this.teams = new Map();
-        this.tools = new Map();
-        this.agents = new Map();
         this.logger = Logger.getInstance({ serviceContext: 'Registry' });
     }
 
@@ -139,5 +137,59 @@ export class Registry extends BaseManager {
     getAgent(agentId: string): any | null {
         this.assertInitialized();
         return this.agents.get(agentId) || null;
+    }
+
+    async listDirectory(path: string): Promise<string[]> {
+        this.assertInitialized();
+        return this.withErrorHandling('listDirectory', async () => {
+            const normalizedPath = this.normalizePath(path);
+            const dir = this.directories.get(normalizedPath);
+            if (!dir) {
+                return [];
+            }
+            return Object.keys(dir);
+        }, { path });
+    }
+
+    async readDirectory(path: string): Promise<any> {
+        this.assertInitialized();
+        return this.withErrorHandling('readDirectory', async () => {
+            const normalizedPath = this.normalizePath(path);
+            const dir = this.directories.get(normalizedPath);
+            if (!dir) {
+                throw new Error(`Directory not found: ${path}`);
+            }
+            return dir;
+        }, { path });
+    }
+
+    async writeDirectory(path: string, contents: any): Promise<void> {
+        this.assertInitialized();
+        return this.withErrorHandling('writeDirectory', async () => {
+            const normalizedPath = this.normalizePath(path);
+            this.directories.set(normalizedPath, contents);
+            this.logInfo(`Directory written: ${path}`, {
+                metadata: {
+                    path: normalizedPath,
+                    size: JSON.stringify(contents).length
+                }
+            });
+        }, { path });
+    }
+
+    async deleteDirectory(path: string): Promise<void> {
+        this.assertInitialized();
+        return this.withErrorHandling('deleteDirectory', async () => {
+            const normalizedPath = this.normalizePath(path);
+            if (this.directories.delete(normalizedPath)) {
+                this.logInfo(`Directory deleted: ${path}`, {
+                    metadata: { path: normalizedPath }
+                });
+            }
+        }, { path });
+    }
+
+    private normalizePath(path: string): string {
+        return path.replace(/\/+/g, '/').replace(/^\/|\/$/g, '') || '/';
     }
 } 
