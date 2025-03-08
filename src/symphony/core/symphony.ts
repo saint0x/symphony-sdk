@@ -7,7 +7,7 @@ import { ToolService } from '../../services/tool';
 import { AgentService } from '../../services/agent';
 import { PipelineService } from '../../services/pipeline';
 import { ComponentManager } from '../../managers/component';
-import { Logger, LogCategory } from '../../utils/logger';
+import { LogCategory } from '../../utils/logger';
 import { LogLevel } from '../../types/sdk';
 import { ISymphony, SymphonyConfig, SymphonyUtils } from '../interfaces/types';
 import { IToolService, IAgentService, ITeamService, IPipelineService } from '../../services/interfaces';
@@ -16,17 +16,17 @@ import { ServiceBus } from '../../core/servicebus';
 
 export class Symphony extends BaseManager implements ISymphony {
     private static instance: Symphony;
-    private _registry: Registry | null = null;
-    private _initialized: boolean = false;
-    private _toolService: IToolService;
-    private _agentService: IAgentService;
-    private _teamService: ITeamService;
-    private _pipelineService: IPipelineService;
-    private _validationManager: IValidationManager;
-    private _metrics: MetricsService;
-    private _logger: Logger;
-    private _components: ComponentManager;
-    private _config: SymphonyConfig = {
+    protected _registry: Registry | null = null;
+    protected _initialized: boolean = false;
+    protected _toolService: IToolService;
+    protected _agentService: IAgentService;
+    protected _teamService: ITeamService;
+    protected _pipelineService: IPipelineService;
+    protected _validationManager: IValidationManager;
+    protected _metrics: MetricsService;
+    protected _components: ComponentManager;
+    protected _bus: ServiceBus;
+    protected _config: SymphonyConfig = {
         serviceRegistry: {
             enabled: false,
             maxRetries: 3,
@@ -41,11 +41,10 @@ export class Symphony extends BaseManager implements ISymphony {
             detailed: false
         }
     };
-    private _bus: ServiceBus;
-    
-    readonly validation: IValidationManager;
-    readonly team: ITeamService;
-    readonly metrics: {
+
+    readonly validation!: IValidationManager;
+    readonly team!: ITeamService;
+    readonly metrics!: {
         startTime: number;
         start(id: string, metadata?: Record<string, any>): void;
         end(id: string, metadata?: Record<string, any>): void;
@@ -53,10 +52,10 @@ export class Symphony extends BaseManager implements ISymphony {
         update(id: string, metadata: Record<string, any>): void;
         getAll(): Record<string, any>;
     };
-    readonly tools: IToolService;
-    readonly agent: IAgentService;
-    readonly pipeline: IPipelineService;
-    readonly components: ComponentManager;
+    readonly tools!: IToolService;
+    readonly agent!: IAgentService;
+    readonly pipeline!: IPipelineService;
+    readonly components!: ComponentManager;
 
     get utils(): SymphonyUtils {
         return {
@@ -74,19 +73,17 @@ export class Symphony extends BaseManager implements ISymphony {
     }
 
     get logger() {
+        const logger = this.getLogger();
         return {
-            debug: (category: string, message: string, data?: any) => this._logger.debug(category as LogCategory, message, data),
-            info: (category: string, message: string, data?: any) => this._logger.info(category as LogCategory, message, data),
-            warn: (category: string, message: string, data?: any) => this._logger.warn(category as LogCategory, message, data),
-            error: (category: string, message: string, data?: any) => this._logger.error(category as LogCategory, message, data)
+            debug: (category: string, message: string, data?: any) => logger.debug(category as LogCategory, message, data),
+            info: (category: string, message: string, data?: any) => logger.info(category as LogCategory, message, data),
+            warn: (category: string, message: string, data?: any) => logger.warn(category as LogCategory, message, data),
+            error: (category: string, message: string, data?: any) => logger.error(category as LogCategory, message, data)
         };
     }
 
     private constructor() {
         super(null as any, 'Symphony');
-        
-        // Initialize logger first
-        this._logger = Logger.getInstance({ serviceContext: 'Symphony' });
         
         // Initialize core services
         this._metrics = new MetricsService();
@@ -129,7 +126,7 @@ export class Symphony extends BaseManager implements ISymphony {
         this.validation = this._validationManager;
         this.components = this._components;
         
-        this._logger.info(LogCategory.SYSTEM, 'Symphony SDK initialized');
+        this.logInfo('Symphony SDK initialized');
     }
 
     static getInstance(): Symphony {
@@ -151,7 +148,7 @@ export class Symphony extends BaseManager implements ISymphony {
 
         // Update log level if specified
         if (config.logging?.level) {
-            Logger.getInstance().setMinLevel(this.mapLogLevel(config.logging.level));
+            this.getLogger().setMinLevel(this.mapLogLevel(config.logging.level));
         }
     }
 
@@ -180,17 +177,17 @@ export class Symphony extends BaseManager implements ISymphony {
             await this._pipelineService.initialize();
 
             this._initialized = true;
-            this._logger.info(LogCategory.SYSTEM, 'Symphony initialization complete');
+            this.logInfo('Symphony initialization complete');
         } catch (error) {
             this._initialized = false;
-            this._logger.error(LogCategory.ERROR, 'Symphony initialization failed', { error });
+            this.logError('Symphony initialization failed', { error });
             throw error;
         }
     }
 
     async getRegistry(): Promise<Registry | null> {
         if (!this._initialized) {
-            this._logger.error(LogCategory.ERROR, 'Symphony not initialized');
+            this.logError('Symphony not initialized');
             throw new Error('Symphony must be initialized before accessing registry');
         }
         return this._registry;

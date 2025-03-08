@@ -1,4 +1,4 @@
-import { Logger, LogCategory } from '../utils/logger';
+import { LogCategory } from '../utils/logger';
 import { BaseManager } from '../managers/base';
 import { ISymphony } from './interfaces/types';
 import { TeamConfig } from '../types/sdk';
@@ -17,11 +17,9 @@ export class Registry extends BaseManager {
     private tools = new Map<string, any>();
     private agents = new Map<string, any>();
     private directories = new Map<string, any>();
-    private logger: Logger;
 
     constructor(symphony: ISymphony) {
         super(symphony, 'Registry');
-        this.logger = Logger.getInstance({ serviceContext: 'Registry' });
     }
 
     registerService(service: ServiceInstance): void {
@@ -36,7 +34,8 @@ export class Registry extends BaseManager {
             this.capabilities.get(cap)!.add(service.id);
         });
         
-        this.logger.debug(LogCategory.SYSTEM, `Service registered: ${service.id}`, {
+        const logger = this.getLogger();
+        logger.debug(LogCategory.SYSTEM, `Service registered: ${service.id}`, {
             metadata: {
                 capabilities: service.capabilities,
                 serviceId: service.id
@@ -62,7 +61,7 @@ export class Registry extends BaseManager {
             service.status = status;
             service.lastError = error;
             
-            this.logger.debug(LogCategory.SYSTEM, `Service status updated: ${id}`, {
+            this.getLogger().debug(LogCategory.SYSTEM, `Service status updated: ${id}`, {
                 metadata: {
                     status,
                     serviceId: id,
@@ -77,7 +76,7 @@ export class Registry extends BaseManager {
         this.services.clear();
         this.capabilities.clear();
         
-        this.logger.info(LogCategory.SYSTEM, 'Registry initialized');
+        this.getLogger().info(LogCategory.SYSTEM, 'Registry initialized');
     }
 
     // Team operations

@@ -3,6 +3,9 @@ import { BaseManager } from '../../managers/base';
 import { IToolService, IAgentService, ITeamService, IPipelineService } from '../../services/interfaces';
 import { IValidationManager } from '../../managers/validation';
 import { ServiceBus } from '../../core/servicebus';
+import { ComponentManager } from '../../managers/component';
+import { Registry } from '../registry';
+import { Logger } from '../../utils/logger';
 
 export interface IComponentManager {
     register(metadata: ComponentMetadata, instance: Component): Promise<void>;
@@ -108,12 +111,12 @@ export interface SymphonyUtils {
     };
 }
 
-export interface ISymphony extends BaseManager {
+export interface ISymphony {
     readonly tools: IToolService;
     readonly agent: IAgentService;
     readonly team: ITeamService;
     readonly pipeline: IPipelineService;
-    readonly components: BaseManager;
+    readonly components: ComponentManager;
     readonly validation: IValidationManager;
     readonly metrics: {
         startTime: number;
@@ -123,25 +126,20 @@ export interface ISymphony extends BaseManager {
         update(id: string, metadata: Record<string, any>): void;
         getAll(): Record<string, any>;
     };
-    readonly utils: {
-        validation: {
-            validate(data: any, schema: string): Promise<any>;
-        };
-        metrics: {
-            start(id: string, metadata?: Record<string, any>): void;
-            end(id: string, metadata?: Record<string, any>): void;
-            get(id: string): Record<string, any> | undefined;
-        };
-    };
     readonly logger: {
         debug(category: string, message: string, data?: any): void;
         info(category: string, message: string, data?: any): void;
         warn(category: string, message: string, data?: any): void;
         error(category: string, message: string, data?: any): void;
     };
-    getRegistry(): Promise<any>;
+
+    getConfig(): SymphonyConfig;
+    updateConfig(config: Partial<SymphonyConfig>): void;
+    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
+    getRegistry(): Promise<Registry | null>;
     getServiceBus(): ServiceBus;
-    startMetric(metricId: string, metadata?: Record<string, any>): void;
-    endMetric(metricId: string, metadata?: Record<string, any>): void;
-    getMetric(metricId: string): Record<string, any> | undefined;
+    isInitialized(): boolean;
+    startMetric(id: string, metadata?: Record<string, any>): void;
+    endMetric(id: string, metadata?: Record<string, any>): void;
+    getMetric(id: string): Record<string, any> | undefined;
 } 
