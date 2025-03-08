@@ -50,7 +50,7 @@ export class TeamManager extends BaseManager implements ITeamService {
 
             // Create team
             const team = await registry.createTeam(config);
-            this.logInfo(`Created team: ${config.name}`);
+            this.logInfo(`Created team: ${config.name}`, { teamName: config.name });
             
             return team;
         }, { teamName: config.name });

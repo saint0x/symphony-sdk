@@ -58,8 +58,8 @@ export abstract class BaseManager {
         }
     }
 
-    protected logInfo(message: string, data?: Record<string, any>): void {
-        this._logger.info(LogCategory.SYSTEM, message, data);
+    protected logInfo(message: string, metadata?: Record<string, any>): void {
+        this._logger.info(LogCategory.SYSTEM, message, { metadata });
     }
 
     protected logError(message: string, error?: Error | unknown): void {
@@ -84,7 +84,7 @@ export abstract class BaseManager {
         try {
             return await fn();
         } catch (error) {
-            this.logError(`Failed to ${operation}`, error);
+            this.logError(`Failed to ${operation}`, { error, metadata });
             throw error;
         }
     }

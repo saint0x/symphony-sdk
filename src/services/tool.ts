@@ -55,7 +55,7 @@ export class ToolService extends BaseManager implements IToolService {
             };
 
             registry.registerTool(config.name, tool);
-            this.logInfo(`Created tool: ${config.name}`);
+            this.logInfo(`Created tool: ${config.name}`, { toolName: config.name });
             return tool;
         }, { toolName: config.name });
     }

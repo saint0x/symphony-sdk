@@ -1,11 +1,10 @@
 import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from '../../types/metadata';
-import { BaseManager } from '../../managers/base';
 import { IToolService, IAgentService, ITeamService, IPipelineService } from '../../services/interfaces';
 import { IValidationManager } from '../../managers/validation';
 import { ServiceBus } from '../../core/servicebus';
 import { ComponentManager } from '../../managers/component';
 import { Registry } from '../registry';
-import { Logger } from '../../utils/logger';
+import { LogLevel } from '../../types/sdk';
 
 export interface IComponentManager {
     register(metadata: ComponentMetadata, instance: Component): Promise<void>;
