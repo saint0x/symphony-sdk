@@ -55,15 +55,78 @@ clean() {
 build_typescript() {
     log_info "Building TypeScript..."
     
-    # Ensure dist directory exists
-    mkdir -p dist
+    # Ensure dist directories exist
+    mkdir -p dist/bin
 
-    # Run TypeScript compiler
-    if bun run tsc --project tsconfig.json; then
-        log_success "TypeScript build completed"
-    else
-        log_error "TypeScript build failed"
+    # Build CJS version (with types)
+    log_info "Building CommonJS version..."
+    if ! bun run tsc --project tsconfig.json; then
+        log_error "CommonJS build failed"
     fi
+
+    # Build ESM version
+    log_info "Building ESM version..."
+    if ! bun run tsc --project tsconfig.esm.json; then
+        log_error "ESM build failed"
+    fi
+
+    # Build source code to binary
+    log_info "Building source code..."
+    if ! bun build ./src/index.ts --outdir ./dist/bin --target node; then
+        log_error "Source code build failed"
+    fi
+
+    # Create proper file structure
+    log_info "Creating final file structure..."
+    
+    # Move ESM files to their final location and rename to .mjs
+    for file in $(find dist/esm -name "*.js"); do
+        mv "$file" "${file%.js}.mjs"
+        # Move corresponding source maps
+        if [ -f "${file}.map" ]; then
+            mv "${file}.map" "${file%.js}.mjs.map"
+        fi
+    done
+    
+    # Move files to match package.json exports
+    mkdir -p dist/tools dist/agents dist/teams dist/pipelines
+    
+    # Move main files
+    if [ -f dist/index.js ]; then
+        # Move CJS files
+        mv dist/index.js dist/
+        mv dist/index.js.map dist/ 2>/dev/null || true
+        
+        # Move type definitions
+        mv dist/index.d.ts dist/
+        mv dist/index.d.ts.map dist/ 2>/dev/null || true
+        
+        # Move ESM files
+        mv dist/esm/index.mjs dist/
+        mv dist/esm/index.mjs.map dist/ 2>/dev/null || true
+    fi
+    
+    # Move module files
+    for module in tools agents teams pipelines; do
+        if [ -f "dist/$module/index.js" ]; then
+            # Move CJS files
+            mv "dist/$module/index.js" "dist/$module/"
+            mv "dist/$module/index.js.map" "dist/$module/" 2>/dev/null || true
+            
+            # Move type definitions
+            mv "dist/$module/index.d.ts" "dist/$module/"
+            mv "dist/$module/index.d.ts.map" "dist/$module/" 2>/dev/null || true
+            
+            # Move ESM files
+            mv "dist/esm/$module/index.mjs" "dist/$module/"
+            mv "dist/esm/$module/index.mjs.map" "dist/$module/" 2>/dev/null || true
+        fi
+    done
+
+    # Clean up temporary ESM directory
+    rm -rf dist/esm
+
+    log_success "TypeScript build completed"
 }
 
 # Copy necessary files

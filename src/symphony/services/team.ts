@@ -1,17 +1,13 @@
 import { TeamConfig } from '../../types/sdk';
 import { Symphony } from '../core/symphony';
-import { validateConfig } from '../../utils/validation';
+import { validationManager } from '../../utils/validation';
 
 export class TeamService {
     constructor(private symphony: Symphony) {}
 
     async create(config: TeamConfig): Promise<any> {
-        // Validate configuration
-        const validation = validateConfig(config, {
-            name: { type: 'string', required: true },
-            description: { type: 'string', required: true },
-            agents: { type: 'array', required: true }
-        });
+        // Validate configuration using the new validation system
+        const validation = validationManager.validate(config, 'TeamConfig');
 
         if (!validation.isValid) {
             throw new Error(`Invalid team configuration: ${validation.errors.join(', ')}`);
@@ -23,6 +19,9 @@ export class TeamService {
 
         try {
             const registry = await this.symphony.getRegistry();
+            if (!registry) {
+                throw new Error('Service registry is not available');
+            }
             const team = await registry.createTeam(config);
             
             this.symphony.metrics.end(metricId, { success: true });

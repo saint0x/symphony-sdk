@@ -1,4 +1,4 @@
-import { ToolConfig } from '../../types/sdk';
+import { Tool, ToolResult } from '../interfaces/types';
 import { Symphony } from '../core/symphony';
 import { logger, LogCategory } from '../../utils/logger';
 import { globalMetrics } from '../../utils/metrics';
@@ -6,51 +6,43 @@ import { validateConfig } from '../../utils/validation';
 import { readFile, writeFile } from 'fs/promises';
 import fetch from 'node-fetch';
 import path from 'path';
+import {
+    InferParamsFromInputs,
+    InferHandlerReturnType,
+    EnsureToolResult,
+    ExtractResultType
+} from '../utils/type-inference';
 
 export class ToolService {
     constructor(private symphony: Symphony) {}
 
-    async create(config: ToolConfig): Promise<any> {
-        // Validate tool config
-        const validation = validateConfig(config, {
-            name: { type: 'string', required: true },
-            description: { type: 'string', required: true },
-            inputs: { type: 'object', required: true },
-            handler: { type: 'function', required: true }
-        });
+    create<
+        TInputs extends readonly string[],
+        THandler extends (params: InferParamsFromInputs<TInputs>) => Promise<ToolResult<any>>
+    >(config: {
+        name: string;
+        description: string;
+        inputs: TInputs;
+        handler: THandler;
+    }): Tool<InferParamsFromInputs<TInputs>, ExtractResultType<InferHandlerReturnType<THandler>>> {
+        type TParams = InferParamsFromInputs<TInputs>;
+        type TResult = ExtractResultType<InferHandlerReturnType<THandler>>;
 
-        if (!validation.isValid) {
-            throw new Error(`Invalid tool configuration: ${validation.errors.join(', ')}`);
-        }
-
-        this.validateChaining(config);
-
-        // Start tool creation metrics
-        const metricId = `tool_create_${config.name}`;
-        globalMetrics.start(metricId, { toolName: config.name });
-
-        try {
-            const registry = await this.symphony.getRegistry();
-            const tool = await registry.createTool(config);
-            
-            globalMetrics.end(metricId, { success: true });
-            return tool;
-        } catch (error) {
-            globalMetrics.end(metricId, { success: false, error: error instanceof Error ? error.message : String(error) });
-            throw error;
-        }
-    }
-
-    private validateChaining(config: ToolConfig) {
-        if (config.chained) {
-            // Type 1: Initial tools (1)
-            // Type 2: Intermediary tools (2.x)
-            // Type 3: Final tools (3)
-            if (![1, 3].includes(config.chained) && 
-                !/^2\.\d+$/.test(String(config.chained))) {
-                throw new Error('Invalid chaining number. Must be 1, 2.x, or 3');
+        return {
+            name: config.name,
+            description: config.description,
+            run: async (params: TParams): Promise<ToolResult<TResult>> => {
+                try {
+                    const result = await config.handler(params);
+                    return result as ToolResult<TResult>;
+                } catch (error) {
+                    return {
+                        success: false,
+                        error: error instanceof Error ? error : new Error(String(error))
+                    };
+                }
             }
-        }
+        };
     }
 
     async initializeStandardTools(): Promise<void> {
