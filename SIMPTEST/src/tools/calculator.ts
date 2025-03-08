@@ -1,7 +1,5 @@
 import { symphony } from '../sdk';
-import { Tool, ToolResult } from 'symphonic/types';
-import { SymphonyComponentManager } from '../core/component-manager';
-import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
+import type { Tool, ToolResult } from '../sdk';
 
 interface TripleAddParams {
     num1: number;
@@ -10,10 +8,10 @@ interface TripleAddParams {
 }
 
 class TripleAddTool {
-    private tool: Tool;
+    private tool!: Tool;
 
     constructor() {
-        return SymphonyComponentManager.getInstance().register({
+        return symphony.componentManager.register({
             id: 'tripleAdd',
             name: 'Triple Add Tool',
             type: 'tool',
@@ -21,7 +19,7 @@ class TripleAddTool {
             version: '1.0.0',
             capabilities: [
                 {
-                    name: CapabilityBuilder.numeric('ADD'),
+                    name: symphony.types.CapabilityBuilder.numeric('ADD'),
                     parameters: {
                         num1: { type: 'number', required: true },
                         num2: { type: 'number', required: true },
@@ -40,11 +38,11 @@ class TripleAddTool {
     }
 
     async initialize() {
-        this.tool = await symphony.tools.createTool<TripleAddParams, number>({
+        this.tool = await symphony.tools.create({
             name: 'tripleAdd',
             description: 'Adds three numbers together',
-            inputParams: ['num1', 'num2', 'num3'],
-            handler: async (params) => {
+            inputs: ['num1', 'num2', 'num3'],
+            handler: async (params: TripleAddParams) => {
                 try {
                     const result = params.num1 + params.num2 + params.num3;
                     return {

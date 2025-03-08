@@ -1,14 +1,12 @@
 import { symphony } from '../sdk';
+import type { Agent, AgentResult, AgentConfig } from '../sdk';
 import { tripleAddTool } from '../tools/calculator';
-import { Agent, AgentResult } from 'symphonic/types';
-import { SymphonyComponentManager } from '../core/component-manager';
-import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
 
 class CalculatorAgent {
-    private agent: Agent;
+    private agent!: Agent;
 
     constructor() {
-        return SymphonyComponentManager.getInstance().register({
+        return symphony.componentManager.register({
             id: 'calculatorAgent',
             name: 'Calculator Agent',
             type: 'agent',
@@ -16,7 +14,7 @@ class CalculatorAgent {
             version: '1.0.0',
             capabilities: [
                 {
-                    name: CapabilityBuilder.agent('TOOL_USE'),
+                    name: symphony.types.CapabilityBuilder.agent('TOOL_USE'),
                     parameters: {
                         task: { type: 'string', required: true }
                     },
@@ -28,7 +26,7 @@ class CalculatorAgent {
             ],
             requirements: [
                 {
-                    capability: CapabilityBuilder.numeric('ADD'),
+                    capability: symphony.types.CapabilityBuilder.numeric('ADD'),
                     required: true
                 }
             ],
@@ -38,32 +36,18 @@ class CalculatorAgent {
     }
 
     async initialize() {
-        this.agent = await symphony.agent.createAgent({
+        const config: AgentConfig = {
             name: 'calculator',
             description: 'Performs arithmetic calculations',
             task: 'Add three numbers together',
             tools: [tripleAddTool],
-            handler: async (task: string) => {
-                // Extract numbers from the task string
-                const numbers = task.match(/\d+/g)?.map(Number) || [];
-                if (numbers.length < 3) {
-                    throw new Error('Need exactly three numbers to add');
-                }
-                
-                // Use the first three numbers found
-                const result = await tripleAddTool.run({
-                    num1: numbers[0],
-                    num2: numbers[1],
-                    num3: numbers[2]
-                });
-                
-                return {
-                    success: result.success,
-                    result: result.result,
-                    error: result.error
-                };
-            }
-        });
+            llm: symphony.types.DEFAULT_LLM_CONFIG,
+            maxCalls: 10,
+            requireApproval: false,
+            timeout: 30000
+        };
+
+        this.agent = await symphony.agent.create(config);
     }
 
     async run(task: string, options?: { onProgress?: (update: { status: string }) => void }): Promise<AgentResult> {

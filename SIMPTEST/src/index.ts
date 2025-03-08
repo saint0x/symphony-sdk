@@ -1,20 +1,25 @@
-import { symphony, SymphonyComponentManager } from './sdk';
+import { symphony } from './sdk';
 import { tools } from './tools';
 import { agents } from './agents';
 import { teams } from './teams';
 import { pipelines } from './pipelines';
-import { ComponentStatusDetails } from './core/component-manager/types/status';
+import type { ComponentStatusDetails } from './sdk';
+
+interface MetricData {
+    success: boolean;
+    result?: any;
+    error?: string;
+}
 
 async function runExample() {
     console.log('Starting Symphony SDK example...\n');
 
     try {
         // Initialize all components through the component manager
-        const componentManager = SymphonyComponentManager.getInstance();
         console.log('Initializing components...\n');
         
         const startTime = Date.now();
-        await componentManager.initialize();
+        await symphony.componentManager.initialize();
         const initTime = Date.now() - startTime;
         
         console.log(`\nComponent initialization completed in ${initTime}ms`);
@@ -93,19 +98,26 @@ async function runTestScenarios() {
             console.log('  Success!');
             console.log('  Result:', result.result);
             
-            symphony.endMetric(metricId, {
+            const successData: MetricData = {
                 success: true,
                 result: result.result
-            });
+            };
+            symphony.endMetric(metricId, successData);
         } catch (error) {
             console.error('  Failed:', error instanceof Error ? error.message : String(error));
             
-            symphony.endMetric(metricId, {
+            const errorData: MetricData = {
                 success: false,
                 error: error instanceof Error ? error.message : String(error)
-            });
+            };
+            symphony.endMetric(metricId, errorData);
         }
     }
+}
+
+interface DependencyStatus {
+    name: string;
+    status: string;
 }
 
 function printComponentStatus(statuses: Map<string, ComponentStatusDetails>) {
@@ -121,7 +133,7 @@ function printComponentStatus(statuses: Map<string, ComponentStatusDetails>) {
         }
         if (state.dependencies.length > 0) {
             console.log('  Dependencies:');
-            state.dependencies.forEach(dep => {
+            state.dependencies.forEach((dep: DependencyStatus) => {
                 console.log(`    ${dep.name}: ${dep.status}`);
             });
         }

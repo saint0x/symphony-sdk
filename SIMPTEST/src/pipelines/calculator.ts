@@ -1,81 +1,77 @@
 import { symphony } from '../sdk';
-import { tripleAddTool } from '../tools/calculator';
+import type { Pipeline, PipelineResult, PipelineStep } from '../sdk';
+import { calculatorAgent } from '../agents/calculator';
 import { calculatorTeam } from '../teams/calculator';
-import { Pipeline, PipelineResult } from 'symphonic/types';
-import { SymphonyComponentManager } from '../core/component-manager';
-import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
+
+interface StepResult {
+    success: boolean;
+    result: any;
+    error?: string;
+}
 
 class CalculatorPipeline {
-    private pipeline: Pipeline;
+    private pipeline!: Pipeline;
 
     constructor() {
-        return SymphonyComponentManager.getInstance().register({
+        return symphony.componentManager.register({
             id: 'calculatorPipeline',
             name: 'Calculator Pipeline',
             type: 'pipeline',
-            description: 'A pipeline that processes calculations through multiple steps',
+            description: 'A pipeline that coordinates calculator agents and teams',
             version: '1.0.0',
             capabilities: [
                 {
-                    name: CapabilityBuilder.pipeline('SEQUENTIAL'),
+                    name: symphony.types.CapabilityBuilder.processing('SEQUENTIAL'),
                     parameters: {
-                        input: { type: 'object', required: true }
+                        steps: { type: 'array', required: true }
                     },
                     returns: {
                         type: 'object',
-                        description: 'The results of the sequential calculation steps'
+                        description: 'The results of sequential calculations'
                     }
                 }
             ],
             requirements: [
                 {
-                    capability: CapabilityBuilder.team('COORDINATION'),
+                    capability: symphony.types.CapabilityBuilder.agent('TOOL_USE'),
                     required: true
                 },
                 {
-                    capability: CapabilityBuilder.numeric('ADD'),
+                    capability: symphony.types.CapabilityBuilder.team('COORDINATION'),
                     required: true
                 }
             ],
-            provides: ['pipeline.arithmetic', 'pipeline.sequential_processing'],
-            tags: ['math', 'pipeline', 'sequential', 'calculator']
+            provides: ['pipeline.arithmetic', 'pipeline.sequential'],
+            tags: ['math', 'pipeline', 'calculator']
         }, this);
     }
 
     async initialize() {
-        this.pipeline = await symphony.pipeline.createPipeline({
-            name: 'Calculator Pipeline',
-            description: 'A pipeline that processes calculations through multiple steps',
-            steps: [
-                {
-                    id: 'firstAdd',
-                    tool: tripleAddTool,
-                    inputs: {
-                        num1: 10,
-                        num2: 20,
-                        num3: 30
-                    }
-                },
-                {
-                    id: 'teamProcess',
-                    tool: calculatorTeam,
-                    inputs: {
-                        task: 'Process the result from firstAdd'
-                    }
-                },
-                {
-                    id: 'finalAdd',
-                    tool: tripleAddTool,
-                    inputs: {
-                        num1: 60,
-                        num2: 70,
-                        num3: 80
-                    }
+        const steps: PipelineStep[] = [
+            {
+                name: 'Agent Calculation',
+                description: 'Performs a calculation using the calculator agent',
+                tool: calculatorAgent,
+                input: 'Add the numbers 10, 20, and 30',
+                handler: async (input: string) => {
+                    return calculatorAgent.run(input);
                 }
-            ],
-            onStepComplete: (step, result) => {
-                console.log(`Step ${step.id} completed with result:`, result);
+            },
+            {
+                name: 'Team Calculation',
+                description: 'Performs parallel calculations using the calculator team',
+                tool: calculatorTeam,
+                input: 'Calculate (40, 50, 60) and (70, 80, 90) in parallel',
+                handler: async (input: string) => {
+                    return calculatorTeam.run(input);
+                }
             }
+        ];
+
+        this.pipeline = await symphony.pipeline.create({
+            name: 'Calculator Pipeline',
+            description: 'Coordinates calculator components',
+            steps
         });
     }
 

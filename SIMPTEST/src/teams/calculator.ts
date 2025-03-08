@@ -1,15 +1,12 @@
 import { symphony } from '../sdk';
+import type { Team, TeamResult, AgentConfig } from '../sdk';
 import { tripleAddTool } from '../tools/calculator';
-import { Team, TeamResult } from 'symphonic/types';
-import { SymphonyComponentManager } from '../core/component-manager';
-import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
-import { DEFAULT_LLM_CONFIG } from '../core/component-manager/types/config';
 
 class CalculatorTeam {
-    private team: Team;
+    private team!: Team;
 
     constructor() {
-        return SymphonyComponentManager.getInstance().register({
+        return symphony.componentManager.register({
             id: 'calculatorTeam',
             name: 'Calculator Team',
             type: 'team',
@@ -17,7 +14,7 @@ class CalculatorTeam {
             version: '1.0.0',
             capabilities: [
                 {
-                    name: CapabilityBuilder.team('COORDINATION'),
+                    name: symphony.types.CapabilityBuilder.team('COORDINATION'),
                     parameters: {
                         task: { type: 'string', required: true }
                     },
@@ -27,7 +24,7 @@ class CalculatorTeam {
                     }
                 },
                 {
-                    name: CapabilityBuilder.processing('PARALLEL'),
+                    name: symphony.types.CapabilityBuilder.processing('PARALLEL'),
                     parameters: {
                         inputs: { type: 'array', required: true }
                     }
@@ -35,11 +32,11 @@ class CalculatorTeam {
             ],
             requirements: [
                 {
-                    capability: CapabilityBuilder.agent('TOOL_USE'),
+                    capability: symphony.types.CapabilityBuilder.agent('TOOL_USE'),
                     required: true
                 },
                 {
-                    capability: CapabilityBuilder.numeric('ADD'),
+                    capability: symphony.types.CapabilityBuilder.numeric('ADD'),
                     required: true
                 }
             ],
@@ -49,23 +46,21 @@ class CalculatorTeam {
     }
 
     async initialize() {
-        const agentConfig = {
+        const agentConfig: AgentConfig = {
             name: 'calculator',
             description: 'Performs arithmetic calculations',
             task: 'Add three numbers together',
             tools: [tripleAddTool],
-            llm: DEFAULT_LLM_CONFIG
+            llm: symphony.types.DEFAULT_LLM_CONFIG,
+            maxCalls: 10,
+            requireApproval: false,
+            timeout: 30000
         };
 
-        this.team = await symphony.team.createTeam({
+        this.team = await symphony.team.create({
             name: 'Calculator Team',
             description: 'A team of calculator agents that work together to solve complex calculations',
-            agents: [agentConfig],
-            strategy: {
-                type: 'parallel',
-                maxConcurrent: 3,
-                retryAttempts: 2
-            }
+            agents: [agentConfig.name]
         });
     }
 
