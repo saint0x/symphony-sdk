@@ -267,12 +267,34 @@ export class InferenceEngine {
     }
 
     private inferToolDefaults(capabilities: string[]): Partial<ToolPattern> {
-        // For calculator tools, provide default inputs and outputs
+        const defaults = {
+            capabilities: [...capabilities],
+            inputs: [] as string[],
+            outputs: [] as string[]
+        };
+
+        // Infer IO patterns based on capabilities
+        if (capabilities.includes('arithmetic') || capabilities.includes('calculation')) {
+            defaults.inputs = ['input1', 'input2'];  // Generic numeric inputs
+            defaults.outputs = ['result'];  // Generic result output
+            defaults.capabilities.push('numeric-operation');
+        } else if (capabilities.includes('string-manipulation') || capabilities.includes('text-processing')) {
+            defaults.inputs = ['input'];  // Generic single input
+            defaults.outputs = ['result'];  // Generic result output
+            defaults.capabilities.push('text-operation');
+        } else if (capabilities.includes('data-processing')) {
+            defaults.inputs = ['data'];
+            defaults.outputs = ['processed'];
+            defaults.capabilities.push('data-operation');
+        } else if (capabilities.includes('file-operations')) {
+            defaults.inputs = ['path'];
+            defaults.outputs = ['content'];
+            defaults.capabilities.push('io-operation');
+        }
+
         return {
-            inputs: ['a', 'b'],
-            outputs: ['sum'],
-            validation: this.inferValidationRules(capabilities),
-            capabilities: [...capabilities, 'arithmetic', 'calculation']
+            ...defaults,
+            validation: this.inferValidationRules(capabilities)
         };
     }
 

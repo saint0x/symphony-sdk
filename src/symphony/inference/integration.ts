@@ -10,6 +10,7 @@ import { ComponentType } from '../../types/components';
 import { ComponentCapability } from '../../types/metadata';
 import { AgentPattern, ToolPattern, TeamPattern, PipelinePattern } from './types';
 import { InferenceEngine } from './engine';
+import { patternSystem } from './patterns';
 
 /**
  * Symphony inference integration
@@ -58,19 +59,12 @@ export class SymphonyInference {
      * Convert tool config to pattern
      */
     private toToolPattern(config: Partial<ToolConfig>): ToolPattern {
-        // For calculator tools, provide default inputs and outputs
-        const defaults = config.name === 'calculator' ? {
-            inputs: ['a', 'b'],
-            outputs: ['sum']
-        } : {
-            inputs: [],
-            outputs: []
-        };
-
+        const inferredTypes = patternSystem.inferTypes(config);
+        
         return {
             name: config.name || '',
             type: 'tool' as const,
-            capabilities: [],
+            capabilities: inferredTypes.capabilities,
             metadata: {
                 id: config.name || '',
                 name: config.name || '',
@@ -82,8 +76,8 @@ export class SymphonyInference {
                 provides: [],
                 tags: []
             },
-            inputs: config.inputs || defaults.inputs,
-            outputs: config.outputs || defaults.outputs,
+            inputs: config.inputs || inferredTypes.inputs,
+            outputs: config.outputs || inferredTypes.outputs,
             validation: config.validation
         };
     }
@@ -163,37 +157,26 @@ export class SymphonyInference {
      * Convert pattern to tool config
      */
     private fromToolPattern(pattern: ToolPattern): ToolConfig {
+        const detectedPattern = patternSystem.detectPattern({
+            name: pattern.name,
+            inputs: pattern.inputs,
+            outputs: pattern.outputs
+        });
+
+        const implementation = detectedPattern 
+            ? patternSystem.getImplementation(detectedPattern.name)
+            : undefined;
+
         return {
             name: pattern.name,
-            description: pattern.metadata?.description || 'A simple calculator',
+            description: pattern.metadata?.description || `A ${pattern.name} tool`,
             inputs: pattern.inputs || [],
             outputs: pattern.outputs || [],
-            handler: async (params: any) => {
-                try {
-                    if (pattern.name === 'calculator') {
-                        const { a, b } = params;
-                        if (typeof a !== 'number' || typeof b !== 'number') {
-                            throw new Error('Both inputs must be numbers');
-                        }
-                        return {
-                            success: true,
-                            result: { sum: a + b },
-                            error: undefined
-                        };
-                    }
-                    return {
-                        success: true,
-                        result: {},
-                        error: undefined
-                    };
-                } catch (error) {
-                    return {
-                        success: false,
-                        result: undefined,
-                        error: error instanceof Error ? error : new Error(String(error))
-                    };
-                }
-            },
+            handler: implementation?.handler || (async () => ({
+                success: true,
+                result: {},
+                error: undefined
+            })),
             validation: pattern.validation
         };
     }
