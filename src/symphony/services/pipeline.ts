@@ -1,12 +1,15 @@
-import { BaseService } from './base';
-import { PipelineConfig, PipelineStep, ToolConfig } from '../../types/sdk';
-import { Pipeline } from '../../types/components';
 import { ISymphony } from '../interfaces/types';
+import { BaseManager } from '../../managers/base';
+import { PipelineConfig } from '../../types/sdk';
 import { assertString } from '../../utils/validation';
+import { ToolService } from '../../services/tool';
 
-export class PipelineService extends BaseService {
+export class PipelineService extends BaseManager {
+    private toolService: ToolService;
+
     constructor(symphony: ISymphony) {
-        super(symphony, 'PipelineService');
+        super(symphony as any, 'PipelineService');
+        this.toolService = new ToolService(symphony);
     }
 
     async initialize(): Promise<void> {
@@ -16,104 +19,97 @@ export class PipelineService extends BaseService {
         }
 
         await this.initializeInternal();
+        await this.toolService.initialize();
         this.initialized = true;
         this.logInfo('Initialization complete');
     }
 
-    async createPipeline(config: PipelineConfig): Promise<Pipeline> {
+    async createPipeline(config: PipelineConfig): Promise<any> {
         this.assertInitialized();
         return this.withErrorHandling('createPipeline', async () => {
-            const validation = await this.symphony.utils.validation.validateConfig(config, {
-                name: { type: 'string', required: true },
-                description: { type: 'string', required: true },
-                steps: { type: 'array', required: true }
-            });
+            const validation = await this.symphony.validation.validate(config, 'PipelineConfig');
             if (!validation.isValid) {
                 throw new Error(`Invalid pipeline configuration: ${validation.errors.join(', ')}`);
             }
 
-            const registry = await this.symphony.getRegistry();
-            if (!registry) {
-                throw new Error('Service registry is not available');
-            }
-
-            const pipeline: Pipeline = {
+            const pipeline = {
                 ...config,
                 run: async (input?: any) => {
-                    const metricId = `pipeline_${config.name}_execute_${Date.now()}`;
-                    this.symphony.utils.metrics.start(metricId, { pipelineName: config.name, input });
+                    const metricId = `pipeline_${config.name}_run_${Date.now()}`;
+                    this.symphony.startMetric(metricId, { pipelineName: config.name, input });
 
                     try {
-                        let context = input || {};
-                        let result = null;
+                        let currentInput = input;
+                        const stepResults = [];
 
                         for (const step of config.steps) {
-                            const tool = typeof step.tool === 'string' 
-                                ? await registry.getTool(step.tool)
-                                : await this.symphony.tools.create({
-                                    name: step.name,
-                                    description: step.description,
-                                    inputs: Object.keys(step.expects),
-                                    handler: async (params: any) => {
-                                        const toolConfig = step.tool as ToolConfig;
-                                        const result = await toolConfig.handler(params);
-                                        return {
-                                            success: true,
-                                            result: result
-                                        };
+                            const stepMetricId = `step_${step.name}_${Date.now()}`;
+                            this.symphony.startMetric(stepMetricId, {
+                                stepId: step.name,
+                                input: currentInput
+                            });
+
+                            try {
+                                // Get step input
+                                const stepInput = typeof step.inputMap === 'function'
+                                    ? await step.inputMap(currentInput)
+                                    : step.inputMap || currentInput;
+
+                                // Run step
+                                const result = await (async () => {
+                                    if (typeof step.tool === 'string') {
+                                        return await this.toolService.createTool({
+                                            name: step.name,
+                                            description: step.description,
+                                            inputs: Object.keys(step.expects),
+                                            handler: async () => {
+                                                const result = await step.tool;
+                                                return { result };
+                                            }
+                                        });
+                                    } else {
+                                        return await this.toolService.createTool(step.tool);
                                     }
+                                })();
+
+                                if (!result || typeof result !== 'object' || !('run' in result)) {
+                                    throw new Error(`Invalid tool created for step: ${step.name}`);
+                                }
+
+                                const toolResult = await result.run(stepInput);
+                                stepResults.push({
+                                    stepId: step.name,
+                                    result: toolResult.result
                                 });
 
-                            if (!tool) {
-                                throw new Error(`Tool not found: ${typeof step.tool === 'string' ? step.tool : step.name}`);
+                                // Update current input for next step
+                                currentInput = toolResult.result;
+
+                                this.symphony.endMetric(stepMetricId, {
+                                    success: true,
+                                    result: toolResult.result
+                                });
+                            } catch (error) {
+                                this.symphony.endMetric(stepMetricId, {
+                                    success: false,
+                                    error: error instanceof Error ? error.message : String(error)
+                                });
+                                throw error;
                             }
-
-                            const stepInput = step.inputMap 
-                                ? (typeof step.inputMap === 'function' 
-                                    ? await step.inputMap(context)
-                                    : step.inputMap)
-                                : context;
-
-                            const stepResult = await tool.run(stepInput);
-                            if (!stepResult.success) {
-                                if (config.onError) {
-                                    const { retry, delay } = await config.onError(
-                                        stepResult.error || new Error('Step failed'),
-                                        { step, context }
-                                    );
-                                    if (retry) {
-                                        if (delay) {
-                                            await new Promise(resolve => setTimeout(resolve, delay));
-                                        }
-                                        continue;
-                                    }
-                                }
-                                throw stepResult.error || new Error('Step failed');
-                            }
-
-                            context = {
-                                ...context,
-                                [step.name]: stepResult.result
-                            };
-                            result = stepResult.result;
                         }
 
-                        this.symphony.utils.metrics.end(metricId, {
+                        this.symphony.endMetric(metricId, {
                             success: true,
-                            result
+                            stepResults
                         });
 
                         return {
                             success: true,
-                            result,
-                            metrics: {
-                                duration: Date.now() - parseInt(metricId.split('_').pop()!),
-                                startTime: parseInt(metricId.split('_').pop()!),
-                                endTime: Date.now()
-                            }
+                            result: currentInput,
+                            stepResults
                         };
                     } catch (error) {
-                        this.symphony.utils.metrics.end(metricId, {
+                        this.symphony.endMetric(metricId, {
                             success: false,
                             error: error instanceof Error ? error.message : String(error)
                         });
@@ -122,13 +118,12 @@ export class PipelineService extends BaseService {
                 }
             };
 
-            registry.registerPipeline(config.name, pipeline);
             this.logInfo(`Created pipeline: ${config.name}`);
             return pipeline;
         }, { pipelineName: config.name });
     }
 
-    async loadPipeline(path: string): Promise<Pipeline> {
+    async loadPipeline(path: string): Promise<any> {
         this.assertInitialized();
         assertString(path, 'path');
 
@@ -138,7 +133,7 @@ export class PipelineService extends BaseService {
         }, { path });
     }
 
-    async loadPipelineFromString(configStr: string): Promise<Pipeline> {
+    async loadPipelineFromString(configStr: string): Promise<any> {
         this.assertInitialized();
         assertString(configStr, 'configStr');
 

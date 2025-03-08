@@ -1,7 +1,4 @@
-import { ToolConfig, AgentConfig, TeamConfig, PipelineConfig } from '../../types/sdk';
-import { globalMetrics } from '../../utils/metrics';
-import { logger } from '../../utils/logger';
-import { validateConfig } from '../../utils/validation';
+import { LogLevel } from '../../types/sdk';
 
 export interface SymphonyConfig {
     serviceRegistry: {
@@ -19,14 +16,31 @@ export interface SymphonyConfig {
     };
 }
 
-export interface SymphonyUtils {
-    metrics: typeof globalMetrics;
-    logger: typeof logger;
-    validation: {
-        validateConfig: typeof validateConfig;
-        validateInput: typeof validateConfig;
-        validateOutput: typeof validateConfig;
-    };
+export interface GlobalMetrics {
+    startTime: number;
+    start(id: string, metadata?: Record<string, any>): void;
+    end(id: string, metadata?: Record<string, any>): void;
+    get(id: string): Record<string, any> | undefined;
+    update(id: string, metadata: Record<string, any>): void;
+    getAll(): Record<string, any>;
+}
+
+export interface TeamConfig {
+    name: string;
+    description: string;
+    agents: string[];
+}
+
+export interface PipelineConfig {
+    name: string;
+    description: string;
+    steps: PipelineStep[];
+}
+
+export interface PipelineStep {
+    name: string;
+    description: string;
+    handler: (params: any) => Promise<any>;
 }
 
 export interface ToolResult<T = any> {
@@ -71,27 +85,33 @@ export interface Agent {
     run(task: string, options?: AgentOptions): Promise<AgentResult>;
 }
 
+export interface SymphonyUtils {
+    validation: {
+        validate(data: any, schema: string): Promise<{ isValid: boolean; errors: string[] }>;
+    };
+    metrics: {
+        start(id: string, metadata?: Record<string, any>): void;
+        end(id: string, metadata?: Record<string, any>): void;
+        get(id: string): Record<string, any> | undefined;
+    };
+}
+
 export interface ISymphony {
-    metrics: typeof globalMetrics;
-    startTime: number;
-    utils: SymphonyUtils;
-    getRegistry(): Promise<any>;
-    getConfig(): SymphonyConfig;
-    updateConfig(config: Partial<SymphonyConfig>): void;
     tools: {
-        create<P = any, R = any>(config: {
+        create(config: {
             name: string;
             description: string;
             inputs: string[];
-            handler: (params: P) => Promise<ToolResult<R>>;
-        }): Tool<P, R>;
+            handler: (params: any) => Promise<any>;
+        }): any;
+        initialize(): Promise<void>;
     };
     agent: {
         create(config: {
             name: string;
             description: string;
             task: string;
-            tools: Tool[];
+            tools: any[];
             llm: {
                 provider: string;
                 model: string;
@@ -101,12 +121,25 @@ export interface ISymphony {
             maxCalls?: number;
             requireApproval?: boolean;
             timeout?: number;
-        }): Agent;
+        }): any;
+        initialize(): Promise<void>;
     };
     team: {
         create: (config: TeamConfig) => Promise<any>;
+        initialize(): Promise<void>;
     };
     pipeline: {
         create: (config: PipelineConfig) => Promise<any>;
+        initialize(): Promise<void>;
     };
+    metrics: GlobalMetrics;
+    validation: any;
+    components: any;
+    utils: SymphonyUtils;
+    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
+    getRegistry(): Promise<any>;
+    isInitialized(): boolean;
+    startMetric(id: string, metadata?: Record<string, any>): void;
+    endMetric(id: string, metadata?: Record<string, any>): void;
+    getMetric(id: string): Record<string, any> | undefined;
 } 

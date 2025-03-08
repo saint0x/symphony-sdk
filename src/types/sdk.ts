@@ -19,10 +19,8 @@ export interface ToolConfig extends ServiceBaseConfig {
 }
 
 export interface ToolResult {
-    success: boolean;
-    result?: any;
-    error?: Error;
-    metrics?: ExecutionMetrics;
+    result: any;
+    error?: string;
 }
 
 export interface RetryConfig {
@@ -71,6 +69,10 @@ export interface AgentConfig extends ServiceBaseConfig {
     requireApproval?: boolean;
     timeout?: number;
     memory?: MemoryConfig;
+    name: string;
+    description: string;
+    capabilities: string[];
+    handler: (params: any) => Promise<any>;
 }
 
 export interface LLMConfig {
@@ -147,11 +149,10 @@ export interface ExecutionMetrics {
 
 // Logging types
 export enum LogLevel {
-    SILENT = 0,
-    NORMAL = 1,
-    VERBOSE = 2,
-    DEBUG = 3,
-    ERROR = 4
+    DEBUG = 'debug',
+    NORMAL = 'info',
+    VERBOSE = 'warn',
+    ERROR = 'error'
 }
 
 export interface LogEntry {
@@ -222,4 +223,16 @@ export interface PipelineStep {
         validateOutput?: (output: any) => boolean;
         customValidation?: (context: any) => Promise<boolean>;
     };
+}
+
+export interface ComponentCapability {
+    name: string;
+    description: string;
+    version: string;
+}
+
+export interface ComponentRequirement {
+    capability: string;
+    version: string;
+    optional?: boolean;
 } 

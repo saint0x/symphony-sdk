@@ -5,8 +5,6 @@ import {
     Component,
     ComponentMetadata,
     ComponentInstance,
-    ComponentCapability,
-    ComponentRequirement,
     CapabilityBuilder,
     CommonCapabilities,
     ComponentPath

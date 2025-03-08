@@ -1,9 +1,7 @@
 import {
     Component,
     ComponentMetadata,
-    ComponentInstance,
-    ComponentCapability,
-    ComponentRequirement
+    ComponentInstance
 } from '../types/metadata';
 import { BaseManager } from './base';
 

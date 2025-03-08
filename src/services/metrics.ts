@@ -11,9 +11,11 @@ export interface MetricData {
 
 export class MetricsService {
     private metrics: Map<string, MetricData>;
+    readonly startTime: number;
 
     constructor() {
         this.metrics = new Map();
+        this.startTime = Date.now();
     }
 
     start(metricId: string, metadata?: Record<string, any>): void {
@@ -60,15 +62,35 @@ export class MetricsService {
         return this.metrics.get(metricId);
     }
 
+    update(metricId: string, metadata: Record<string, any>): void {
+        const metric = this.metrics.get(metricId);
+        if (!metric) {
+            logger.warn(LogCategory.METRICS, `Attempted to update non-existent metric: ${metricId}`);
+            return;
+        }
+
+        this.metrics.set(metricId, {
+            ...metric,
+            ...metadata
+        });
+
+        logger.debug(LogCategory.METRICS, `Updated metric: ${metricId}`, {
+            metadata: {
+                metricId,
+                ...metadata
+            }
+        });
+    }
+
+    getAll(): Record<string, MetricData> {
+        return Object.fromEntries(this.metrics);
+    }
+
     clear(metricId: string): void {
         this.metrics.delete(metricId);
     }
 
     clearAll(): void {
         this.metrics.clear();
-    }
-
-    getMetrics(): Record<string, MetricData> {
-        return Object.fromEntries(this.metrics);
     }
 } 

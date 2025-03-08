@@ -1,6 +1,6 @@
 import { BaseManager } from './base';
 import { Symphony } from '../symphony/core/symphony';
-import { TeamConfig } from '../../types/sdk';
+import { TeamConfig } from '../types/sdk';
 import { ValidationManager } from './validation';
 
 export class TeamManager extends BaseManager {

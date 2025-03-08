@@ -1,12 +1,11 @@
-import { BaseService } from './base';
-import { ToolConfig, ToolResult } from '../../types/sdk';
-import { Tool } from '../../types/components';
 import { ISymphony } from '../interfaces/types';
+import { BaseManager } from '../../managers/base';
+import { Tool } from '../../types/components';
 import { assertString } from '../../utils/validation';
 
-export class ToolService extends BaseService {
+export class ToolService extends BaseManager {
     constructor(symphony: ISymphony) {
-        super(symphony, 'ToolService');
+        super(symphony as any, 'ToolService');
     }
 
     async initialize(): Promise<void> {
@@ -20,20 +19,10 @@ export class ToolService extends BaseService {
         this.logInfo('Initialization complete');
     }
 
-    async create(config: {
-        name: string;
-        description: string;
-        inputs: string[];
-        handler: (params: any) => Promise<ToolResult>;
-    }): Promise<Tool> {
+    async createTool(config: any): Promise<Tool> {
         this.assertInitialized();
         return this.withErrorHandling('createTool', async () => {
-            const validation = await this.symphony.utils.validation.validateConfig(config, {
-                name: { type: 'string', required: true },
-                description: { type: 'string', required: true },
-                inputs: { type: 'array', required: true },
-                handler: { type: 'function', required: true }
-            });
+            const validation = await this.symphony.validation.validate(config, 'ToolConfig');
             if (!validation.isValid) {
                 throw new Error(`Invalid tool configuration: ${validation.errors.join(', ')}`);
             }
@@ -43,21 +32,21 @@ export class ToolService extends BaseService {
                 throw new Error('Service registry is not available');
             }
 
-            const tool: Tool = {
+            const tool = {
                 ...config,
                 run: async (params: any) => {
                     const metricId = `tool_${config.name}_run_${Date.now()}`;
-                    this.symphony.utils.metrics.start(metricId, { toolName: config.name, params });
+                    this.symphony.startMetric(metricId, { toolName: config.name, params });
 
                     try {
                         const result = await config.handler(params);
-                        this.symphony.utils.metrics.end(metricId, {
+                        this.symphony.endMetric(metricId, {
                             success: true,
                             result: result.result
                         });
                         return result;
                     } catch (error) {
-                        this.symphony.utils.metrics.end(metricId, {
+                        this.symphony.endMetric(metricId, {
                             success: false,
                             error: error instanceof Error ? error.message : String(error)
                         });
@@ -78,7 +67,7 @@ export class ToolService extends BaseService {
 
         return this.withErrorHandling('loadTool', async () => {
             const config = await import(path);
-            return this.create(config);
+            return this.createTool(config);
         }, { path });
     }
 
@@ -88,7 +77,7 @@ export class ToolService extends BaseService {
 
         return this.withErrorHandling('loadToolFromString', async () => {
             const config = JSON.parse(configStr);
-            return this.create(config);
+            return this.createTool(config);
         }, { configStr });
     }
 } 
