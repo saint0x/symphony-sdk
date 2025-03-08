@@ -1,10 +1,12 @@
-import { ISymphony } from './interfaces';
+import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from '../managers/base';
 import { IToolService } from './interfaces';
 
 export class ToolService extends BaseManager implements IToolService {
     constructor(symphony: ISymphony) {
-        super(symphony as any, 'ToolService');
+        super(symphony, 'ToolService');
+        this.addDependency(symphony.validation);
+        this.addDependency(symphony.components);
     }
 
     async create(config: {
@@ -14,17 +16,6 @@ export class ToolService extends BaseManager implements IToolService {
         handler: (params: any) => Promise<any>;
     }): Promise<any> {
         return this.createTool(config);
-    }
-
-    async initialize(): Promise<void> {
-        if (this.initialized) {
-            this.logInfo('Already initialized');
-            return;
-        }
-
-        await this.initializeInternal();
-        this.initialized = true;
-        this.logInfo('Initialization complete');
     }
 
     async createTool(config: any): Promise<any> {
@@ -67,5 +58,9 @@ export class ToolService extends BaseManager implements IToolService {
             this.logInfo(`Created tool: ${config.name}`);
             return tool;
         }, { toolName: config.name });
+    }
+
+    protected async initializeInternal(): Promise<void> {
+        // No additional initialization needed
     }
 } 

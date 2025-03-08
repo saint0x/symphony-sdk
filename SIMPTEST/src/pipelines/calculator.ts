@@ -11,6 +11,7 @@ interface StepResult {
 
 class CalculatorPipeline {
     private pipeline!: Pipeline;
+    private initialized: boolean = false;
 
     constructor() {
         return symphony.componentManager.register({
@@ -47,6 +48,17 @@ class CalculatorPipeline {
     }
 
     async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Ensure pipeline service and dependencies are initialized
+        await Promise.all([
+            symphony.pipeline.initialize(),
+            calculatorAgent.initialize(),
+            calculatorTeam.initialize()
+        ]);
+
         const steps: PipelineStep[] = [
             {
                 name: 'Agent Calculation',
@@ -73,9 +85,14 @@ class CalculatorPipeline {
             description: 'Coordinates calculator components',
             steps
         });
+
+        this.initialized = true;
     }
 
     async run(): Promise<PipelineResult> {
+        if (!this.initialized || !this.pipeline) {
+            await this.initialize();
+        }
         return this.pipeline.run();
     }
 }

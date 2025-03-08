@@ -3,6 +3,7 @@ import { ISymphony } from '../symphony/interfaces/types';
 
 export abstract class BaseManager {
     protected initialized: boolean = false;
+    protected dependencies: BaseManager[] = [];
 
     protected constructor(
         protected symphony: ISymphony,
@@ -15,9 +16,23 @@ export abstract class BaseManager {
             return;
         }
 
+        // Initialize dependencies first
+        if (this.dependencies.length > 0) {
+            this.logInfo('Initializing dependencies...');
+            for (const dep of this.dependencies) {
+                await dep.initialize();
+            }
+        }
+
         await this.initializeInternal();
         this.initialized = true;
         this.logInfo('Initialization complete');
+    }
+
+    protected addDependency(manager: BaseManager): void {
+        if (!this.dependencies.includes(manager)) {
+            this.dependencies.push(manager);
+        }
     }
 
     protected async initializeInternal(): Promise<void> {

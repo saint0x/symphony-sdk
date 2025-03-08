@@ -4,6 +4,7 @@ import { tripleAddTool } from '../tools/calculator';
 
 class CalculatorAgent {
     private agent!: Agent;
+    private initialized: boolean = false;
 
     constructor() {
         return symphony.componentManager.register({
@@ -36,6 +37,16 @@ class CalculatorAgent {
     }
 
     async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Ensure agent service and tool are initialized
+        await Promise.all([
+            symphony.agent.initialize(),
+            tripleAddTool.initialize()
+        ]);
+
         const config: AgentConfig = {
             name: 'calculator',
             description: 'Performs arithmetic calculations',
@@ -48,9 +59,13 @@ class CalculatorAgent {
         };
 
         this.agent = await symphony.agent.create(config);
+        this.initialized = true;
     }
 
     async run(task: string, options?: { onProgress?: (update: { status: string }) => void }): Promise<AgentResult> {
+        if (!this.initialized || !this.agent) {
+            await this.initialize();
+        }
         return this.agent.run(task, options);
     }
 }

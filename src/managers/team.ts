@@ -1,18 +1,24 @@
+import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from './base';
-import { Symphony } from '../symphony/core/symphony';
 import { TeamConfig } from '../types/sdk';
 import { ValidationManager } from './validation';
+import { ITeamService } from '../services/interfaces';
 
-export class TeamManager extends BaseManager {
+export class TeamManager extends BaseManager implements ITeamService {
     private static instance: TeamManager;
     private validationManager: ValidationManager;
 
-    private constructor(symphony: Symphony) {
+    protected constructor(symphony: ISymphony) {
         super(symphony, 'TeamManager');
         this.validationManager = ValidationManager.getInstance(symphony);
+        // Add dependencies
+        this.addDependency(symphony.validation);
+        this.addDependency(symphony.components);
+        this.addDependency(symphony.tools);
+        this.addDependency(symphony.agent);
     }
 
-    static getInstance(symphony: Symphony): TeamManager {
+    static getInstance(symphony: ISymphony): TeamManager {
         if (!TeamManager.instance) {
             TeamManager.instance = new TeamManager(symphony);
         }
@@ -20,11 +26,14 @@ export class TeamManager extends BaseManager {
     }
 
     protected async initializeInternal(): Promise<void> {
-        // Ensure validation manager is initialized
-        await this.validationManager.initialize();
+        // No additional initialization needed
     }
 
-    async createTeam(config: TeamConfig): Promise<any> {
+    async create(config: TeamConfig): Promise<any> {
+        return this.createTeam(config);
+    }
+
+    private async createTeam(config: TeamConfig): Promise<any> {
         this.assertInitialized();
         return this.withErrorHandling('createTeam', async () => {
             // Validate configuration

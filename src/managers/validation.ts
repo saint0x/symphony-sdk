@@ -1,8 +1,7 @@
+import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from './base';
-import { Symphony } from '../symphony/core/symphony';
-import { ValidationError } from '../utils/validation';
 
-export type ValidationSchema = {
+interface ValidationSchema {
     type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'function';
     required?: boolean;
     arrayOf?: ValidationSchema;
@@ -10,29 +9,34 @@ export type ValidationSchema = {
     oneOf?: ValidationSchema[];
     validate?: (value: any) => boolean;
     description?: string;
-};
+}
 
 export interface ValidationResult {
     isValid: boolean;
     errors: string[];
 }
 
-export class ValidationManager extends BaseManager {
+export interface IValidationManager extends BaseManager {
+    validate(data: any, schemaName: string): Promise<ValidationResult>;
+    registerSchema(name: string, schema: ValidationSchema): void;
+}
+
+export class ValidationManager extends BaseManager implements IValidationManager {
     private static instance: ValidationManager;
     private schemas: Map<string, ValidationSchema>;
 
-    private constructor(symphony: Symphony) {
-        super(symphony, 'ValidationManager');
+    protected constructor(symphony: ISymphony) {
+        super(symphony as any, 'ValidationManager');
         this.schemas = new Map();
         this.initialized = true; // ValidationManager is ready upon construction
         this.initializeSchemas();
     }
 
-    static getInstance(symphony: Symphony): ValidationManager {
-        if (!ValidationManager.instance) {
-            ValidationManager.instance = new ValidationManager(symphony);
+    static getInstance(symphony: ISymphony): ValidationManager {
+        if (!this.instance) {
+            this.instance = new ValidationManager(symphony);
         }
-        return ValidationManager.instance;
+        return this.instance;
     }
 
     protected async initializeInternal(): Promise<void> {
@@ -153,26 +157,24 @@ export class ValidationManager extends BaseManager {
         this.logInfo(`Registered schema: ${name}`);
     }
 
-    async validate(config: any, schemaName: string): Promise<ValidationResult> {
-        return this.withErrorHandling('validate', async () => {
-            const schema = this.schemas.get(schemaName);
-            if (!schema) {
-                throw new ValidationError(`Schema not found: ${schemaName}`);
-            }
+    async validate(data: any, schemaName: string): Promise<ValidationResult> {
+        const schema = this.schemas.get(schemaName);
+        if (!schema) {
+            throw new Error(`Schema not found: ${schemaName}`);
+        }
 
-            const errors: string[] = [];
-            this.validateAgainstSchema(config, schema, '', errors);
+        const errors: string[] = [];
+        this.validateAgainstSchema(data, schema, '', errors);
 
-            return {
-                isValid: errors.length === 0,
-                errors
-            };
-        }, { schemaName });
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
     }
 
     private validateAgainstSchema(value: any, schema: ValidationSchema, path: string, errors: string[]): void {
         if (schema.required && (value === undefined || value === null)) {
-            errors.push(`${path || 'value'} is required`);
+            errors.push(`${path} is required`);
             return;
         }
 
@@ -180,51 +182,66 @@ export class ValidationManager extends BaseManager {
             return;
         }
 
-        const fullPath = path ? path : 'value';
-
-        switch (schema.type) {
-            case 'array':
-                if (!Array.isArray(value)) {
-                    errors.push(`${fullPath} must be an array`);
-                    return;
-                }
-                if (schema.arrayOf) {
-                    value.forEach((item, index) => {
-                        this.validateAgainstSchema(item, schema.arrayOf!, `${fullPath}[${index}]`, errors);
-                    });
-                }
-                break;
-
-            case 'object':
-                if (typeof value !== 'object' || Array.isArray(value)) {
-                    errors.push(`${fullPath} must be an object`);
-                    return;
-                }
-                if (schema.properties) {
-                    Object.entries(schema.properties).forEach(([key, propSchema]) => {
-                        this.validateAgainstSchema(value[key], propSchema, `${fullPath}.${key}`, errors);
-                    });
-                }
-                if (schema.oneOf) {
-                    const validAny = schema.oneOf.some(subSchema => {
-                        const subErrors: string[] = [];
-                        this.validateAgainstSchema(value, subSchema, fullPath, subErrors);
-                        return subErrors.length === 0;
-                    });
-                    if (!validAny) {
-                        errors.push(`${fullPath} does not match any allowed schemas`);
-                    }
-                }
-                break;
-
-            default:
-                if (typeof value !== schema.type) {
-                    errors.push(`${fullPath} must be of type ${schema.type}`);
-                }
+        if (schema.type === 'string') {
+            if (typeof value !== 'string') {
+                errors.push(`${path} must be a string`);
+            }
+        } else if (schema.type === 'number') {
+            if (typeof value !== 'number') {
+                errors.push(`${path} must be a number`);
+            }
+        } else if (schema.type === 'boolean') {
+            if (typeof value !== 'boolean') {
+                errors.push(`${path} must be a boolean`);
+            }
+        } else if (schema.type === 'object') {
+            if (typeof value !== 'object' || value === null) {
+                errors.push(`${path} must be an object`);
+            }
+        } else if (schema.type === 'array') {
+            if (!Array.isArray(value)) {
+                errors.push(`${path} must be an array`);
+            }
+        } else if (schema.type === 'function') {
+            if (typeof value !== 'function') {
+                errors.push(`${path} must be a function`);
+            }
         }
 
-        if (schema.validate && !schema.validate(value)) {
-            errors.push(`${fullPath} failed custom validation`);
+        if (schema.arrayOf && Array.isArray(value)) {
+            value.forEach((item: any, index: number) => {
+                this.validateAgainstSchema(item, schema.arrayOf!, `${path}[${index}]`, errors);
+            });
+        }
+
+        if (schema.properties && typeof value === 'object' && value !== null) {
+            for (const prop in schema.properties) {
+                if (prop in value) {
+                    this.validateAgainstSchema(value[prop], schema.properties[prop], `${path}.${prop}`, errors);
+                } else if (schema.properties[prop].required) {
+                    errors.push(`${path}.${prop} is required`);
+                }
+            }
+        }
+
+        if (schema.oneOf) {
+            let isValid = false;
+            schema.oneOf.forEach((subSchema: ValidationSchema) => {
+                const subErrors: string[] = [];
+                this.validateAgainstSchema(value, subSchema, path, subErrors);
+                if (subErrors.length === 0) {
+                    isValid = true;
+                }
+            });
+            if (!isValid) {
+                errors.push(`${path} must match one of the following: ${schema.oneOf.map(s => s.description || '').join(', ')}`);
+            }
+        }
+
+        if (schema.validate) {
+            if (!schema.validate(value)) {
+                errors.push(`${path} does not pass validation`);
+            }
         }
     }
-} 
+}

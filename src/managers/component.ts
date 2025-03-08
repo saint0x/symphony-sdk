@@ -1,4 +1,4 @@
-import { symphony } from '../symphony';
+import type { Symphony } from '../symphony';
 import { ComponentRegistry } from './registry';
 import { BaseManager } from './base';
 import { 
@@ -13,6 +13,7 @@ import {
 export class ComponentManager extends BaseManager {
     private static instance: ComponentManager;
     private registry: ComponentRegistry;
+    private _symphony: Symphony | null = null;
 
     protected constructor() {
         super(null as any, 'ComponentManager');
@@ -26,6 +27,10 @@ export class ComponentManager extends BaseManager {
         return this.instance;
     }
 
+    setSymphony(symphony: Symphony): void {
+        this._symphony = symphony;
+    }
+
     /**
      * Register a component with automatic capability discovery
      */
@@ -33,7 +38,10 @@ export class ComponentManager extends BaseManager {
         metadata: ComponentMetadata,
         instance: T
     ): Promise<T> {
-        this.assertInitialized();
+        if (!this._symphony) {
+            throw new Error('ComponentManager must be initialized with Symphony instance');
+        }
+        
         await this.registry.register(metadata, instance);
 
         // Create a proxy to handle method calls with automatic routing
@@ -85,22 +93,15 @@ export class ComponentManager extends BaseManager {
     }
 
     protected async initializeInternal(): Promise<void> {
-        // Initialize core services
-        await symphony.initialize();
-        
+        if (!this._symphony) {
+            throw new Error('ComponentManager must be initialized with Symphony instance');
+        }
+
         // Initialize registry
         await this.registry.initialize();
         
-        // Initialize core services in parallel
-        await Promise.all([
-            symphony.tools.initialize(),
-            symphony.agent.initialize(),
-            symphony.team.initialize(),
-            symphony.pipeline.initialize()
-        ]);
-
         // Initialize registry last to ensure all services are ready
-        const registry = await symphony.getRegistry();
+        const registry = await this._symphony.getRegistry();
         if (registry) {
             await registry.initialize();
         }

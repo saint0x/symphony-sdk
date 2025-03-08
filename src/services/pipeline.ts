@@ -1,10 +1,16 @@
-import { ISymphony } from './interfaces';
+import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from '../managers/base';
 import { IPipelineService } from './interfaces';
 
 export class PipelineService extends BaseManager implements IPipelineService {
     constructor(symphony: ISymphony) {
-        super(symphony as any, 'PipelineService');
+        super(symphony, 'PipelineService');
+        // Add dependencies
+        this.addDependency(symphony.validation);
+        this.addDependency(symphony.components);
+        this.addDependency(symphony.tools);
+        this.addDependency(symphony.agent);
+        this.addDependency(symphony.team);
     }
 
     async create(config: {
@@ -17,17 +23,6 @@ export class PipelineService extends BaseManager implements IPipelineService {
         }[];
     }): Promise<any> {
         return this.createPipeline(config);
-    }
-
-    async initialize(): Promise<void> {
-        if (this.initialized) {
-            this.logInfo('Already initialized');
-            return;
-        }
-
-        await this.initializeInternal();
-        this.initialized = true;
-        this.logInfo('Initialization complete');
     }
 
     async createPipeline(config: any): Promise<any> {
@@ -107,5 +102,9 @@ export class PipelineService extends BaseManager implements IPipelineService {
             this.logInfo(`Created pipeline: ${config.name}`);
             return pipeline;
         }, { pipelineName: config.name });
+    }
+
+    protected async initializeInternal(): Promise<void> {
+        // No additional initialization needed
     }
 } 

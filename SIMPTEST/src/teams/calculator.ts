@@ -4,6 +4,7 @@ import { tripleAddTool } from '../tools/calculator';
 
 class CalculatorTeam {
     private team!: Team;
+    private initialized: boolean = false;
 
     constructor() {
         return symphony.componentManager.register({
@@ -22,21 +23,11 @@ class CalculatorTeam {
                         type: 'object',
                         description: 'The results of parallel calculations'
                     }
-                },
-                {
-                    name: symphony.types.CapabilityBuilder.processing('PARALLEL'),
-                    parameters: {
-                        inputs: { type: 'array', required: true }
-                    }
                 }
             ],
             requirements: [
                 {
                     capability: symphony.types.CapabilityBuilder.agent('TOOL_USE'),
-                    required: true
-                },
-                {
-                    capability: symphony.types.CapabilityBuilder.numeric('ADD'),
                     required: true
                 }
             ],
@@ -46,6 +37,16 @@ class CalculatorTeam {
     }
 
     async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Ensure team service and tool are initialized
+        await Promise.all([
+            symphony.team.initialize(),
+            tripleAddTool.initialize()
+        ]);
+
         const agentConfig: AgentConfig = {
             name: 'calculator',
             description: 'Performs arithmetic calculations',
@@ -62,9 +63,14 @@ class CalculatorTeam {
             description: 'A team of calculator agents that work together to solve complex calculations',
             agents: [agentConfig.name]
         });
+
+        this.initialized = true;
     }
 
     async run(task: string, options?: { onProgress?: (update: { status: string }) => void }): Promise<TeamResult> {
+        if (!this.initialized || !this.team) {
+            await this.initialize();
+        }
         return this.team.run(task, options);
     }
 }

@@ -1,31 +1,53 @@
 import { BaseManager } from '../managers/base';
 import { ISymphony as CoreSymphony } from '../symphony/interfaces/types';
 
-export interface ISymphony {
-    validation: any;
-    team: any;
-    metrics: any;
-    tools: any;
-    agent: any;
-    pipeline: any;
-    components: any;
+export interface ISymphony extends BaseManager {
+    readonly tools: IToolService;
+    readonly agent: IAgentService;
+    readonly team: ITeamService;
+    readonly pipeline: IPipelineService;
+    readonly components: BaseManager;
+    readonly validation: BaseManager;
+    readonly metrics: {
+        startTime: number;
+        start(id: string, metadata?: Record<string, any>): void;
+        end(id: string, metadata?: Record<string, any>): void;
+        get(id: string): Record<string, any> | undefined;
+        update(id: string, metadata: Record<string, any>): void;
+        getAll(): Record<string, any>;
+    };
+    readonly utils: {
+        validation: {
+            validate(data: any, schema: string): Promise<any>;
+        };
+        metrics: {
+            start(id: string, metadata?: Record<string, any>): void;
+            end(id: string, metadata?: Record<string, any>): void;
+            get(id: string): Record<string, any> | undefined;
+        };
+    };
+    readonly logger: {
+        debug(category: string, message: string, data?: any): void;
+        info(category: string, message: string, data?: any): void;
+        warn(category: string, message: string, data?: any): void;
+        error(category: string, message: string, data?: any): void;
+    };
     getRegistry(): Promise<any>;
     startMetric(metricId: string, metadata?: Record<string, any>): void;
     endMetric(metricId: string, metadata?: Record<string, any>): void;
     getMetric(metricId: string): Record<string, any> | undefined;
 }
 
-export interface IToolService {
+export interface IToolService extends BaseManager {
     create(config: {
         name: string;
         description: string;
         inputs: string[];
         handler: (params: any) => Promise<any>;
     }): Promise<any>;
-    initialize(): Promise<void>;
 }
 
-export interface IAgentService {
+export interface IAgentService extends BaseManager {
     create(config: {
         name: string;
         description: string;
@@ -41,10 +63,17 @@ export interface IAgentService {
         requireApproval?: boolean;
         timeout?: number;
     }): Promise<any>;
-    initialize(): Promise<void>;
 }
 
-export interface IPipelineService {
+export interface ITeamService extends BaseManager {
+    create(config: {
+        name: string;
+        description: string;
+        agents: string[];
+    }): Promise<any>;
+}
+
+export interface IPipelineService extends BaseManager {
     create(config: {
         name: string;
         description: string;
@@ -54,7 +83,6 @@ export interface IPipelineService {
             handler: (params: any) => Promise<any>;
         }[];
     }): Promise<any>;
-    initialize(): Promise<void>;
 }
 
 export class ToolService extends BaseManager implements IToolService {
@@ -68,10 +96,6 @@ export class ToolService extends BaseManager implements IToolService {
         inputs: string[];
         handler: (params: any) => Promise<any>;
     }): Promise<any> {
-        throw new Error('Not implemented');
-    }
-
-    async initialize(): Promise<void> {
         throw new Error('Not implemented');
     }
 }
@@ -98,10 +122,6 @@ export class AgentService extends BaseManager implements IAgentService {
     }): Promise<any> {
         throw new Error('Not implemented');
     }
-
-    async initialize(): Promise<void> {
-        throw new Error('Not implemented');
-    }
 }
 
 export class PipelineService extends BaseManager implements IPipelineService {
@@ -118,10 +138,6 @@ export class PipelineService extends BaseManager implements IPipelineService {
             handler: (params: any) => Promise<any>;
         }[];
     }): Promise<any> {
-        throw new Error('Not implemented');
-    }
-
-    async initialize(): Promise<void> {
         throw new Error('Not implemented');
     }
 } 

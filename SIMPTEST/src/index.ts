@@ -15,14 +15,26 @@ async function runExample() {
     console.log('Starting Symphony SDK example...\n');
 
     try {
-        // Initialize all components through the component manager
-        console.log('Initializing components...\n');
-        
-        const startTime = Date.now();
+        // Initialize Symphony core
+        console.log('Initializing Symphony core...\n');
         await symphony.componentManager.initialize();
-        const initTime = Date.now() - startTime;
+
+        // Initialize core services
+        console.log('Initializing core services...\n');
+        await symphony.validation.initialize();
+        await symphony.tools.initialize();
+        await symphony.agent.initialize();
+        await symphony.team.initialize();
+        await symphony.pipeline.initialize();
+
+        // Initialize components
+        console.log('Initializing components...\n');
+        await tools.tripleAdd.initialize();
+        await agents.calculatorAgent.initialize();
+        await teams.calculatorTeam.initialize();
+        await pipelines.calculatorPipeline.initialize();
         
-        console.log(`\nComponent initialization completed in ${initTime}ms`);
+        console.log('\nComponent initialization completed');
 
         // Run test scenarios
         await runTestScenarios();

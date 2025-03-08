@@ -1,5 +1,8 @@
-import { LogLevel } from '../../types/sdk';
 import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from '../../types/metadata';
+import { BaseManager } from '../../managers/base';
+import { IToolService, IAgentService, ITeamService, IPipelineService } from '../../services/interfaces';
+import { IValidationManager } from '../../managers/validation';
+import { ServiceBus } from '../../core/servicebus';
 
 export interface IComponentManager {
     register(metadata: ComponentMetadata, instance: Component): Promise<void>;
@@ -105,56 +108,40 @@ export interface SymphonyUtils {
     };
 }
 
-export interface ISymphony {
-    tools: {
-        create(config: {
-            name: string;
-            description: string;
-            inputs: string[];
-            handler: (params: any) => Promise<any>;
-        }): any;
-        initialize(): Promise<void>;
+export interface ISymphony extends BaseManager {
+    readonly tools: IToolService;
+    readonly agent: IAgentService;
+    readonly team: ITeamService;
+    readonly pipeline: IPipelineService;
+    readonly components: BaseManager;
+    readonly validation: IValidationManager;
+    readonly metrics: {
+        startTime: number;
+        start(id: string, metadata?: Record<string, any>): void;
+        end(id: string, metadata?: Record<string, any>): void;
+        get(id: string): Record<string, any> | undefined;
+        update(id: string, metadata: Record<string, any>): void;
+        getAll(): Record<string, any>;
     };
-    agent: {
-        create(config: {
-            name: string;
-            description: string;
-            task: string;
-            tools: any[];
-            llm: {
-                provider: string;
-                model: string;
-                temperature?: number;
-                maxTokens?: number;
-            };
-            maxCalls?: number;
-            requireApproval?: boolean;
-            timeout?: number;
-        }): any;
-        initialize(): Promise<void>;
+    readonly utils: {
+        validation: {
+            validate(data: any, schema: string): Promise<any>;
+        };
+        metrics: {
+            start(id: string, metadata?: Record<string, any>): void;
+            end(id: string, metadata?: Record<string, any>): void;
+            get(id: string): Record<string, any> | undefined;
+        };
     };
-    team: {
-        create: (config: TeamConfig) => Promise<any>;
-        initialize(): Promise<void>;
-    };
-    pipeline: {
-        create: (config: PipelineConfig) => Promise<any>;
-        initialize(): Promise<void>;
-    };
-    metrics: GlobalMetrics;
-    validation: any;
-    components: any;
-    utils: SymphonyUtils;
-    logger: {
+    readonly logger: {
         debug(category: string, message: string, data?: any): void;
         info(category: string, message: string, data?: any): void;
         warn(category: string, message: string, data?: any): void;
         error(category: string, message: string, data?: any): void;
     };
-    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
     getRegistry(): Promise<any>;
-    isInitialized(): boolean;
-    startMetric(id: string, metadata?: Record<string, any>): void;
-    endMetric(id: string, metadata?: Record<string, any>): void;
-    getMetric(id: string): Record<string, any> | undefined;
+    getServiceBus(): ServiceBus;
+    startMetric(metricId: string, metadata?: Record<string, any>): void;
+    endMetric(metricId: string, metadata?: Record<string, any>): void;
+    getMetric(metricId: string): Record<string, any> | undefined;
 } 

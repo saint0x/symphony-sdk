@@ -55,6 +55,8 @@ const DEFAULT_CONFIG: LoggerConfig = {
 export interface LogMetadata {
     metadata?: any;
     error?: Error | unknown;
+    service?: string;
+    correlationId?: string;
 }
 
 // Logger implementation

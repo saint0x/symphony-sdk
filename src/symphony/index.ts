@@ -6,6 +6,7 @@ import { ComponentManager } from '../managers/component';
 import { MetricsService } from '../services/metrics';
 import { ValidationManager } from '../managers/validation';
 import { Registry } from './registry';
+import { ServiceBus } from '../core/servicebus';
 import { Logger, LogCategory } from '../utils/logger';
 import { LogLevel } from '../types/sdk';
 import { ISymphony, SymphonyConfig, SymphonyUtils } from './interfaces/types';
@@ -18,6 +19,11 @@ export class Symphony extends BaseManager implements ISymphony {
     private initPromise?: Promise<void>;
     private _metrics: MetricsService;
     private _logger: Logger;
+    private _bus: ServiceBus;
+    private _toolService: ToolService;
+    private _agentService: AgentService;
+    private _teamManager: TeamManager;
+    private _pipelineService: PipelineService;
     private _config: SymphonyConfig = {
         serviceRegistry: {
             enabled: false,
@@ -82,29 +88,56 @@ export class Symphony extends BaseManager implements ISymphony {
         // Initialize core services
         this._logger = Logger.getInstance({ serviceContext: 'Symphony' });
         this._metrics = new MetricsService();
+        this._bus = new ServiceBus();
         
-        // Update self-reference now that we have metrics
-        (this as any).symphony = this;
+        // Create service instances
+        this._toolService = new ToolService(this);
+        this._agentService = new AgentService(this);
+        this._teamManager = TeamManager.getInstance(this);
+        this._pipelineService = new PipelineService(this);
         
         // Initialize managers and services
-        this.validation = ValidationManager.getInstance(this as any);
-        this.team = {
-            create: async (config) => TeamManager.getInstance(this as any).createTeam(config),
-            initialize: async () => TeamManager.getInstance(this as any).initialize()
-        };
-        this.tools = {
-            create: async (config) => new ToolService(this as any).createTool(config),
-            initialize: async () => new ToolService(this as any).initialize()
-        };
-        this.agent = {
-            create: async (config) => new AgentService(this as any).createAgent(config),
-            initialize: async () => new AgentService(this as any).initialize()
-        };
-        this.pipeline = {
-            create: async (config) => new PipelineService(this as any).createPipeline(config),
-            initialize: async () => new PipelineService(this as any).initialize()
-        };
+        this.validation = ValidationManager.getInstance(this);
         this.components = ComponentManager.getInstance();
+
+        // Initialize registry
+        this._registry = new Registry(this);
+
+        // Register core services with registry
+        this._registry.registerService({
+            id: 'tool',
+            capabilities: ['tool.create', 'tool.execute', 'tool.manage'],
+            status: 'pending'
+        });
+        this._registry.registerService({
+            id: 'agent',
+            capabilities: ['agent.execute', 'agent.manage'],
+            status: 'pending'
+        });
+        this._registry.registerService({
+            id: 'team',
+            capabilities: ['team.create', 'team.manage'],
+            status: 'pending'
+        });
+        this._registry.registerService({
+            id: 'pipeline',
+            capabilities: ['pipeline.execute', 'pipeline.manage'],
+            status: 'pending'
+        });
+
+        // Add dependencies
+        this.addDependency(this.validation);
+        this.addDependency(this.components);
+        this.addDependency(this._toolService);
+        this.addDependency(this._agentService);
+        this.addDependency(this._teamManager);
+        this.addDependency(this._pipelineService);
+
+        // Expose services through interfaces
+        this.tools = this._toolService;
+        this.agent = this._agentService;
+        this.team = this._teamManager;
+        this.pipeline = this._pipelineService;
         
         this._logger.info(LogCategory.SYSTEM, 'Symphony SDK initialized');
     }
@@ -126,7 +159,6 @@ export class Symphony extends BaseManager implements ISymphony {
             ...config
         };
 
-        // Update log level if specified
         if (config.logging?.level) {
             this._logger.setMinLevel(this.mapLogLevel(config.logging.level));
         }
@@ -151,11 +183,27 @@ export class Symphony extends BaseManager implements ISymphony {
                     this._logger.setMinLevel(options.logLevel);
                 }
 
-                // Initialize component manager first as it manages all other components
+                // Initialize registry first
+                await this._registry?.initialize();
+
+                // Initialize component manager
                 await this.components.initialize();
 
                 // Initialize validation manager
                 await this.validation.initialize();
+
+                // Initialize core services in order of dependency
+                await this._toolService.initialize();
+                this._registry?.updateServiceStatus('tool', 'ready');
+
+                await this._agentService.initialize();
+                this._registry?.updateServiceStatus('agent', 'ready');
+
+                await this._teamManager.initialize();
+                this._registry?.updateServiceStatus('team', 'ready');
+
+                await this._pipelineService.initialize();
+                this._registry?.updateServiceStatus('pipeline', 'ready');
 
                 this._initialized = true;
                 this._logger.info(LogCategory.SYSTEM, 'Symphony initialization complete');
@@ -175,6 +223,10 @@ export class Symphony extends BaseManager implements ISymphony {
             throw new Error('Symphony must be initialized before accessing registry');
         }
         return this._registry;
+    }
+
+    getServiceBus(): ServiceBus {
+        return this._bus;
     }
 
     isInitialized(): boolean {

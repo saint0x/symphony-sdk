@@ -9,13 +9,23 @@ import { PipelineService } from '../../services/pipeline';
 import { ComponentManager } from '../../managers/component';
 import { Logger, LogCategory } from '../../utils/logger';
 import { LogLevel } from '../../types/sdk';
-import { ISymphony, SymphonyConfig, SymphonyUtils, GlobalMetrics } from '../interfaces/types';
+import { ISymphony, SymphonyConfig, SymphonyUtils } from '../interfaces/types';
+import { IToolService, IAgentService, ITeamService, IPipelineService } from '../../services/interfaces';
+import { IValidationManager } from '../../managers/validation';
+import { ServiceBus } from '../../core/servicebus';
 
 export class Symphony extends BaseManager implements ISymphony {
     private static instance: Symphony;
     private _registry: Registry | null = null;
     private _initialized: boolean = false;
+    private _toolService: IToolService;
+    private _agentService: IAgentService;
+    private _teamService: ITeamService;
+    private _pipelineService: IPipelineService;
+    private _validationManager: IValidationManager;
+    private _metrics: MetricsService;
     private _logger: Logger;
+    private _components: ComponentManager;
     private _config: SymphonyConfig = {
         serviceRegistry: {
             enabled: false,
@@ -31,13 +41,21 @@ export class Symphony extends BaseManager implements ISymphony {
             detailed: false
         }
     };
+    private _bus: ServiceBus;
     
-    readonly validation: ValidationManager;
-    readonly team: ISymphony['team'];
-    readonly metrics: GlobalMetrics;
-    readonly tools: ISymphony['tools'];
-    readonly agent: ISymphony['agent'];
-    readonly pipeline: ISymphony['pipeline'];
+    readonly validation: IValidationManager;
+    readonly team: ITeamService;
+    readonly metrics: {
+        startTime: number;
+        start(id: string, metadata?: Record<string, any>): void;
+        end(id: string, metadata?: Record<string, any>): void;
+        get(id: string): Record<string, any> | undefined;
+        update(id: string, metadata: Record<string, any>): void;
+        getAll(): Record<string, any>;
+    };
+    readonly tools: IToolService;
+    readonly agent: IAgentService;
+    readonly pipeline: IPipelineService;
     readonly components: ComponentManager;
 
     get utils(): SymphonyUtils {
@@ -48,9 +66,9 @@ export class Symphony extends BaseManager implements ISymphony {
                 }
             },
             metrics: {
-                start: (id: string, metadata?: Record<string, any>) => this.metrics.start(id, metadata),
-                end: (id: string, metadata?: Record<string, any>) => this.metrics.end(id, metadata),
-                get: (id: string) => this.metrics.get(id)
+                start: (id: string, metadata?: Record<string, any>) => this._metrics.start(id, metadata),
+                end: (id: string, metadata?: Record<string, any>) => this._metrics.end(id, metadata),
+                get: (id: string) => this._metrics.get(id)
             }
         };
     }
@@ -65,47 +83,53 @@ export class Symphony extends BaseManager implements ISymphony {
     }
 
     private constructor() {
-        // Self-reference for BaseManager
         super(null as any, 'Symphony');
         
         // Initialize logger first
         this._logger = Logger.getInstance({ serviceContext: 'Symphony' });
         
         // Initialize core services
-        const metricsService = new MetricsService();
+        this._metrics = new MetricsService();
+        this._components = ComponentManager.getInstance();
+        
+        // Initialize metrics property
         this.metrics = {
-            startTime: metricsService.startTime,
-            start: (id, metadata) => metricsService.start(id, metadata),
-            end: (id, metadata) => metricsService.end(id, metadata),
-            get: (id) => metricsService.get(id),
-            update: (id, metadata) => metricsService.update(id, metadata),
-            getAll: () => metricsService.getAll()
+            startTime: this._metrics.startTime,
+            start: (id: string, metadata?: Record<string, any>) => this._metrics.start(id, metadata),
+            end: (id: string, metadata?: Record<string, any>) => this._metrics.end(id, metadata),
+            get: (id: string) => this._metrics.get(id),
+            update: (id: string, metadata: Record<string, any>) => this._metrics.update(id, metadata),
+            getAll: () => this._metrics.getAll()
         };
         
         // Update self-reference now that we have metrics
         (this as any).symphony = this;
         
-        // Initialize managers
-        this.validation = ValidationManager.getInstance(this);
-        this.team = {
-            create: async (config) => TeamManager.getInstance(this).createTeam(config),
-            initialize: async () => TeamManager.getInstance(this).initialize()
-        };
-        this.tools = {
-            create: async (config) => new ToolService(this).create(config),
-            initialize: async () => new ToolService(this).initialize()
-        };
-        this.agent = {
-            create: async (config) => new AgentService(this).create(config),
-            initialize: async () => new AgentService(this).initialize()
-        };
-        this.pipeline = {
-            create: async (config) => new PipelineService(this).create(config),
-            initialize: async () => new PipelineService(this).initialize()
-        };
-        this.components = ComponentManager.getInstance();
+        // Create service instances
+        this._toolService = new ToolService(this);
+        this._agentService = new AgentService(this);
+        this._teamService = TeamManager.getInstance(this);
+        this._pipelineService = new PipelineService(this);
+        this._validationManager = ValidationManager.getInstance(this);
+        this._bus = new ServiceBus();
+
+        // Add dependencies
+        this.addDependency(this._components);
+        this.addDependency(this._validationManager);
+        this.addDependency(this._toolService);
+        this.addDependency(this._agentService);
+        this.addDependency(this._teamService);
+        this.addDependency(this._pipelineService);
+
+        // Expose services through interfaces
+        this.tools = this._toolService;
+        this.agent = this._agentService;
+        this.team = this._teamService;
+        this.pipeline = this._pipelineService;
+        this.validation = this._validationManager;
+        this.components = this._components;
         
-        this.logInfo('Symphony SDK initialized');
+        this._logger.info(LogCategory.SYSTEM, 'Symphony SDK initialized');
     }
 
     static getInstance(): Symphony {
@@ -141,48 +165,32 @@ export class Symphony extends BaseManager implements ISymphony {
         }
     }
 
-    async initialize(options: { logLevel?: LogLevel } = {}): Promise<void> {
-        return this.withErrorHandling('initialize', async () => {
-            if (this._initialized) {
-                this.logInfo('Symphony already initialized');
-                return;
-            }
+    protected async initializeInternal(): Promise<void> {
+        try {
+            // Initialize component manager first
+            await this._components.initialize();
 
-            try {
-                if (options.logLevel) {
-                    Logger.getInstance().setMinLevel(options.logLevel);
-                }
+            // Initialize validation manager
+            await this._validationManager.initialize();
 
-                // Initialize component manager first as it manages all other components
-                await this.components.initialize();
+            // Initialize core services in order of dependency
+            await this._toolService.initialize();
+            await this._agentService.initialize();
+            await this._teamService.initialize();
+            await this._pipelineService.initialize();
 
-                // Initialize validation manager
-                await this.validation.initialize();
-
-                // Initialize registry
-                this._registry = new Registry(this);
-                await this._registry.initialize();
-
-                // Initialize remaining managers and services
-                await Promise.all([
-                    this.team.initialize(),
-                    this.tools.initialize(),
-                    this.agent.initialize(),
-                    this.pipeline.initialize()
-                ]);
-
-                this._initialized = true;
-                this.logInfo('Symphony initialization complete');
-            } catch (error) {
-                this.logError('Symphony initialization failed', error);
-                throw error;
-            }
-        });
+            this._initialized = true;
+            this._logger.info(LogCategory.SYSTEM, 'Symphony initialization complete');
+        } catch (error) {
+            this._initialized = false;
+            this._logger.error(LogCategory.ERROR, 'Symphony initialization failed', { error });
+            throw error;
+        }
     }
 
     async getRegistry(): Promise<Registry | null> {
         if (!this._initialized) {
-            this.logError('Symphony not initialized');
+            this._logger.error(LogCategory.ERROR, 'Symphony not initialized');
             throw new Error('Symphony must be initialized before accessing registry');
         }
         return this._registry;
@@ -193,16 +201,23 @@ export class Symphony extends BaseManager implements ISymphony {
     }
 
     // Expose metrics methods directly for convenience
-    startMetric(metricId: string, metadata?: Record<string, any>): void {
-        this.metrics.start(metricId, metadata);
+    startMetric(id: string, metadata?: Record<string, any>): void {
+        this.assertInitialized();
+        this._metrics.start(id, metadata);
     }
 
-    endMetric(metricId: string, metadata?: Record<string, any>): void {
-        this.metrics.end(metricId, metadata);
+    endMetric(id: string, metadata?: Record<string, any>): void {
+        this.assertInitialized();
+        this._metrics.end(id, metadata);
     }
 
-    getMetric(metricId: string): Record<string, any> | undefined {
-        return this.metrics.get(metricId);
+    getMetric(id: string): Record<string, any> | undefined {
+        this.assertInitialized();
+        return this._metrics.get(id);
+    }
+
+    getServiceBus(): ServiceBus {
+        return this._bus;
     }
 }
 

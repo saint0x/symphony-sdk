@@ -9,6 +9,7 @@ interface TripleAddParams {
 
 class TripleAddTool {
     private tool!: Tool;
+    private initialized: boolean = false;
 
     constructor() {
         return symphony.componentManager.register({
@@ -38,6 +39,13 @@ class TripleAddTool {
     }
 
     async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Ensure tool service is initialized
+        await symphony.tools.initialize();
+
         this.tool = await symphony.tools.create({
             name: 'tripleAdd',
             description: 'Adds three numbers together',
@@ -57,9 +65,14 @@ class TripleAddTool {
                 }
             }
         });
+
+        this.initialized = true;
     }
 
     async run(params: TripleAddParams): Promise<ToolResult<number>> {
+        if (!this.initialized || !this.tool) {
+            await this.initialize();
+        }
         return this.tool.run(params);
     }
 }
