@@ -75,18 +75,9 @@ export class ComponentRegistry extends BaseManager {
         // Update compatibility matrix
         this.updateCompatibilityMatrix(metadata);
 
-        // Initialize the component
-        try {
-            if ('initialize' in instance && typeof instance.initialize === 'function') {
-                await instance.initialize();
-            }
-            componentInstance.status = 'ready';
-            componentInstance.lastInitialized = Date.now();
-        } catch (error) {
-            componentInstance.status = 'error';
-            componentInstance.error = error as Error;
-            throw error;
-        }
+        // Mark as ready
+        componentInstance.status = 'ready';
+        componentInstance.lastInitialized = Date.now();
     }
 
     /**

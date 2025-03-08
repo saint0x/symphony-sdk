@@ -14,7 +14,16 @@ class CalculatorPipeline {
     private initialized: boolean = false;
 
     constructor() {
-        return symphony.componentManager.register({
+        // Don't register in constructor
+    }
+
+    async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Register the component
+        await symphony.componentManager.register({
             id: 'calculatorPipeline',
             name: 'Calculator Pipeline',
             type: 'pipeline',
@@ -45,12 +54,6 @@ class CalculatorPipeline {
             provides: ['pipeline.arithmetic', 'pipeline.sequential'],
             tags: ['math', 'pipeline', 'calculator']
         }, this);
-    }
-
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
 
         // Ensure pipeline service and dependencies are initialized
         await Promise.all([
@@ -61,21 +64,45 @@ class CalculatorPipeline {
 
         const steps: PipelineStep[] = [
             {
+                id: 'agent_calculation',
                 name: 'Agent Calculation',
                 description: 'Performs a calculation using the calculator agent',
-                tool: calculatorAgent,
-                input: 'Add the numbers 10, 20, and 30',
-                handler: async (input: string) => {
-                    return calculatorAgent.run(input);
+                tool: {
+                    name: 'agent_calculation',
+                    description: 'Performs a calculation using the calculator agent',
+                    inputs: ['task'],
+                    run: async (inputs: any) => {
+                        const task = inputs?.agent_calculation?.task || inputs?.task;
+                        if (!task) {
+                            throw new Error('No task provided for agent calculation');
+                        }
+                        const result = await calculatorAgent.run(task);
+                        return result;
+                    }
+                },
+                inputs: {
+                    task: 'Add the numbers 10, 20, and 30'
                 }
             },
             {
+                id: 'team_calculation',
                 name: 'Team Calculation',
                 description: 'Performs parallel calculations using the calculator team',
-                tool: calculatorTeam,
-                input: 'Calculate (40, 50, 60) and (70, 80, 90) in parallel',
-                handler: async (input: string) => {
-                    return calculatorTeam.run(input);
+                tool: {
+                    name: 'team_calculation',
+                    description: 'Performs parallel calculations using the calculator team',
+                    inputs: ['task'],
+                    run: async (inputs: any) => {
+                        const task = inputs?.team_calculation?.task || inputs?.task;
+                        if (!task) {
+                            throw new Error('No task provided for team calculation');
+                        }
+                        const result = await calculatorTeam.run(task);
+                        return result;
+                    }
+                },
+                inputs: {
+                    task: 'Calculate (40, 50, 60) and (70, 80, 90) in parallel'
                 }
             }
         ];
@@ -93,7 +120,42 @@ class CalculatorPipeline {
         if (!this.initialized || !this.pipeline) {
             await this.initialize();
         }
-        return this.pipeline.run();
+
+        try {
+            console.log('Running pipeline...');
+            const result = await this.pipeline.run({
+                agent_calculation: {
+                    task: 'Add the numbers 10, 20, and 30'
+                },
+                team_calculation: {
+                    task: 'Calculate (40, 50, 60) and (70, 80, 90) in parallel'
+                }
+            });
+            console.log('Pipeline result:', result);
+
+            if (!result.success) {
+                return {
+                    success: false,
+                    error: 'Pipeline execution failed'
+                };
+            }
+
+            const pipelineResult = {
+                success: true,
+                result: {
+                    agentCalculation: result.stepResults?.[0]?.result,
+                    teamCalculation: result.stepResults?.[1]?.result
+                }
+            };
+            console.log('Final result:', pipelineResult);
+            return pipelineResult;
+        } catch (error) {
+            console.error('Pipeline error:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
+        }
     }
 }
 

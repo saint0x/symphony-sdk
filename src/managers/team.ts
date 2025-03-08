@@ -12,10 +12,9 @@ export class TeamManager extends BaseManager implements ITeamService {
         super(symphony, 'TeamManager');
         this.validationManager = ValidationManager.getInstance(symphony);
         // Add dependencies
-        this.addDependency(symphony.validation);
-        this.addDependency(symphony.components);
-        this.addDependency(symphony.tools);
-        this.addDependency(symphony.agent);
+        if (this.validationManager instanceof BaseManager) {
+            this.addDependency(this.validationManager);
+        }
     }
 
     static getInstance(symphony: ISymphony): TeamManager {

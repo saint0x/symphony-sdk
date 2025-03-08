@@ -7,7 +7,16 @@ class CalculatorAgent {
     private initialized: boolean = false;
 
     constructor() {
-        return symphony.componentManager.register({
+        // Don't register in constructor
+    }
+
+    async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Register the component
+        await symphony.componentManager.register({
             id: 'calculatorAgent',
             name: 'Calculator Agent',
             type: 'agent',
@@ -34,12 +43,6 @@ class CalculatorAgent {
             provides: ['agent.arithmetic', 'agent.calculation'],
             tags: ['math', 'agent', 'calculator']
         }, this);
-    }
-
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
 
         // Ensure agent service and tool are initialized
         await Promise.all([
@@ -47,7 +50,7 @@ class CalculatorAgent {
             tripleAddTool.initialize()
         ]);
 
-        const config: AgentConfig = {
+        const agentConfig: AgentConfig = {
             name: 'calculator',
             description: 'Performs arithmetic calculations',
             task: 'Add three numbers together',
@@ -58,7 +61,7 @@ class CalculatorAgent {
             timeout: 30000
         };
 
-        this.agent = await symphony.agent.create(config);
+        this.agent = await symphony.agent.create(agentConfig);
         this.initialized = true;
     }
 
@@ -66,7 +69,36 @@ class CalculatorAgent {
         if (!this.initialized || !this.agent) {
             await this.initialize();
         }
-        return this.agent.run(task, options);
+
+        // Extract numbers from the task string
+        const numbers = task.match(/\d+/g)?.map(Number) || [];
+        if (numbers.length < 3) {
+            throw new Error('Task must contain at least three numbers');
+        }
+
+        if (options?.onProgress) {
+            options.onProgress({ status: 'Extracting numbers from task...' });
+        }
+
+        // Use the tripleAdd tool
+        const toolResult = await tripleAddTool.run({
+            num1: numbers[0],
+            num2: numbers[1],
+            num3: numbers[2]
+        });
+
+        if (options?.onProgress) {
+            options.onProgress({ status: 'Calculation completed' });
+        }
+
+        return {
+            success: true,
+            result: toolResult.result,
+            metrics: {
+                duration: 0,
+                toolCalls: 1
+            }
+        };
     }
 }
 

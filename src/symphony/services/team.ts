@@ -1,5 +1,5 @@
 import { TeamConfig } from '../../types/sdk';
-import { Symphony } from '../core/symphony';
+import { Symphony } from '..';
 import { validationManager } from '../../utils/validation';
 
 export class TeamService {

@@ -1,4 +1,4 @@
-import { Symphony } from './symphony/core/symphony';
+import { Symphony } from './symphony';
 import type { SymphonyConfig } from './symphony/interfaces/types';
 
 class SymphonySDK {
@@ -50,7 +50,7 @@ export const symphony = SymphonySDK.getInstance({
 });
 
 // Export types and utilities
-export * from './symphony/core/symphony';
+export * from './symphony';
 export type { SymphonyConfig, ISymphony } from './symphony/interfaces/types';
 export type * from './types/metadata';
 export type * from './types/components';

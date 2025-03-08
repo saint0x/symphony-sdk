@@ -52,8 +52,10 @@ export interface PipelineConfig {
 }
 
 export interface PipelineStep {
+    id: string;
     name: string;
     description: string;
+    inputs: any;
     handler: (params: any) => Promise<any>;
 }
 
@@ -117,6 +119,27 @@ export interface ISymphony {
     readonly pipeline: IPipelineService;
     readonly components: ComponentManager;
     readonly validation: IValidationManager;
+    readonly componentManager: ComponentManager;
+    readonly types: {
+        CapabilityBuilder: {
+            team(capability: string): string;
+            agent(capability: string): string;
+            numeric(capability: string): string;
+            processing(capability: string): string;
+        };
+        CommonCapabilities: {
+            TOOL_USE: string;
+            COORDINATION: string;
+            PARALLEL: string;
+            ADD: string;
+        };
+        DEFAULT_LLM_CONFIG: {
+            provider: string;
+            model: string;
+            temperature: number;
+            maxTokens: number;
+        };
+    };
     readonly metrics: {
         startTime: number;
         start(id: string, metadata?: Record<string, any>): void;

@@ -12,7 +12,16 @@ class TripleAddTool {
     private initialized: boolean = false;
 
     constructor() {
-        return symphony.componentManager.register({
+        // Don't register in constructor
+    }
+
+    async initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        // Register the component
+        await symphony.componentManager.register({
             id: 'tripleAdd',
             name: 'Triple Add Tool',
             type: 'tool',
@@ -36,33 +45,24 @@ class TripleAddTool {
             provides: ['numeric.calculation', 'batch.processing'],
             tags: ['math', 'arithmetic', 'addition']
         }, this);
-    }
 
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
-
-        // Ensure tool service is initialized
-        await symphony.tools.initialize();
-
+        // Create the tool
         this.tool = await symphony.tools.create({
             name: 'tripleAdd',
-            description: 'Adds three numbers together',
+            description: 'A tool that adds three numbers together',
             inputs: ['num1', 'num2', 'num3'],
             handler: async (params: TripleAddParams) => {
-                try {
-                    const result = params.num1 + params.num2 + params.num3;
-                    return {
-                        success: true,
-                        result
-                    };
-                } catch (error) {
-                    return {
-                        success: false,
-                        error: error instanceof Error ? error.message : String(error)
-                    };
-                }
+                const { num1, num2, num3 } = params;
+                const result = num1 + num2 + num3;
+                return {
+                    success: true,
+                    result,
+                    metrics: {
+                        duration: 0,
+                        startTime: Date.now(),
+                        endTime: Date.now()
+                    }
+                };
             }
         });
 

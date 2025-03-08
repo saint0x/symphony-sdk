@@ -57,6 +57,27 @@ export class Symphony extends BaseManager implements ISymphony {
     readonly agent!: IAgentService;
     readonly pipeline!: IPipelineService;
     readonly components!: ComponentManager;
+    readonly componentManager!: ComponentManager;
+    readonly types = {
+        CapabilityBuilder: {
+            team: (capability: string) => `team.${capability}`,
+            agent: (capability: string) => `agent.${capability}`,
+            numeric: (capability: string) => `numeric.${capability}`,
+            processing: (capability: string) => `processing.${capability}`
+        },
+        CommonCapabilities: {
+            TOOL_USE: 'tool.use',
+            COORDINATION: 'coordination',
+            PARALLEL: 'parallel',
+            ADD: 'add'
+        },
+        DEFAULT_LLM_CONFIG: {
+            provider: 'openai',
+            model: 'gpt-4',
+            temperature: 0.7,
+            maxTokens: 2000
+        }
+    };
 
     get logger() {
         const logger = this.getLogger();
@@ -88,7 +109,8 @@ export class Symphony extends BaseManager implements ISymphony {
         
         // Initialize core services
         this._metrics = new MetricsService();
-        this._components = ComponentManager.getInstance();
+        this._components = ComponentManager.getInstance(this);
+        this._registry = new Registry(this);
         
         // Initialize metrics property
         this.metrics = {
@@ -126,6 +148,7 @@ export class Symphony extends BaseManager implements ISymphony {
         this.pipeline = this._pipelineService;
         this.validation = this._validationManager;
         this.components = this._components;
+        this.componentManager = this._components;
         
         this.logInfo('Symphony SDK initialized');
     }
@@ -171,16 +194,16 @@ export class Symphony extends BaseManager implements ISymphony {
                     this.getLogger().setMinLevel(options.logLevel);
                 }
 
-                // Initialize registry first
-                await this._registry?.initialize();
-
-                // Initialize component manager
+                // Initialize core managers first
                 await this._components.initialize();
-
-                // Initialize validation manager
                 await this._validationManager.initialize();
 
-                // Initialize core services in order of dependency
+                // Initialize registry after core managers
+                if (this._registry) {
+                    await this._registry.initialize();
+                }
+
+                // Initialize services that depend on core managers
                 await this._toolService.initialize();
                 this._registry?.updateServiceStatus('tool', 'ready');
 
@@ -250,7 +273,6 @@ export class Symphony extends BaseManager implements ISymphony {
 export const symphony = Symphony.getInstance();
 
 // Export types and utilities
-export * from './core/symphony';
 export type { SymphonyConfig, ISymphony } from './interfaces/types';
 export type * from '../types/metadata';
 export type * from '../types/components';

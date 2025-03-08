@@ -1,19 +1,26 @@
 // Import from local package during development
-import { symphony as originalSymphony } from 'symphonic';
-import type { Agent, Tool, Team, ISymphony } from 'symphonic';
+import { symphony as originalSymphony, ISymphony } from 'symphonic';
+import type { Agent, Tool, Team } from 'symphonic';
 
-// Define and export missing types
+// Create a Symphony instance with proper typing
+const symphony: ISymphony = originalSymphony;
+
+// Define interfaces
 export interface TeamResult {
     success: boolean;
     result: any;
     error?: string;
 }
 
-// Define missing types
 export interface AgentResult {
     success: boolean;
     result: any;
     error?: string;
+    metrics?: {
+        duration: number;
+        toolCalls: number;
+        [key: string]: any;
+    };
 }
 
 export interface ToolResult<T = any> {
@@ -33,10 +40,10 @@ export interface PipelineResult {
 }
 
 export interface PipelineStep {
+    id: string;
     name: string;
     description: string;
-    tool: any;
-    input: any;
+    inputs: any;
     handler: (input: any) => Promise<any>;
 }
 
@@ -95,6 +102,9 @@ export interface ComponentStatusDetails {
     validationResult?: ValidationResult;
 }
 
+// Export imported types
+export type { Agent, Tool, Team };
+
 // Define our capability builder
 const CapabilityBuilder = {
     team: (capability: string) => `team.${capability}`,
@@ -119,73 +129,12 @@ const DEFAULT_LLM_CONFIG: LLMConfig = {
     maxTokens: 2000
 };
 
-// Define the component manager type
-class ComponentManager {
-    private static instance: ComponentManager;
-    
-    private constructor() {}
-    
-    public static getInstance(): ComponentManager {
-        if (!ComponentManager.instance) {
-            ComponentManager.instance = new ComponentManager();
-        }
-        return ComponentManager.instance;
-    }
-    
-    async initialize() {
-        // Initialization logic here
-        return Promise.resolve();
-    }
-    
-    register(config: any, instance: any) {
-        return instance;
-    }
-}
-
-// Define the Symphony type structure
-interface SymphonyTypes {
-    Team: Team;
-    TeamResult: TeamResult;
-    Agent: Agent;
-    AgentResult: AgentResult;
-    Tool: Tool;
-    ToolResult: ToolResult;
-    ComponentStatusDetails: ComponentStatusDetails;
-    CapabilityBuilder: typeof CapabilityBuilder;
-    CommonCapabilities: typeof CommonCapabilities;
-    DEFAULT_LLM_CONFIG: typeof DEFAULT_LLM_CONFIG;
-}
-
-// Export the unified Symphony SDK
-export const symphony = {
-    ...originalSymphony,
-    componentManager: ComponentManager.getInstance(),
-    types: {
-        CapabilityBuilder,
-        CommonCapabilities,
-        DEFAULT_LLM_CONFIG
-    } as SymphonyTypes,
-    startMetric: (metricId: string) => {
-        // Implementation
-        console.log(`Starting metric: ${metricId}`);
-    },
-    endMetric: (metricId: string, data: { success: boolean; result?: any; error?: string }) => {
-        // Implementation
-        console.log(`Ending metric: ${metricId}`, data);
-    }
-};
-
-// Re-export imported types
-export type {
-    Team,
-    Agent,
-    Tool
-};
+// Export the Symphony instance
+export { symphony };
 
 // Export values
 export {
     CapabilityBuilder,
     CommonCapabilities,
-    DEFAULT_LLM_CONFIG,
-    ComponentManager as SymphonyComponentManager
+    DEFAULT_LLM_CONFIG
 }; 

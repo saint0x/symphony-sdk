@@ -1,12 +1,15 @@
 import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from '../managers/base';
 import { IToolService } from './interfaces';
+import { ValidationManager } from '../managers/validation';
 
 export class ToolService extends BaseManager implements IToolService {
     constructor(symphony: ISymphony) {
         super(symphony, 'ToolService');
-        this.addDependency(symphony.validation);
-        this.addDependency(symphony.components);
+        const validationManager = ValidationManager.getInstance(symphony);
+        if (validationManager instanceof BaseManager) {
+            this.addDependency(validationManager);
+        }
     }
 
     async create(config: {
@@ -24,6 +27,10 @@ export class ToolService extends BaseManager implements IToolService {
             const validation = await this.symphony.validation.validate(config, 'ToolConfig');
             if (!validation.isValid) {
                 throw new Error(`Invalid tool configuration: ${validation.errors.join(', ')}`);
+            }
+
+            if (!this.symphony.isInitialized()) {
+                throw new Error('Symphony must be initialized before creating tools');
             }
 
             const registry = await this.symphony.getRegistry();

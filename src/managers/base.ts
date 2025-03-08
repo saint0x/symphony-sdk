@@ -29,7 +29,11 @@ export abstract class BaseManager {
         if (this.dependencies.length > 0) {
             this.logInfo('Initializing dependencies...');
             for (const dep of this.dependencies) {
-                await dep.initialize();
+                if (dep && typeof dep.initialize === 'function') {
+                    await dep.initialize();
+                } else {
+                    this.logError('Invalid dependency', { dependency: dep?.constructor?.name });
+                }
             }
         }
 
@@ -38,8 +42,8 @@ export abstract class BaseManager {
         this.logInfo('Initialization complete');
     }
 
-    protected addDependency(manager: BaseManager): void {
-        if (!this.dependencies.includes(manager)) {
+    protected addDependency(manager: BaseManager | null | undefined): void {
+        if (manager && manager instanceof BaseManager && !this.dependencies.includes(manager)) {
             this.dependencies.push(manager);
         }
     }

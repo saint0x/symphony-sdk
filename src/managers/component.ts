@@ -20,15 +20,19 @@ export class ComponentManager extends BaseManager {
         this.registry = ComponentRegistry.getInstance();
     }
 
-    static getInstance(): ComponentManager {
+    static getInstance(symphony?: Symphony): ComponentManager {
         if (!this.instance) {
             this.instance = new ComponentManager();
+        }
+        if (symphony && !this.instance._symphony) {
+            this.instance.setSymphony(symphony);
         }
         return this.instance;
     }
 
     setSymphony(symphony: Symphony): void {
         this._symphony = symphony;
+        (this as any).symphony = symphony;
     }
 
     /**
@@ -99,12 +103,6 @@ export class ComponentManager extends BaseManager {
 
         // Initialize registry
         await this.registry.initialize();
-        
-        // Initialize registry last to ensure all services are ready
-        const registry = await this._symphony.getRegistry();
-        if (registry) {
-            await registry.initialize();
-        }
     }
 }
 

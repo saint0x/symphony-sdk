@@ -6,8 +6,11 @@ export interface ComponentMetadata {
     name: string;
     description: string;
     type: ComponentType;
+    version: string;
     capabilities: ComponentCapability[];
     requirements: ComponentRequirement[];
+    provides: string[];
+    tags: string[];
     config?: ComponentConfig;
     metrics?: {
         usageCount?: number;
@@ -20,14 +23,19 @@ export interface ComponentMetadata {
 // Component capability
 export interface ComponentCapability {
     name: string;
-    description: string;
+    description?: string;
     parameters?: Record<string, any>;
+    returns?: {
+        type: string;
+        description: string;
+    };
 }
 
 // Component requirement
 export interface ComponentRequirement {
     capability: string;
     optional?: boolean;
+    required?: boolean;
     parameters?: Record<string, any>;
 }
 

@@ -26,21 +26,23 @@ export class ValidationManager extends BaseManager implements IValidationManager
     private schemas: Map<string, ValidationSchema>;
 
     protected constructor(symphony: ISymphony) {
-        super(symphony as any, 'ValidationManager');
+        super(symphony, 'ValidationManager');
         this.schemas = new Map();
-        this.initialized = true; // ValidationManager is ready upon construction
         this.initializeSchemas();
     }
 
     static getInstance(symphony: ISymphony): ValidationManager {
         if (!this.instance) {
             this.instance = new ValidationManager(symphony);
+        } else if (symphony && this.instance.symphony !== symphony) {
+            // Update symphony reference if needed
+            this.instance.symphony = symphony;
         }
         return this.instance;
     }
 
     protected async initializeInternal(): Promise<void> {
-        // ValidationManager is already initialized in constructor
+        // No additional initialization needed
         return Promise.resolve();
     }
 
