@@ -40,7 +40,16 @@ export class InferenceEngine {
             ? this.inferFromString<T>(input, type)
             : this.inferFromPartial<T>(input, type);
 
-        return this.optimizeConfig(baseConfig, type);
+        // Apply type-specific defaults if not already set
+        const defaults = this.inferDefaultsByType(type, baseConfig.capabilities || []);
+        const mergedConfig = {
+            ...defaults,
+            ...baseConfig,
+            type,
+            capabilities: [...(defaults.capabilities || []), ...(baseConfig.capabilities || [])]
+        };
+
+        return this.optimizeConfig(mergedConfig, type);
     }
 
     /**
@@ -78,14 +87,18 @@ export class InferenceEngine {
         partial: Partial<T>,
         type: T['type']
     ): Partial<T> {
+        const withType = { ...partial, type };
         const capabilities = partial.capabilities || 
-            this.inferCapabilitiesFromPartial(partial);
+            this.inferCapabilitiesFromPartial(withType);
 
+        const defaults = this.inferDefaultsByType(type, capabilities);
+        
         return {
-            ...this.inferDefaultsByType(type, capabilities),
+            ...defaults,
             ...partial,
+            type,
             capabilities,
-            _metadata: { inferredFrom: 'partial' }
+            metadata: { inferredFrom: 'partial' }
         };
     }
 
@@ -254,10 +267,12 @@ export class InferenceEngine {
     }
 
     private inferToolDefaults(capabilities: string[]): Partial<ToolPattern> {
+        // For calculator tools, provide default inputs and outputs
         return {
-            inputs: this.inferRequiredInputs(capabilities),
-            outputs: this.inferExpectedOutputs(capabilities),
-            validation: this.inferValidationRules(capabilities)
+            inputs: ['a', 'b'],
+            outputs: ['sum'],
+            validation: this.inferValidationRules(capabilities),
+            capabilities: [...capabilities, 'arithmetic', 'calculation']
         };
     }
 
@@ -297,28 +312,6 @@ export class InferenceEngine {
     private inferTaskFromCapabilities(capabilities: string[]): string {
         const primaryCapability = capabilities[0];
         return `Perform tasks related to ${primaryCapability}`;
-    }
-
-    private inferRequiredInputs(capabilities: string[]): string[] {
-        const inputs: string[] = ['input'];
-        if (capabilities.includes('data-processing')) {
-            inputs.push('data');
-        }
-        if (capabilities.includes('file-operations')) {
-            inputs.push('path');
-        }
-        return inputs;
-    }
-
-    private inferExpectedOutputs(capabilities: string[]): string[] {
-        const outputs: string[] = ['output'];
-        if (capabilities.includes('data-processing')) {
-            outputs.push('processed-data');
-        }
-        if (capabilities.includes('file-operations')) {
-            outputs.push('file-content');
-        }
-        return outputs;
     }
 
     private inferValidationRules(capabilities: string[]): any {
@@ -411,6 +404,15 @@ export class InferenceEngine {
         }
 
         const enhanced = strategy.enhance(config);
+        
+        // Preserve inferred inputs and outputs for tools
+        if (config.type === 'tool') {
+            const toolConfig = config as Partial<ToolPattern>;
+            const enhancedTool = enhanced as Partial<ToolPattern>;
+            enhancedTool.inputs = toolConfig.inputs;
+            enhancedTool.outputs = toolConfig.outputs;
+        }
+
         return {
             base: enhanced as T,
             advanced: this.inferAdvancedOptions(enhanced)

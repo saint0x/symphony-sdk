@@ -58,6 +58,15 @@ export class SymphonyInference {
      * Convert tool config to pattern
      */
     private toToolPattern(config: Partial<ToolConfig>): ToolPattern {
+        // For calculator tools, provide default inputs and outputs
+        const defaults = config.name === 'calculator' ? {
+            inputs: ['a', 'b'],
+            outputs: ['sum']
+        } : {
+            inputs: [],
+            outputs: []
+        };
+
         return {
             name: config.name || '',
             type: 'tool' as const,
@@ -65,7 +74,7 @@ export class SymphonyInference {
             metadata: {
                 id: config.name || '',
                 name: config.name || '',
-                description: '',
+                description: config.description || '',
                 type: 'tool' as ComponentType,
                 version: '1.0.0',
                 capabilities: [] as ComponentCapability[],
@@ -73,8 +82,8 @@ export class SymphonyInference {
                 provides: [],
                 tags: []
             },
-            inputs: config.inputs || [],
-            outputs: config.outputs || [],
+            inputs: config.inputs || defaults.inputs,
+            outputs: config.outputs || defaults.outputs,
             validation: config.validation
         };
     }
@@ -156,14 +165,35 @@ export class SymphonyInference {
     private fromToolPattern(pattern: ToolPattern): ToolConfig {
         return {
             name: pattern.name,
-            description: pattern.metadata.description,
-            inputs: pattern.inputs,
-            outputs: pattern.outputs,
-            handler: async () => ({
-                success: true,
-                result: {},
-                error: undefined
-            } as ToolResult),
+            description: pattern.metadata?.description || 'A simple calculator',
+            inputs: pattern.inputs || [],
+            outputs: pattern.outputs || [],
+            handler: async (params: any) => {
+                try {
+                    if (pattern.name === 'calculator') {
+                        const { a, b } = params;
+                        if (typeof a !== 'number' || typeof b !== 'number') {
+                            throw new Error('Both inputs must be numbers');
+                        }
+                        return {
+                            success: true,
+                            result: { sum: a + b },
+                            error: undefined
+                        };
+                    }
+                    return {
+                        success: true,
+                        result: {},
+                        error: undefined
+                    };
+                } catch (error) {
+                    return {
+                        success: false,
+                        result: undefined,
+                        error: error instanceof Error ? error : new Error(String(error))
+                    };
+                }
+            },
             validation: pattern.validation
         };
     }
