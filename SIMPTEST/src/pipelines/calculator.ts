@@ -1,12 +1,12 @@
 import { symphony } from '../sdk';
-import type { Pipeline, PipelineResult, PipelineStep } from '../sdk';
+import type { Pipeline, PipelineResult, PipelineStep, ToolConfig } from '../sdk';
 import { calculatorAgent } from '../agents/calculator';
 import { calculatorTeam } from '../teams/calculator';
 
 interface StepResult {
     success: boolean;
     result: any;
-    error?: string;
+    error?: Error;
 }
 
 class CalculatorPipeline {
@@ -62,47 +62,67 @@ class CalculatorPipeline {
             calculatorTeam.initialize()
         ]);
 
+        const agentTool: ToolConfig = {
+            name: 'agent_calculation',
+            description: 'Performs a calculation using the calculator agent',
+            inputs: ['task'],
+            handler: async (inputs: any) => {
+                const task = inputs?.agent_calculation?.task || inputs?.task;
+                if (!task) {
+                    throw new Error('No task provided for agent calculation');
+                }
+                const result = await calculatorAgent.run(task);
+                return result;
+            }
+        };
+
+        const teamTool: ToolConfig = {
+            name: 'team_calculation',
+            description: 'Performs parallel calculations using the calculator team',
+            inputs: ['task'],
+            handler: async (inputs: any) => {
+                const task = inputs?.team_calculation?.task || inputs?.task;
+                if (!task) {
+                    throw new Error('No task provided for team calculation');
+                }
+                const result = await calculatorTeam.run(task);
+                return result;
+            }
+        };
+
         const steps: PipelineStep[] = [
             {
                 id: 'agent_calculation',
                 name: 'Agent Calculation',
                 description: 'Performs a calculation using the calculator agent',
-                tool: {
-                    name: 'agent_calculation',
-                    description: 'Performs a calculation using the calculator agent',
-                    inputs: ['task'],
-                    run: async (inputs: any) => {
-                        const task = inputs?.agent_calculation?.task || inputs?.task;
-                        if (!task) {
-                            throw new Error('No task provided for agent calculation');
-                        }
-                        const result = await calculatorAgent.run(task);
-                        return result;
-                    }
-                },
+                tool: agentTool,
                 inputs: {
                     task: 'Add the numbers 10, 20, and 30'
+                },
+                handler: agentTool.handler,
+                chained: 0,
+                expects: {
+                    task: 'string'
+                },
+                outputs: {
+                    result: 'number'
                 }
             },
             {
                 id: 'team_calculation',
                 name: 'Team Calculation',
                 description: 'Performs parallel calculations using the calculator team',
-                tool: {
-                    name: 'team_calculation',
-                    description: 'Performs parallel calculations using the calculator team',
-                    inputs: ['task'],
-                    run: async (inputs: any) => {
-                        const task = inputs?.team_calculation?.task || inputs?.task;
-                        if (!task) {
-                            throw new Error('No task provided for team calculation');
-                        }
-                        const result = await calculatorTeam.run(task);
-                        return result;
-                    }
-                },
+                tool: teamTool,
                 inputs: {
                     task: 'Calculate (40, 50, 60) and (70, 80, 90) in parallel'
+                },
+                handler: teamTool.handler,
+                chained: 1,
+                expects: {
+                    task: 'string'
+                },
+                outputs: {
+                    result: 'number'
                 }
             }
         ];
@@ -110,7 +130,12 @@ class CalculatorPipeline {
         this.pipeline = await symphony.pipeline.create({
             name: 'Calculator Pipeline',
             description: 'Coordinates calculator components',
-            steps
+            steps,
+            metrics: {
+                enabled: true,
+                detailed: true,
+                trackMemory: true
+            }
         });
 
         this.initialized = true;
@@ -136,15 +161,16 @@ class CalculatorPipeline {
             if (!result.success) {
                 return {
                     success: false,
-                    error: 'Pipeline execution failed'
+                    error: new Error('Pipeline execution failed'),
+                    result: null
                 };
             }
 
             const pipelineResult = {
                 success: true,
                 result: {
-                    agentCalculation: result.stepResults?.[0]?.result,
-                    teamCalculation: result.stepResults?.[1]?.result
+                    agentCalculation: result.metrics?.stepResults?.['agent_calculation']?.result,
+                    teamCalculation: result.metrics?.stepResults?.['team_calculation']?.result
                 }
             };
             console.log('Final result:', pipelineResult);
@@ -153,7 +179,8 @@ class CalculatorPipeline {
             console.error('Pipeline error:', error);
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error : new Error(String(error)),
+                result: null
             };
         }
     }

@@ -96,7 +96,7 @@ export class BaseAgent {
         for (const tool of tools) {
             if (typeof tool === 'string') {
                 // Load standard tool
-                const standardTool = standardTools[tool];
+                const standardTool = standardTools.find(t => t.name === tool);
                 if (!standardTool) {
                     throw new Error(`Standard tool '${tool}' not found`);
                 }
@@ -205,10 +205,12 @@ export class BaseAgent {
                 this.metrics.trackOperation(`step_execution`);
                 
                 // Parse tool and params from step
-                const toolMatch = step.match(/Use (\w+) to (.*)/);
-                if (!toolMatch) continue;
+                const toolPattern = /Use (?<tool>\w+) to (?<desc>.*)/;
+                const matches = toolPattern.exec(step);
+                if (!matches?.groups) continue;
                 
-                const [_, toolName, description] = toolMatch;
+                const toolName = matches.groups.tool;
+                const description = matches.groups.desc;
                 if (this.requireApproval) {
                     // Store approval request in episodic memory
                     await this.episodicMemory.add(`approval_request:${Date.now()}`, {
@@ -281,10 +283,12 @@ export class BaseAgent {
                 this.metrics.trackOperation(`stream_step`);
                 
                 // Parse tool and params from step
-                const toolMatch = step.match(/Use (\w+) to (.*)/);
-                if (!toolMatch) continue;
+                const toolPattern = /Use (?<tool>\w+) to (?<desc>.*)/;
+                const matches = toolPattern.exec(step);
+                if (!matches?.groups) continue;
                 
-                const [_, toolName, description] = toolMatch;
+                const toolName = matches.groups.tool;
+                const description = matches.groups.desc;
                 if (this.requireApproval) {
                     // Store approval request in episodic memory
                     await this.episodicMemory.add(`approval_request:${Date.now()}`, {

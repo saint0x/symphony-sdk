@@ -1,31 +1,41 @@
 import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from '../managers/base';
 import { IPipelineService } from './interfaces';
+import { Pipeline, PipelineConfig } from '../types/sdk';
+import { generateId } from '../utils/id';
 
 export class PipelineService extends BaseManager implements IPipelineService {
     constructor(symphony: ISymphony) {
         super(symphony, 'PipelineService');
         // Add dependencies
         this.addDependency(symphony.validation);
-        this.addDependency(symphony.components);
-        this.addDependency(symphony.tools);
+        this.addDependency(symphony.componentManager);
+        this.addDependency(symphony.tool);
         this.addDependency(symphony.agent);
         this.addDependency(symphony.team);
     }
 
-    async create(config: {
-        name: string;
-        description: string;
-        steps: {
-            name: string;
-            description: string;
-            handler: (params: any) => Promise<any>;
-        }[];
-    }): Promise<any> {
+    async create(input: string | Partial<PipelineConfig>): Promise<Pipeline> {
+        if (typeof input === 'string') {
+            // Create from name
+            return this.createFromName(input);
+        } else {
+            // Create from config
+            return this.createPipeline(input);
+        }
+    }
+
+    private async createFromName(name: string): Promise<Pipeline> {
+        // Create pipeline from name using inference
+        const config: Partial<PipelineConfig> = {
+            name,
+            description: `Pipeline ${name}`,
+            steps: []
+        };
         return this.createPipeline(config);
     }
 
-    async createPipeline(config: any): Promise<any> {
+    private async createPipeline(config: Partial<PipelineConfig>): Promise<Pipeline> {
         this.assertInitialized();
         return this.withErrorHandling('createPipeline', async () => {
             const validation = await this.symphony.validation.validate(config, 'PipelineConfig');
@@ -33,8 +43,11 @@ export class PipelineService extends BaseManager implements IPipelineService {
                 throw new Error(`Invalid pipeline configuration: ${validation.errors.join(', ')}`);
             }
 
-            const pipeline = {
-                ...config,
+            const pipeline: Pipeline = {
+                id: generateId(),
+                name: config.name || 'Unnamed Pipeline',
+                description: config.description || 'No description provided',
+                steps: config.steps || [],
                 run: async (input?: any) => {
                     const metricId = `pipeline_${config.name}_run_${Date.now()}`;
                     this.symphony.startMetric(metricId, { pipelineName: config.name, input });
@@ -43,7 +56,7 @@ export class PipelineService extends BaseManager implements IPipelineService {
                         let currentInput = input;
                         const stepResults = [];
 
-                        for (const step of config.steps) {
+                        for (const step of config.steps || []) {
                             const stepMetricId = `step_${step.id}_${Date.now()}`;
                             this.symphony.startMetric(stepMetricId, {
                                 stepId: step.id,
@@ -51,24 +64,13 @@ export class PipelineService extends BaseManager implements IPipelineService {
                             });
 
                             try {
-                                // Get step input
-                                const stepInput = typeof step.inputs === 'function'
-                                    ? step.inputs(currentInput)
-                                    : step.inputs;
-
-                                // Run step
-                                const result = await step.tool.run(stepInput);
-                                stepResults.push({
-                                    stepId: step.id,
-                                    result: result.result
-                                });
-
-                                // Update current input for next step
-                                currentInput = result.result;
+                                const result = await step.handler(currentInput);
+                                stepResults.push(result);
+                                currentInput = result;
 
                                 this.symphony.endMetric(stepMetricId, {
                                     success: true,
-                                    result: result.result
+                                    output: result
                                 });
                             } catch (error) {
                                 this.symphony.endMetric(stepMetricId, {
@@ -81,13 +83,12 @@ export class PipelineService extends BaseManager implements IPipelineService {
 
                         this.symphony.endMetric(metricId, {
                             success: true,
-                            stepResults
+                            results: stepResults
                         });
 
                         return {
                             success: true,
-                            result: currentInput,
-                            stepResults
+                            result: stepResults
                         };
                     } catch (error) {
                         this.symphony.endMetric(metricId, {
@@ -101,7 +102,7 @@ export class PipelineService extends BaseManager implements IPipelineService {
 
             this.logInfo(`Created pipeline: ${config.name}`);
             return pipeline;
-        }, { pipelineName: config.name });
+        });
     }
 
     protected async initializeInternal(): Promise<void> {

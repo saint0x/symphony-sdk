@@ -9,7 +9,6 @@ import {
     PipelinePattern
 } from './types';
 import { PatternRegistryImpl } from './registry';
-import { logger } from '../../utils/logger';
 
 /**
  * Core inference engine for configuration enhancement
@@ -57,8 +56,8 @@ export class InferenceEngine {
             return {
                 name,
                 ...pattern,
-                _metadata: { inferredFrom: 'pattern' }
-            };
+                metadata: { inferredFrom: 'pattern' }
+            } as unknown as Partial<T>;
         }
 
         // Infer from name
@@ -68,8 +67,8 @@ export class InferenceEngine {
             type,
             capabilities,
             ...this.inferDefaultsByType(type, capabilities),
-            _metadata: { inferredFrom: 'name' }
-        } as Partial<T>;
+            metadata: { inferredFrom: 'name' }
+        } as unknown as Partial<T>;
     }
 
     /**
@@ -104,7 +103,7 @@ export class InferenceEngine {
             return this.applyOptimizationStrategy(config, cached.strategy);
         }
 
-        const strategy = this.selectOptimizationStrategy(config, type);
+        const strategy = this.selectOptimizationStrategy(type);
         const optimized = this.applyOptimizationStrategy(config, strategy);
 
         this.optimizationCache.set(cacheKey, {
@@ -301,45 +300,105 @@ export class InferenceEngine {
     }
 
     private inferRequiredInputs(capabilities: string[]): string[] {
-        return ['input']; // Simplified - expand based on capabilities
+        const inputs: string[] = ['input'];
+        if (capabilities.includes('data-processing')) {
+            inputs.push('data');
+        }
+        if (capabilities.includes('file-operations')) {
+            inputs.push('path');
+        }
+        return inputs;
     }
 
     private inferExpectedOutputs(capabilities: string[]): string[] {
-        return ['output']; // Simplified - expand based on capabilities
+        const outputs: string[] = ['output'];
+        if (capabilities.includes('data-processing')) {
+            outputs.push('processed-data');
+        }
+        if (capabilities.includes('file-operations')) {
+            outputs.push('file-content');
+        }
+        return outputs;
     }
 
     private inferValidationRules(capabilities: string[]): any {
-        return {}; // Simplified - expand based on capabilities
+        const rules: any = {};
+        if (capabilities.includes('input-validation')) {
+            rules.validateInput = true;
+        }
+        if (capabilities.includes('output-validation')) {
+            rules.validateOutput = true;
+        }
+        return rules;
     }
 
     private inferOptimalStrategy(capabilities: string[]): string {
-        return 'collaborative'; // Simplified - expand based on capabilities
+        if (capabilities.includes('parallel-execution')) {
+            return 'parallel';
+        }
+        if (capabilities.includes('load-balancing')) {
+            return 'load-balanced';
+        }
+        return 'collaborative';
     }
 
     private inferRequiredAgents(capabilities: string[]): string[] {
-        return []; // Simplified - expand based on capabilities
+        return capabilities
+            .map(cap => this.registry.findByCapability(cap))
+            .flat()
+            .filter(pattern => pattern.type === 'agent')
+            .map(pattern => pattern.name);
     }
 
     private inferRequiredSteps(capabilities: string[]): string[] {
-        return []; // Simplified - expand based on capabilities
+        return capabilities
+            .map(cap => this.registry.findByCapability(cap))
+            .flat()
+            .filter(pattern => pattern.type === 'tool')
+            .map(pattern => pattern.name);
     }
 
     private inferPipelineValidation(capabilities: string[]): any {
-        return {}; // Simplified - expand based on capabilities
+        const validation: any = {};
+        if (capabilities.includes('input-validation')) {
+            validation.validateInput = true;
+        }
+        if (capabilities.includes('output-validation')) {
+            validation.validateOutput = true;
+        }
+        if (capabilities.includes('pipeline-validation')) {
+            validation.validateFlow = true;
+        }
+        return validation;
     }
 
     /**
      * Optimization strategy selection and application
      */
-    private selectOptimizationStrategy(
-        config: Partial<InferencePattern>,
-        type: string
-    ): OptimizationStrategy {
-        // Select optimal strategy based on configuration and type
+    private selectOptimizationStrategy(type: string): OptimizationStrategy {
         return {
             priority: 1,
-            condition: () => true,
-            enhance: (config) => config as InferencePattern
+            condition: (config: Partial<InferencePattern>) => {
+                // Check if config has required fields based on type
+                switch (type) {
+                    case 'agent':
+                        return !!(config as Partial<AgentPattern>).task;
+                    case 'tool':
+                        return !!(config as Partial<ToolPattern>).inputs;
+                    case 'team':
+                        return !!(config as Partial<TeamPattern>).agents;
+                    case 'pipeline':
+                        return !!(config as Partial<PipelinePattern>).steps;
+                    default:
+                        return true;
+                }
+            },
+            enhance: (config: Partial<InferencePattern>) => {
+                // Add type-specific enhancements
+                const enhanced = { ...config };
+                enhanced.capabilities = enhanced.capabilities || [];
+                return enhanced as InferencePattern;
+            }
         };
     }
 

@@ -1,5 +1,6 @@
 import { Symphony } from './symphony';
 import type { SymphonyConfig } from './symphony/interfaces/types';
+import { LogLevel } from './types/sdk';
 
 class SymphonySDK {
     private static instance: Symphony | null = null;
@@ -40,7 +41,7 @@ export const symphony = SymphonySDK.getInstance({
         retryDelay: 1000
     },
     logging: {
-        level: 'info',
+        level: LogLevel.INFO,
         format: 'json'
     },
     metrics: {

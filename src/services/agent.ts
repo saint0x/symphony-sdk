@@ -1,6 +1,7 @@
 import { ISymphony } from '../symphony/interfaces/types';
 import { BaseManager } from '../managers/base';
 import { IAgentService } from './interfaces';
+import { Agent, AgentConfig, LLMConfig, AgentResult, AgentOptions } from '../types/sdk';
 
 // Directory operation message types
 const DIRECTORY_MESSAGE_TYPES = {
@@ -15,8 +16,8 @@ export class AgentService extends BaseManager implements IAgentService {
         super(symphony, 'AgentService');
         // Add dependencies
         this.addDependency(symphony.validation);
-        this.addDependency(symphony.components);
-        this.addDependency(symphony.tools);
+        this.addDependency(symphony.componentManager);
+        this.addDependency(symphony.tool);
 
         // Subscribe to directory operation messages
         Object.values(DIRECTORY_MESSAGE_TYPES).forEach(messageType => {
@@ -24,25 +25,32 @@ export class AgentService extends BaseManager implements IAgentService {
         });
     }
 
-    async create(config: {
-        name: string;
-        description: string;
-        task: string;
-        tools: any[];
-        llm: {
-            provider: string;
-            model: string;
-            temperature?: number;
-            maxTokens?: number;
+    async create(input: string | Partial<AgentConfig>): Promise<Agent> {
+        if (typeof input === 'string') {
+            // Create from name
+            return this.createFromName(input);
+        } else {
+            // Create from config
+            return this.createAgent(input);
+        }
+    }
+
+    private async createFromName(name: string): Promise<Agent> {
+        const config: Partial<AgentConfig> = {
+            name,
+            description: `Agent ${name}`,
+            task: '',
+            tools: [],
+            llm: {
+                provider: 'openai',
+                model: 'gpt-4',
+                apiKey: process.env.OPENAI_API_KEY || ''
+            } as LLMConfig
         };
-        maxCalls?: number;
-        requireApproval?: boolean;
-        timeout?: number;
-    }): Promise<any> {
         return this.createAgent(config);
     }
 
-    async createAgent(config: any): Promise<any> {
+    private async createAgent(config: Partial<AgentConfig>): Promise<Agent> {
         this.assertInitialized();
         return this.withErrorHandling('createAgent', async () => {
             const validation = await this.symphony.validation.validate(config, 'AgentConfig');
@@ -50,46 +58,66 @@ export class AgentService extends BaseManager implements IAgentService {
                 throw new Error(`Invalid agent configuration: ${validation.errors.join(', ')}`);
             }
 
-            const registry = await this.symphony.getRegistry();
-            if (!registry) {
-                throw new Error('Service registry is not available');
-            }
-
-            const agent = {
-                ...config,
-                run: async (task: string, options: any = {}) => {
-                    const metricId = `agent_${config.name}_run_${Date.now()}`;
-                    this.symphony.startMetric(metricId, { agentName: config.name, task, options });
+            const agent: Agent = {
+                id: `agent_${Date.now()}`,
+                name: config.name || 'Unnamed Agent',
+                description: config.description || 'No description provided',
+                task: config.task || '',
+                tools: config.tools || [],
+                run: async (task: string, options?: AgentOptions): Promise<AgentResult> => {
+                    const startTime = Date.now();
+                    
+                    // Report initial progress
+                    options?.onProgress?.({ status: 'started', result: null });
 
                     try {
-                        // Here we would normally have the LLM integration
-                        // For now, just use the first tool
-                        const tool = config.tools[0];
-                        const result = await tool.run({ task });
+                        // TODO: Implement actual agent execution
+                        const result = task;
 
-                        this.symphony.endMetric(metricId, {
-                            success: true,
-                            result: result.result
-                        });
+                        const metrics = {
+                            duration: Date.now() - startTime,
+                            startTime,
+                            endTime: Date.now(),
+                            toolCalls: 0
+                        };
+
+                        // Report metrics if callback provided
+                        options?.onMetrics?.(metrics);
+
+                        // Report completion progress
+                        options?.onProgress?.({ status: 'completed', result });
 
                         return {
                             success: true,
-                            result: result.result
+                            result,
+                            metrics
                         };
                     } catch (error) {
-                        this.symphony.endMetric(metricId, {
-                            success: false,
+                        const metrics = {
+                            duration: Date.now() - startTime,
+                            startTime,
+                            endTime: Date.now(),
+                            toolCalls: 0,
                             error: error instanceof Error ? error.message : String(error)
-                        });
-                        throw error;
+                        };
+
+                        // Report error metrics
+                        options?.onMetrics?.(metrics);
+
+                        // Report error progress
+                        options?.onProgress?.({ status: 'error', result: null });
+
+                        return {
+                            success: false,
+                            error: error instanceof Error ? error : new Error(String(error)),
+                            metrics
+                        };
                     }
                 }
             };
 
-            registry.registerAgent(config.name, agent);
-            this.logInfo(`Created agent: ${config.name}`);
             return agent;
-        }, { agentName: config.name });
+        });
     }
 
     protected async initializeInternal(): Promise<void> {

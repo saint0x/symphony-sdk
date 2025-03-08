@@ -1,12 +1,5 @@
-import { 
-    InferencePattern, 
-    PatternRegistry, 
-    CapabilitySet,
-    AgentPattern,
-    ToolPattern,
-    TeamPattern,
-    PipelinePattern
-} from './types';
+import { InferencePattern } from './types';
+import { PatternRegistry, CapabilitySet } from './types';
 
 /**
  * Registry for managing inference patterns and capabilities
@@ -76,35 +69,79 @@ export class PatternRegistryImpl<T extends InferencePattern> implements PatternR
     private initializeDefaultPatterns(): void {
         // Agent patterns
         this.defaults.set('researcher', {
-            type: 'agent',
+            type: 'agent' as const,
             description: 'Research assistant that helps find and analyze information',
             task: 'Find and summarize information about a topic',
             capabilities: ['search', 'analyze', 'summarize'],
-        } as Partial<T>);
+            metadata: {
+                id: 'researcher',
+                name: 'researcher',
+                description: 'Research assistant that helps find and analyze information',
+                type: 'agent',
+                version: '1.0.0',
+                capabilities: [],
+                requirements: [],
+                provides: [],
+                tags: []
+            }
+        } as unknown as Partial<T>);
 
         this.defaults.set('calculator', {
-            type: 'agent',
+            type: 'agent' as const,
             description: 'Performs mathematical calculations',
             task: 'Execute mathematical operations',
             capabilities: ['math', 'compute'],
-        } as Partial<T>);
+            metadata: {
+                id: 'calculator',
+                name: 'calculator',
+                description: 'Performs mathematical calculations',
+                type: 'agent',
+                version: '1.0.0',
+                capabilities: [],
+                requirements: [],
+                provides: [],
+                tags: []
+            }
+        } as unknown as Partial<T>);
 
         // Tool patterns
         this.defaults.set('search', {
-            type: 'tool',
+            type: 'tool' as const,
             description: 'Searches for information',
             capabilities: ['web', 'data'],
             inputs: ['query'],
             outputs: ['results'],
-        } as Partial<T>);
+            metadata: {
+                id: 'search',
+                name: 'search',
+                description: 'Searches for information',
+                type: 'tool',
+                version: '1.0.0',
+                capabilities: [],
+                requirements: [],
+                provides: [],
+                tags: []
+            }
+        } as unknown as Partial<T>);
 
         // Team patterns
         this.defaults.set('research-team', {
-            type: 'team',
+            type: 'team' as const,
             description: 'Team of research agents',
             capabilities: ['research', 'coordination'],
             strategy: 'collaborative',
-        } as Partial<T>);
+            metadata: {
+                id: 'research-team',
+                name: 'research-team',
+                description: 'Team of research agents',
+                type: 'team',
+                version: '1.0.0',
+                capabilities: [],
+                requirements: [],
+                provides: [],
+                tags: []
+            }
+        } as unknown as Partial<T>);
     }
 
     /**

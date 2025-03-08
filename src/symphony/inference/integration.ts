@@ -7,6 +7,7 @@ import {
     PipelineStep
 } from '../../types/sdk';
 import { ComponentType } from '../../types/components';
+import { ComponentCapability } from '../../types/metadata';
 import { AgentPattern, ToolPattern, TeamPattern, PipelinePattern } from './types';
 import { InferenceEngine } from './engine';
 
@@ -32,9 +33,9 @@ export class SymphonyInference {
      * Convert agent config to pattern
      */
     private toAgentPattern(config: Partial<AgentConfig>): AgentPattern {
-        const pattern: AgentPattern = {
+        return {
             name: config.name || '',
-            type: 'agent',
+            type: 'agent' as const,
             capabilities: [],
             metadata: {
                 id: config.name || '',
@@ -42,7 +43,7 @@ export class SymphonyInference {
                 description: '',
                 type: 'agent' as ComponentType,
                 version: '1.0.0',
-                capabilities: [],
+                capabilities: [] as ComponentCapability[],
                 requirements: [],
                 provides: [],
                 tags: []
@@ -51,16 +52,15 @@ export class SymphonyInference {
             tools: (config.tools || []).map(t => typeof t === 'string' ? t : t.name),
             llm: config.llm || 'default'
         };
-        return pattern;
     }
 
     /**
      * Convert tool config to pattern
      */
     private toToolPattern(config: Partial<ToolConfig>): ToolPattern {
-        const pattern: ToolPattern = {
+        return {
             name: config.name || '',
-            type: 'tool',
+            type: 'tool' as const,
             capabilities: [],
             metadata: {
                 id: config.name || '',
@@ -68,7 +68,7 @@ export class SymphonyInference {
                 description: '',
                 type: 'tool' as ComponentType,
                 version: '1.0.0',
-                capabilities: [],
+                capabilities: [] as ComponentCapability[],
                 requirements: [],
                 provides: [],
                 tags: []
@@ -77,16 +77,15 @@ export class SymphonyInference {
             outputs: config.outputs || [],
             validation: config.validation
         };
-        return pattern;
     }
 
     /**
      * Convert team config to pattern
      */
     private toTeamPattern(config: Partial<TeamConfig>): TeamPattern {
-        const pattern: TeamPattern = {
+        return {
             name: config.name || '',
-            type: 'team',
+            type: 'team' as const,
             capabilities: [],
             metadata: {
                 id: config.name || '',
@@ -94,7 +93,7 @@ export class SymphonyInference {
                 description: '',
                 type: 'team' as ComponentType,
                 version: '1.0.0',
-                capabilities: [],
+                capabilities: [] as ComponentCapability[],
                 requirements: [],
                 provides: [],
                 tags: []
@@ -102,16 +101,15 @@ export class SymphonyInference {
             agents: (config.agents || []).map(a => typeof a === 'string' ? a : a.name),
             strategy: config.strategy?.name
         };
-        return pattern;
     }
 
     /**
      * Convert pipeline config to pattern
      */
     private toPipelinePattern(config: Partial<PipelineConfig>): PipelinePattern {
-        const pattern: PipelinePattern = {
+        return {
             name: config.name || '',
-            type: 'pipeline',
+            type: 'pipeline' as const,
             capabilities: [],
             metadata: {
                 id: config.name || '',
@@ -119,7 +117,7 @@ export class SymphonyInference {
                 description: '',
                 type: 'pipeline' as ComponentType,
                 version: '1.0.0',
-                capabilities: [],
+                capabilities: [] as ComponentCapability[],
                 requirements: [],
                 provides: [],
                 tags: []
@@ -127,7 +125,6 @@ export class SymphonyInference {
             steps: (config.steps || []).map(s => s.name),
             validation: config.validation
         };
-        return pattern;
     }
 
     /**
@@ -236,10 +233,13 @@ export class SymphonyInference {
      */
     async enhanceAgent(base: string | Partial<AgentConfig>): Promise<AgentConfig> {
         const pattern = typeof base === 'string' ? 
-            await this.engine.inferConfig<AgentPattern>(base, 'agent').base : 
+            (await this.engine.inferConfig<AgentPattern>(base, 'agent')).base : 
             this.toAgentPattern(base);
-        const enhanced = await this.engine.inferConfig<AgentPattern>(pattern, 'agent').base;
-        return this.fromAgentPattern(enhanced);
+        const enhanced = await this.engine.inferConfig<AgentPattern>({
+            ...pattern,
+            type: 'agent' as const
+        }, 'agent').base;
+        return this.fromAgentPattern(enhanced as AgentPattern);
     }
 
     /**
@@ -247,10 +247,13 @@ export class SymphonyInference {
      */
     async enhanceTool(base: string | Partial<ToolConfig>): Promise<ToolConfig> {
         const pattern = typeof base === 'string' ? 
-            await this.engine.inferConfig<ToolPattern>(base, 'tool').base : 
+            (await this.engine.inferConfig<ToolPattern>(base, 'tool')).base : 
             this.toToolPattern(base);
-        const enhanced = await this.engine.inferConfig<ToolPattern>(pattern, 'tool').base;
-        return this.fromToolPattern(enhanced);
+        const enhanced = await this.engine.inferConfig<ToolPattern>({
+            ...pattern,
+            type: 'tool' as const
+        }, 'tool').base;
+        return this.fromToolPattern(enhanced as ToolPattern);
     }
 
     /**
@@ -258,10 +261,13 @@ export class SymphonyInference {
      */
     async enhanceTeam(base: string | Partial<TeamConfig>): Promise<TeamConfig> {
         const pattern = typeof base === 'string' ? 
-            await this.engine.inferConfig<TeamPattern>(base, 'team').base : 
+            (await this.engine.inferConfig<TeamPattern>(base, 'team')).base : 
             this.toTeamPattern(base);
-        const enhanced = await this.engine.inferConfig<TeamPattern>(pattern, 'team').base;
-        return this.fromTeamPattern(enhanced);
+        const enhanced = await this.engine.inferConfig<TeamPattern>({
+            ...pattern,
+            type: 'team' as const
+        }, 'team').base;
+        return this.fromTeamPattern(enhanced as TeamPattern);
     }
 
     /**
@@ -269,10 +275,13 @@ export class SymphonyInference {
      */
     async enhancePipeline(base: string | Partial<PipelineConfig>): Promise<PipelineConfig> {
         const pattern = typeof base === 'string' ? 
-            await this.engine.inferConfig<PipelinePattern>(base, 'pipeline').base : 
+            (await this.engine.inferConfig<PipelinePattern>(base, 'pipeline')).base : 
             this.toPipelinePattern(base);
-        const enhanced = await this.engine.inferConfig<PipelinePattern>(pattern, 'pipeline').base;
-        return this.fromPipelinePattern(enhanced);
+        const enhanced = await this.engine.inferConfig<PipelinePattern>({
+            ...pattern,
+            type: 'pipeline' as const
+        }, 'pipeline').base;
+        return this.fromPipelinePattern(enhanced as PipelinePattern);
     }
 }
 

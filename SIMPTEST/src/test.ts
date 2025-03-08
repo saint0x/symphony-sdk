@@ -62,7 +62,7 @@ async function runComplexTest() {
                 console.log(`Expected: ${test.expectedResult}`);
                 console.log(`Test ${result.result === test.expectedResult ? 'PASSED ✅' : 'FAILED ❌'}`);
             } else {
-                console.error('Error:', result.error?.message);
+                console.error('Error:', result.error?.toString());
             }
         }
 
@@ -89,7 +89,7 @@ async function runComplexTest() {
             if (result.success) {
                 console.log(`${task} = ${result.result}`);
             } else {
-                console.error(`Error with task "${task}":`, result.error?.message);
+                console.error(`Error with task "${task}":`, result.error?.toString());
             }
         }
 

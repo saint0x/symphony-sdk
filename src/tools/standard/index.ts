@@ -1,79 +1,78 @@
-import { readFile, writeFile } from 'fs/promises';
+import { ToolConfig, ToolResult } from '../../types/sdk';
+import fs from 'fs/promises';
 import fetch from 'node-fetch';
-import { ToolConfig } from '../../types/sdk';
-import { createMetricsTracker } from '../../utils/metrics';
-import { validateSchema } from '../../utils/validation';
 import { getCache } from '../../cache';
+import { validateSchema } from '../../utils/validation';
 
-// File System Tools
-export const readFileTool: ToolConfig = {
-    name: 'readFile',
-    description: 'Read file contents',
+// Standard tool configurations
+export const standardTools: ToolConfig[] = [{
+    name: 'readFileTool',
+    description: 'Read content from a file',
     inputs: ['path'],
-    handler: async (params) => {
-        const metrics = createMetricsTracker();
-        
+    outputs: ['content', 'metadata'],
+    handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            validateSchema(params, {
-                path: { type: 'string', required: true }
-            });
+            const { path } = params;
+            if (!path) {
+                throw new Error('Path parameter is required');
+            }
 
-            const content = await readFile(params.path, 'utf-8');
-            
+            const content = await fs.readFile(path, 'utf-8');
+            const stats = await fs.stat(path);
+
             return {
                 success: true,
-                result: { content },
-                metrics: metrics.end()
+                result: {
+                    content,
+                    metadata: {
+                        format: params.format || path.split('.').pop()?.toLowerCase() || '',
+                        size: stats.size,
+                        path,
+                        type: 'file'
+                    }
+                }
             };
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error),
-                metrics: metrics.end(),
-                result: null
+                error: error instanceof Error ? error : new Error(String(error))
             };
         }
     }
-};
-
-export const writeFileTool: ToolConfig = {
-    name: 'writeFile',
-    description: 'Write content to file',
+}, {
+    name: 'writeFileTool',
+    description: 'Write content to a file',
     inputs: ['path', 'content'],
-    handler: async (params) => {
-        const metrics = createMetricsTracker();
-        
+    outputs: ['success', 'error'],
+    handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            validateSchema(params, {
-                path: { type: 'string', required: true },
-                content: { type: 'string', required: true }
-            });
+            const { path, content } = params;
+            if (!path || !content) {
+                throw new Error('Path and content parameters are required');
+            }
 
-            await writeFile(params.path, params.content);
-            
+            await fs.writeFile(path, content, 'utf-8');
+            const stats = await fs.stat(path);
+
             return {
                 success: true,
-                result: { written: true },
-                metrics: metrics.end()
+                result: {
+                    path,
+                    size: stats.size
+                }
             };
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error),
-                metrics: metrics.end(),
-                result: null
+                error: error instanceof Error ? error : new Error(String(error))
             };
         }
     }
-};
-
-// Search Tools
-export const webSearchTool: ToolConfig = {
-    name: 'webSearch',
+}, {
+    name: 'webSearchTool',
     description: 'Search the web using Serper.dev',
     inputs: ['query', 'type?'],
-    handler: async (params) => {
-        const metrics = createMetricsTracker();
+    handler: async (params: any): Promise<ToolResult<any>> => {
         const cache = getCache();
         
         try {
@@ -87,8 +86,7 @@ export const webSearchTool: ToolConfig = {
             if (cached) {
                 return {
                     success: true,
-                    result: { results: cached },
-                    metrics: { ...metrics.end(), cacheHit: true }
+                    result: { results: cached }
                 };
             }
 
@@ -109,15 +107,12 @@ export const webSearchTool: ToolConfig = {
 
             return {
                 success: true,
-                result: { results },
-                metrics: metrics.end()
+                result: { results }
             };
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error),
-                metrics: metrics.end(),
-                result: null
+                error: error instanceof Error ? error : new Error(String(error))
             };
         }
     },
@@ -132,72 +127,4 @@ export const webSearchTool: ToolConfig = {
         delay: 1000,
         retryableErrors: ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED']
     }
-};
-
-// Document Tools
-export const parseDocumentTool: ToolConfig = {
-    name: 'parseDocument',
-    description: 'Parse document content',
-    inputs: ['path', 'format?'],
-    handler: async (params) => {
-        const metrics = createMetricsTracker();
-        
-        try {
-            validateSchema(params, {
-                path: { type: 'string', required: true },
-                format: { type: 'string' }
-            });
-
-            const content = await readFile(params.path, 'utf-8');
-            const ext = params.path.split('.').pop()?.toLowerCase() || '';
-            
-            let parsedContent;
-            const metadata = {
-                format: params.format || ext,
-                size: content.length,
-                path: params.path,
-                type: ext.slice(1) || 'text'
-            };
-
-            switch (ext) {
-                case 'json':
-                    parsedContent = JSON.parse(content);
-                    metadata.type = 'json';
-                    break;
-                case 'yaml':
-                case 'yml':
-                    // Add yaml parsing
-                    break;
-                case 'md':
-                    // Add markdown parsing
-                    break;
-                default:
-                    parsedContent = content;
-                    metadata.type = 'text';
-            }
-
-            return {
-                success: true,
-                result: { content: parsedContent, metadata },
-                metrics: metrics.end()
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                metrics: metrics.end(),
-                result: null
-            };
-        }
-    }
-};
-
-// Export all standard tools
-export const standardTools: { [key: string]: ToolConfig } = {
-    readFile: readFileTool,
-    writeFile: writeFileTool,
-    webSearch: webSearchTool,
-    parseDocument: parseDocumentTool
-};
-
-export default standardTools; 
+}]; 

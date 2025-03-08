@@ -65,6 +65,16 @@ export type InferredConfig<T> = T extends string
     ? CompleteConfig<R>
     : never;
 
+/**
+ * Base configuration map for component types
+ */
+export interface BaseConfigMap {
+    agent: AgentPattern;
+    tool: ToolPattern;
+    team: TeamPattern;
+    pipeline: PipelinePattern;
+}
+
 export type DefaultPatternConfig<T extends string> = {
     [K in keyof BaseConfigMap]: BaseConfigMap[K];
 } & {

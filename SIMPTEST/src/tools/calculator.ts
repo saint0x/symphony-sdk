@@ -47,7 +47,7 @@ class TripleAddTool {
         }, this);
 
         // Create the tool
-        this.tool = await symphony.tools.create({
+        this.tool = await symphony.tool.create({
             name: 'tripleAdd',
             description: 'A tool that adds three numbers together',
             inputs: ['num1', 'num2', 'num3'],

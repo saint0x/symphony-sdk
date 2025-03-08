@@ -9,15 +9,24 @@ const symphony: ISymphony = originalSymphony;
 export interface TeamResult {
     success: boolean;
     result: any;
-    error?: string;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        agentCalls: number;
+        [key: string]: any;
+    };
 }
 
 export interface AgentResult {
     success: boolean;
     result: any;
-    error?: string;
+    error?: Error;
     metrics?: {
         duration: number;
+        startTime: number;
+        endTime: number;
         toolCalls: number;
         [key: string]: any;
     };
@@ -25,32 +34,89 @@ export interface AgentResult {
 
 export interface ToolResult<T = any> {
     success: boolean;
-    result: T;
-    error?: string;
+    result?: T;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        [key: string]: any;
+    };
+}
+
+export interface ToolConfig {
+    name: string;
+    description: string;
+    inputs: string[];
+    outputs?: string[];
+    handler: (input: any) => Promise<ToolResult<any>>;
+    validation?: ValidationConfig;
 }
 
 export interface Pipeline {
-    run(): Promise<PipelineResult>;
+    run(input: any, options?: PipelineOptions): Promise<PipelineResult>;
 }
 
 export interface PipelineResult {
     success: boolean;
     result: any;
-    error?: string;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        stepResults: {
+            [key: string]: any;
+        };
+        [key: string]: any;
+    };
+}
+
+export interface PipelineOptions {
+    onStepComplete?: (step: PipelineStep, result: any) => void;
+    onMetrics?: (metrics: { [key: string]: any }) => void;
+    timeout?: number;
 }
 
 export interface PipelineStep {
     id: string;
     name: string;
     description: string;
+    tool: string | ToolConfig;
     inputs: any;
-    handler: (input: any) => Promise<any>;
+    handler: (params: any) => Promise<ToolResult<any>>;
+    chained: number;
+    expects: Record<string, string>;
+    outputs: Record<string, string>;
+    inputMap?: ((input: any) => Promise<any>) | Record<string, any>;
+    retry?: RetryConfig;
+    conditions?: {
+        requiredFields?: string[];
+        validateOutput?: (output: any) => boolean;
+        customValidation?: (context: any) => Promise<boolean>;
+    };
 }
 
-export interface PipelineConfig {
-    name: string;
-    description: string;
-    steps: PipelineStep[];
+export interface RetryConfig {
+    enabled: boolean;
+    maxAttempts?: number;
+    delay?: number;
+    backoffFactor?: number;
+    retryableErrors?: string[];
+}
+
+export interface ValidationConfig {
+    schema: {
+        [key: string]: {
+            type: string;
+            required?: boolean;
+            enum?: any[];
+            maxLength?: number;
+            properties?: Record<string, any>;
+        };
+    };
+    custom?: (input: any) => Promise<boolean>;
+    required?: string[];
 }
 
 export interface TeamConfig {

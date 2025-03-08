@@ -157,7 +157,9 @@ export enum LogLevel {
     DEBUG = 'debug',
     INFO = 'info',
     WARN = 'warn',
-    ERROR = 'error'
+    ERROR = 'error',
+    NORMAL = 'info',    // Alias for INFO
+    VERBOSE = 'debug'   // Alias for DEBUG
 }
 
 export interface LogEntry {

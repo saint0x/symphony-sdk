@@ -33,9 +33,12 @@ export class BasePipeline {
             this.validateInput(step, input);
 
             // Get tool implementation
-            const tool = typeof step.tool === 'string' ? standardTools[step.tool] : step.tool;
+            const toolKey = typeof step.tool === 'string' ? step.tool : step.tool.name;
+            const tool = typeof step.tool === 'string' 
+                ? standardTools.find(t => t.name === toolKey) 
+                : step.tool;
             if (!tool) {
-                throw new Error(`Tool '${typeof step.tool === 'string' ? step.tool : step.tool.name}' not found`);
+                throw new Error(`Tool '${toolKey}' not found`);
             }
 
             // Execute tool with retry logic if configured
