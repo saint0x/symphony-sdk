@@ -1,15 +1,49 @@
-import { symphony } from 'symphonic';
+import { symphony } from '../sdk';
 import { tripleAddTool } from '../tools/calculator';
 import { calculatorTeam } from '../teams/calculator';
-import { PipelineConfig } from 'symphonic/types';
+import { Pipeline, PipelineResult } from 'symphonic/types';
+import { SymphonyComponentManager } from '../core/component-manager';
+import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
 
 class CalculatorPipeline {
-    private pipeline: any;
-    private initialized: boolean = false;
+    private pipeline: Pipeline;
 
     constructor() {
-        // Configuration follows the validated PipelineConfig schema
-        const config: PipelineConfig = {
+        return SymphonyComponentManager.getInstance().register({
+            id: 'calculatorPipeline',
+            name: 'Calculator Pipeline',
+            type: 'pipeline',
+            description: 'A pipeline that processes calculations through multiple steps',
+            version: '1.0.0',
+            capabilities: [
+                {
+                    name: CapabilityBuilder.pipeline('SEQUENTIAL'),
+                    parameters: {
+                        input: { type: 'object', required: true }
+                    },
+                    returns: {
+                        type: 'object',
+                        description: 'The results of the sequential calculation steps'
+                    }
+                }
+            ],
+            requirements: [
+                {
+                    capability: CapabilityBuilder.team('COORDINATION'),
+                    required: true
+                },
+                {
+                    capability: CapabilityBuilder.numeric('ADD'),
+                    required: true
+                }
+            ],
+            provides: ['pipeline.arithmetic', 'pipeline.sequential_processing'],
+            tags: ['math', 'pipeline', 'sequential', 'calculator']
+        }, this);
+    }
+
+    async initialize() {
+        this.pipeline = await symphony.pipeline.createPipeline({
             name: 'Calculator Pipeline',
             description: 'A pipeline that processes calculations through multiple steps',
             steps: [
@@ -20,112 +54,33 @@ class CalculatorPipeline {
                         num1: 10,
                         num2: 20,
                         num3: 30
-                    },
-                    validation: {
-                        input: {
-                            num1: { type: 'number', required: true },
-                            num2: { type: 'number', required: true },
-                            num3: { type: 'number', required: true }
-                        },
-                        output: {
-                            result: { type: 'number', required: true }
-                        }
                     }
                 },
                 {
                     id: 'teamProcess',
                     tool: calculatorTeam,
-                    inputs: (prevResult: any) => ({
-                        task: `Process the number ${prevResult.result}`
-                    }),
-                    validation: {
-                        input: {
-                            result: { type: 'number', required: true }
-                        },
-                        output: {
-                            processed: { type: 'number', required: true }
-                        }
+                    inputs: {
+                        task: 'Process the result from firstAdd'
                     }
                 },
                 {
                     id: 'finalAdd',
                     tool: tripleAddTool,
-                    inputs: (prevResult: any) => ({
-                        num1: prevResult.processed,
-                        num2: 60,
-                        num3: 70
-                    }),
-                    validation: {
-                        input: {
-                            num1: { type: 'number', required: true },
-                            num2: { type: 'number', required: true },
-                            num3: { type: 'number', required: true }
-                        },
-                        output: {
-                            result: { type: 'number', required: true }
-                        }
+                    inputs: {
+                        num1: 60,
+                        num2: 70,
+                        num3: 80
                     }
                 }
-            ]
-        };
-
-        this.initialize(config);
-    }
-
-    private async initialize(config: PipelineConfig): Promise<void> {
-        try {
-            // Ensure symphony is initialized
-            if (!symphony.isInitialized()) {
-                await symphony.initialize();
+            ],
+            onStepComplete: (step, result) => {
+                console.log(`Step ${step.id} completed with result:`, result);
             }
-
-            // Create pipeline with validated config
-            this.pipeline = await symphony.pipeline.createPipeline(config);
-            this.initialized = true;
-
-            // Start initialization metric
-            symphony.startMetric('calculator_pipeline_init', {
-                pipelineName: config.name,
-                stepCount: config.steps.length
-            });
-        } catch (error) {
-            symphony.startMetric('calculator_pipeline_init', {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
+        });
     }
 
-    private assertInitialized(): void {
-        if (!this.initialized) {
-            throw new Error('Calculator pipeline is not initialized');
-        }
-    }
-
-    async run(input?: Record<string, any>): Promise<any> {
-        this.assertInitialized();
-
-        const metricId = `calculator_pipeline_run_${Date.now()}`;
-        symphony.startMetric(metricId, { input });
-
-        try {
-            const result = await this.pipeline.run(input);
-            
-            symphony.endMetric(metricId, {
-                success: true,
-                stepResults: result.stepResults
-            });
-
-            return result;
-        } catch (error) {
-            symphony.endMetric(metricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-
-            throw error;
-        }
+    async run(): Promise<PipelineResult> {
+        return this.pipeline.run();
     }
 }
 

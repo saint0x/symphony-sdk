@@ -1,9 +1,9 @@
-import { Symphony } from '../symphony/core/symphony';
+import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
 
 export class PipelineService extends BaseManager {
-    constructor(symphony: Symphony) {
-        super(symphony, 'PipelineService');
+    constructor(symphony: ISymphony) {
+        super(symphony as any, 'PipelineService');
     }
 
     async initialize(): Promise<void> {

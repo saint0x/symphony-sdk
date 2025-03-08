@@ -1,9 +1,9 @@
-import { Symphony } from '../symphony/core/symphony';
+import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
 
 export class ToolService extends BaseManager {
-    constructor(symphony: Symphony) {
-        super(symphony, 'ToolService');
+    constructor(symphony: ISymphony) {
+        super(symphony as any, 'ToolService');
     }
 
     async initialize(): Promise<void> {

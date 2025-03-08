@@ -1,145 +1,76 @@
-import { symphony } from 'symphonic';
-import { calculatorAgent } from '../agents/calculator';
-import { TeamConfig } from 'symphonic/types';
+import { symphony } from '../sdk';
+import { tripleAddTool } from '../tools/calculator';
+import { Team, TeamResult } from 'symphonic/types';
+import { SymphonyComponentManager } from '../core/component-manager';
+import { CapabilityBuilder, CommonCapabilities } from '../core/component-manager/types/metadata';
+import { DEFAULT_LLM_CONFIG } from '../core/component-manager/types/config';
 
 class CalculatorTeam {
-    private team: any;
-    private initialized: boolean = false;
-    private metrics: Record<string, any> = {};
+    private team: Team;
 
     constructor() {
-        // Configuration follows the validated TeamConfig schema
-        const config: TeamConfig = {
+        return SymphonyComponentManager.getInstance().register({
+            id: 'calculatorTeam',
             name: 'Calculator Team',
-            description: 'A team of calculator agents that work together to solve complex calculations',
-            agents: [calculatorAgent],  // Simple array of agents as required by schema
-            strategy: {
-                name: 'roundRobin',
-                description: 'Distribute calculations evenly among agents',
-                assignmentLogic: async (task: string, agents: any[]) => agents,
-                coordinationRules: {
-                    maxParallelTasks: 2,
-                    taskTimeout: 5000
+            type: 'team',
+            description: 'A team of calculator agents that work together on complex calculations',
+            version: '1.0.0',
+            capabilities: [
+                {
+                    name: CapabilityBuilder.team('COORDINATION'),
+                    parameters: {
+                        task: { type: 'string', required: true }
+                    },
+                    returns: {
+                        type: 'object',
+                        description: 'The results of parallel calculations'
+                    }
+                },
+                {
+                    name: CapabilityBuilder.processing('PARALLEL'),
+                    parameters: {
+                        inputs: { type: 'array', required: true }
+                    }
                 }
-            }
+            ],
+            requirements: [
+                {
+                    capability: CapabilityBuilder.agent('TOOL_USE'),
+                    required: true
+                },
+                {
+                    capability: CapabilityBuilder.numeric('ADD'),
+                    required: true
+                }
+            ],
+            provides: ['team.arithmetic', 'team.parallel_processing'],
+            tags: ['math', 'team', 'parallel', 'calculator']
+        }, this);
+    }
+
+    async initialize() {
+        const agentConfig = {
+            name: 'calculator',
+            description: 'Performs arithmetic calculations',
+            task: 'Add three numbers together',
+            tools: [tripleAddTool],
+            llm: DEFAULT_LLM_CONFIG
         };
 
-        this.initialize(config);
-    }
-
-    private async initialize(config: TeamConfig): Promise<void> {
-        try {
-            // Ensure symphony is initialized
-            if (!symphony.isInitialized()) {
-                await symphony.initialize();
+        this.team = await symphony.team.createTeam({
+            name: 'Calculator Team',
+            description: 'A team of calculator agents that work together to solve complex calculations',
+            agents: [agentConfig],
+            strategy: {
+                type: 'parallel',
+                maxConcurrent: 3,
+                retryAttempts: 2
             }
-
-            // Create team with validated config
-            this.team = await symphony.team.createTeam(config);
-            this.initialized = true;
-
-            // Start initialization metric
-            symphony.startMetric('calculator_team_init', {
-                teamName: config.name,
-                agentCount: config.agents.length
-            });
-        } catch (error) {
-            symphony.startMetric('calculator_team_init', {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
+        });
     }
 
-    private assertInitialized(): void {
-        if (!this.initialized) {
-            throw new Error('Calculator team is not initialized');
-        }
-    }
-
-    async run(task: string, options: any = {}): Promise<any> {
-        this.assertInitialized();
-
-        const metricId = `calculator_team_run_${Date.now()}`;
-        symphony.startMetric(metricId, { task });
-
-        try {
-            // Parse the task to get numbers for parallel processing
-            const numbers = this.parseTask(task);
-            
-            // Create parallel execution promises
-            const executions = numbers.map(async (group) => {
-                const operationId = `operation_${group.join('_')}`;
-                symphony.startMetric(operationId, { group });
-                
-                try {
-                    const result = await calculatorAgent.run(`Add the numbers ${group.join(', ')}`, {
-                        onProgress: options.onProgress
-                    });
-
-                    symphony.endMetric(operationId, {
-                        success: result.success,
-                        duration: Date.now() - this.metrics[operationId]?.startTime
-                    });
-
-                    return result;
-                } catch (error) {
-                    symphony.endMetric(operationId, {
-                        success: false,
-                        error: error instanceof Error ? error.message : String(error)
-                    });
-                    throw error;
-                }
-            });
-
-            // Execute all calculations in parallel
-            const results = await Promise.allSettled(executions);
-
-            // Process results
-            const successResults = results
-                .filter(r => r.status === 'fulfilled')
-                .map(r => (r as PromiseFulfilledResult<any>).value)
-                .filter(r => r.success);
-
-            const errorResults = results
-                .filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success))
-                .map(r => r.status === 'rejected' ? r.reason : r.value.error);
-
-            // End metric with success
-            symphony.endMetric(metricId, {
-                success: errorResults.length === 0,
-                successCount: successResults.length,
-                errorCount: errorResults.length
-            });
-
-            return {
-                success: errorResults.length === 0,
-                result: successResults.map(r => r.result),
-                errors: errorResults
-            };
-        } catch (error) {
-            // End metric with error
-            symphony.endMetric(metricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-
-            throw error;
-        }
-    }
-
-    private parseTask(task: string): number[][] {
-        // Extract number groups from task string
-        // Example: "Calculate (10 + 20 + 30) and (40 + 50 + 60) in parallel"
-        // Returns: [[10, 20, 30], [40, 50, 60]]
-        const groups = task.match(/\(([^)]+)\)/g) || [];
-        return groups.map(group => 
-            group.replace(/[()]/g, '')
-                .split('+')
-                .map(num => parseInt(num.trim()))
-                .filter(num => !isNaN(num))
-        );
+    async run(task: string, options?: { onProgress?: (update: { status: string }) => void }): Promise<TeamResult> {
+        return this.team.run(task, options);
     }
 }
 

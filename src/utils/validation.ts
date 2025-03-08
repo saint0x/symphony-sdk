@@ -412,4 +412,46 @@ export function validatePipelineConfig(config: any): void {
             }
         }
     });
+}
+
+export function assertString(value: unknown, name: string): asserts value is string {
+    if (typeof value !== 'string') {
+        throw new Error(`${name} must be a string`);
+    }
+}
+
+export function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null) {
+        throw new Error(`${name} must be an object`);
+    }
+}
+
+export function assertArray(value: unknown, name: string): asserts value is unknown[] {
+    if (!Array.isArray(value)) {
+        throw new Error(`${name} must be an array`);
+    }
+}
+
+export function assertNumber(value: unknown, name: string): asserts value is number {
+    if (typeof value !== 'number') {
+        throw new Error(`${name} must be a number`);
+    }
+}
+
+export function assertBoolean(value: unknown, name: string): asserts value is boolean {
+    if (typeof value !== 'boolean') {
+        throw new Error(`${name} must be a boolean`);
+    }
+}
+
+export function assertFunction(value: unknown, name: string): asserts value is Function {
+    if (typeof value !== 'function') {
+        throw new Error(`${name} must be a function`);
+    }
+}
+
+export function assertDefined<T>(value: T | undefined | null, name: string): asserts value is T {
+    if (value === undefined || value === null) {
+        throw new Error(`${name} must be defined`);
+    }
 } 

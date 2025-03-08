@@ -3,14 +3,31 @@ import { TeamManager } from '../../managers/team';
 import { Registry } from '../../symphony/registry';
 import { MetricsService } from '../../services/metrics';
 import { BaseManager } from '../../managers/base';
-import { ToolService } from '../../services/tool';
-import { AgentService } from '../../services/agent';
-import { PipelineService } from '../../services/pipeline';
+import { ToolService, AgentService, PipelineService } from '../../services/interfaces';
+import { ComponentManager } from '../../managers/component';
+import { Logger } from '../../utils/logger';
+import { LogLevel } from '../../types/sdk';
+import { SymphonyConfig } from '../interfaces/types';
 
 export class Symphony extends BaseManager {
     private static instance: Symphony;
     private _registry: Registry | null = null;
     private _initialized: boolean = false;
+    private _config: SymphonyConfig = {
+        serviceRegistry: {
+            enabled: false,
+            maxRetries: 3,
+            retryDelay: 1000
+        },
+        logging: {
+            level: 'info',
+            format: 'json'
+        },
+        metrics: {
+            enabled: true,
+            detailed: false
+        }
+    };
     
     readonly validation: ValidationManager;
     readonly team: TeamManager;
@@ -18,6 +35,7 @@ export class Symphony extends BaseManager {
     readonly tools: ToolService;
     readonly agent: AgentService;
     readonly pipeline: PipelineService;
+    readonly components: ComponentManager;
 
     private constructor() {
         // Self-reference for BaseManager
@@ -35,6 +53,7 @@ export class Symphony extends BaseManager {
         this.tools = new ToolService(this);
         this.agent = new AgentService(this);
         this.pipeline = new PipelineService(this);
+        this.components = ComponentManager.getInstance();
         
         this.logInfo('Symphony SDK initialized');
     }
@@ -46,7 +65,33 @@ export class Symphony extends BaseManager {
         return Symphony.instance;
     }
 
-    async initialize(): Promise<void> {
+    getConfig(): SymphonyConfig {
+        return { ...this._config };
+    }
+
+    updateConfig(config: Partial<SymphonyConfig>): void {
+        this._config = {
+            ...this._config,
+            ...config
+        };
+
+        // Update log level if specified
+        if (config.logging?.level) {
+            Logger.getInstance().setMinLevel(this.mapLogLevel(config.logging.level));
+        }
+    }
+
+    private mapLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): LogLevel {
+        switch (level) {
+            case 'debug': return LogLevel.DEBUG;
+            case 'info': return LogLevel.NORMAL;
+            case 'warn': return LogLevel.VERBOSE;
+            case 'error': return LogLevel.ERROR;
+            default: return LogLevel.NORMAL;
+        }
+    }
+
+    async initialize(options: { logLevel?: LogLevel } = {}): Promise<void> {
         return this.withErrorHandling('initialize', async () => {
             if (this._initialized) {
                 this.logInfo('Symphony already initialized');
@@ -54,7 +99,14 @@ export class Symphony extends BaseManager {
             }
 
             try {
-                // Initialize validation manager first
+                if (options.logLevel) {
+                    Logger.getInstance().setMinLevel(options.logLevel);
+                }
+
+                // Initialize component manager first as it manages all other components
+                await this.components.initialize();
+
+                // Initialize validation manager
                 await this.validation.initialize();
 
                 // Initialize registry

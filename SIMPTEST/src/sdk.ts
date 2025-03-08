@@ -1,5 +1,6 @@
 // Import from local package during development
-import { symphony } from "../../src";
+import { symphony } from 'symphonic';
 
-// Export the symphony instance as documented in README
-export { symphony }; 
+// Export the shared Symphony instance and component manager
+export { symphony };
+export { SymphonyComponentManager } from './core/component-manager'; 

@@ -1,5 +1,5 @@
 import { Symphony } from './symphony/core/symphony';
-import { SymphonyConfig } from './symphony/interfaces/types';
+import type { SymphonyConfig } from './symphony/interfaces/types';
 
 class SymphonySDK {
     private static instance: Symphony | null = null;
@@ -13,12 +13,19 @@ class SymphonySDK {
         if (!SymphonySDK.instance) {
             SymphonySDK.isInitializing = true;
             try {
-                SymphonySDK.instance = new Symphony(config);
+                SymphonySDK.instance = Symphony.getInstance();
+                if (config) {
+                    SymphonySDK.instance.updateConfig(config);
+                }
             } finally {
                 SymphonySDK.isInitializing = false;
             }
         } else if (config) {
             SymphonySDK.instance.updateConfig(config);
+        }
+
+        if (!SymphonySDK.instance) {
+            throw new Error('Failed to initialize Symphony instance');
         }
 
         return SymphonySDK.instance;
@@ -27,7 +34,24 @@ class SymphonySDK {
 
 // Create and export the default instance
 export const symphony = SymphonySDK.getInstance({
-    serviceRegistry: { enabled: false },  // Disabled by default for simplicity
-    logging: { level: 'info', format: 'json' },
-    metrics: { enabled: true, detailed: false }
-}); 
+    serviceRegistry: {
+        enabled: false,
+        maxRetries: 3,
+        retryDelay: 1000
+    },
+    logging: {
+        level: 'info',
+        format: 'json'
+    },
+    metrics: {
+        enabled: true,
+        detailed: false
+    }
+});
+
+// Export types and utilities
+export * from './symphony/core/symphony';
+export type { SymphonyConfig, ISymphony } from './symphony/interfaces/types';
+export type * from './types/metadata';
+export type * from './types/components';
+export * from './types/capabilities'; 

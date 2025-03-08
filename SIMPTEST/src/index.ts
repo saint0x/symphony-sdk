@@ -1,130 +1,140 @@
-import { symphony } from 'symphonic';
-import { tripleAddTool } from './tools/calculator';
-import { calculatorAgent } from './agents/calculator';
-import { calculatorTeam } from './teams';
-import { calculatorPipeline } from './pipelines';
+import { symphony, SymphonyComponentManager } from './sdk';
+import { tools } from './tools';
+import { agents } from './agents';
+import { teams } from './teams';
+import { pipelines } from './pipelines';
+import { ComponentStatusDetails } from './core/component-manager/types/status';
 
 async function runExample() {
     console.log('Starting Symphony SDK example...\n');
 
     try {
-        // Initialize Symphony
-        await symphony.initialize();
-        console.log('Symphony SDK initialized successfully\n');
-
-        // 1. Direct tool usage
-        console.log('1. Testing direct tool usage...');
-        const toolMetricId = 'direct_tool_test';
-        symphony.startMetric(toolMetricId);
+        // Initialize all components through the component manager
+        const componentManager = SymphonyComponentManager.getInstance();
+        console.log('Initializing components...\n');
         
-        try {
-            const toolResult = await tripleAddTool.run({
-                num1: 10,
-                num2: 20,
-                num3: 30
-            });
-            console.log('Tool success! Result:', toolResult.result);
-            
-            symphony.endMetric(toolMetricId, {
-                success: true,
-                result: toolResult.result
-            });
-        } catch (error) {
-            symphony.endMetric(toolMetricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-
-        // 2. Agent usage with streaming
-        console.log('\n2. Testing agent with streaming...');
-        const agentMetricId = 'agent_test';
-        symphony.startMetric(agentMetricId);
+        const startTime = Date.now();
+        await componentManager.initialize();
+        const initTime = Date.now() - startTime;
         
-        try {
-            const agentResult = await calculatorAgent.run(
-                'Add the numbers 15, 25, and 35',
-                {
-                    onProgress: (update: { status: string }) => {
-                        console.log('Agent progress:', update.status);
-                    }
-                }
-            );
-            console.log('Agent success! Result:', agentResult.result);
-            
-            symphony.endMetric(agentMetricId, {
-                success: true,
-                result: agentResult.result
-            });
-        } catch (error) {
-            symphony.endMetric(agentMetricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
+        console.log(`\nComponent initialization completed in ${initTime}ms`);
 
-        // 3. Team usage with monitoring
-        console.log('\n3. Testing team coordination...');
-        const teamMetricId = 'team_test';
-        symphony.startMetric(teamMetricId);
-        
-        try {
-            const teamResult = await calculatorTeam.run(
-                'Calculate (10 + 20 + 30) and (40 + 50 + 60) in parallel',
-                {
-                    onProgress: (update: { status: string }) => {
-                        console.log('Team progress:', update.status);
-                    }
-                }
-            );
-            console.log('Team success! Results:', teamResult.result);
-            
-            symphony.endMetric(teamMetricId, {
-                success: true,
-                results: teamResult.result
-            });
-        } catch (error) {
-            symphony.endMetric(teamMetricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-
-        // 4. Pipeline usage with monitoring
-        console.log('\n4. Testing pipeline execution...');
-        const pipelineMetricId = 'pipeline_test';
-        symphony.startMetric(pipelineMetricId);
-        
-        try {
-            const pipelineResult = await calculatorPipeline.run();
-            console.log('Pipeline success! Final result:', pipelineResult.result);
-            
-            symphony.endMetric(pipelineMetricId, {
-                success: true,
-                result: pipelineResult.result,
-                stepResults: pipelineResult.stepResults
-            });
-        } catch (error) {
-            symphony.endMetric(pipelineMetricId, {
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-
-        // Print final metrics summary
-        console.log('\nTest run complete! Metrics summary:');
-        const metrics = symphony.metrics.getMetrics();
-        Object.entries(metrics).forEach(([id, data]) => {
-            console.log(`\n${id}:`, data);
-        });
+        // Run test scenarios
+        await runTestScenarios();
 
     } catch (error) {
         console.error('\nExecution error:', error instanceof Error ? error.message : String(error));
         process.exit(1);
+    }
+}
+
+async function runTestScenarios() {
+    const scenarios = [
+        {
+            name: '1. Direct Tool Usage',
+            run: async () => {
+                const result = await tools.tripleAdd.run({
+                    num1: 10,
+                    num2: 20,
+                    num3: 30
+                });
+                return result;
+            }
+        },
+        {
+            name: '2. Agent with Streaming',
+            run: async () => {
+                const result = await agents.calculatorAgent.run(
+                    'Add the numbers 15, 25, and 35',
+                    {
+                        onProgress: (update: { status: string }) => {
+                            console.log('  Progress:', update.status);
+                        }
+                    }
+                );
+                return result;
+            }
+        },
+        {
+            name: '3. Team Coordination',
+            run: async () => {
+                const result = await teams.calculatorTeam.run(
+                    'Calculate (10, 20, 30) and (40, 50, 60) in parallel',
+                    {
+                        onProgress: (update: { status: string }) => {
+                            console.log('  Progress:', update.status);
+                        }
+                    }
+                );
+                return result;
+            }
+        },
+        {
+            name: '4. Pipeline Execution',
+            run: async () => {
+                const result = await pipelines.calculatorPipeline.run();
+                return result;
+            }
+        }
+    ];
+
+    console.log('\nRunning Test Scenarios:');
+    console.log('=======================\n');
+
+    for (const scenario of scenarios) {
+        console.log(`\n${scenario.name}:`);
+        console.log('-'.repeat(scenario.name.length + 1));
+        
+        const metricId = `test_${scenario.name.toLowerCase().replace(/\s+/g, '_')}`;
+        symphony.startMetric(metricId);
+        
+        try {
+            const result = await scenario.run();
+            console.log('  Success!');
+            console.log('  Result:', result.result);
+            
+            symphony.endMetric(metricId, {
+                success: true,
+                result: result.result
+            });
+        } catch (error) {
+            console.error('  Failed:', error instanceof Error ? error.message : String(error));
+            
+            symphony.endMetric(metricId, {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+}
+
+function printComponentStatus(statuses: Map<string, ComponentStatusDetails>) {
+    for (const [name, state] of statuses) {
+        console.log(`\n${name}:`);
+        console.log('  Status:', state.status);
+        console.log('  Initialization Attempts:', state.initAttempts);
+        if (state.lastAttemptTime) {
+            console.log('  Last Attempt:', new Date(state.lastAttemptTime).toISOString());
+        }
+        if (state.error) {
+            console.log('  Error:', state.error.message);
+        }
+        if (state.dependencies.length > 0) {
+            console.log('  Dependencies:');
+            state.dependencies.forEach(dep => {
+                console.log(`    ${dep.name}: ${dep.status}`);
+            });
+        }
+        if (state.validationResult) {
+            console.log('  Validation:');
+            console.log('    Success:', state.validationResult.success);
+            if (state.validationResult.lastValidated) {
+                console.log('    Last Validated:', new Date(state.validationResult.lastValidated).toISOString());
+            }
+            if (state.validationResult.error) {
+                console.log('    Error:', state.validationResult.error);
+            }
+        }
     }
 }
 

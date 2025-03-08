@@ -1,9 +1,9 @@
-import { Symphony } from '../symphony/core/symphony';
+import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
 
 export class AgentService extends BaseManager {
-    constructor(symphony: Symphony) {
-        super(symphony, 'AgentService');
+    constructor(symphony: ISymphony) {
+        super(symphony as any, 'AgentService');
     }
 
     async initialize(): Promise<void> {
