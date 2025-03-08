@@ -136,6 +136,12 @@ export interface ISymphony {
     validation: any;
     components: any;
     utils: SymphonyUtils;
+    logger: {
+        debug(category: string, message: string, data?: any): void;
+        info(category: string, message: string, data?: any): void;
+        warn(category: string, message: string, data?: any): void;
+        error(category: string, message: string, data?: any): void;
+    };
     initialize(options?: { logLevel?: LogLevel }): Promise<void>;
     getRegistry(): Promise<any>;
     isInitialized(): boolean;

@@ -26,8 +26,7 @@ export abstract class BaseService {
 
     protected async withErrorHandling<T>(
         operation: string,
-        fn: () => Promise<T>,
-        context?: Record<string, any>
+        fn: () => Promise<T>
     ): Promise<T> {
         try {
             return await fn();

@@ -19,8 +19,15 @@ export interface ToolConfig extends ServiceBaseConfig {
 }
 
 export interface ToolResult {
+    success: boolean;
     result: any;
     error?: string;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        [key: string]: any;
+    };
 }
 
 export interface RetryConfig {

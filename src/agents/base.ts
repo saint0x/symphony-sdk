@@ -128,7 +128,7 @@ export class BaseAgent {
         const result = await tool.handler(params);
         
         if (!result.success) {
-            const error = new Error(`Tool '${toolName}' execution failed: ${result.error?.message}`);
+            const error = new Error(`Tool '${toolName}' execution failed: ${result.error}`);
             // Store error in short-term memory
             await this.memorize(`error:${Date.now()}`, {
                 tool: toolName,

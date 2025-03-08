@@ -97,7 +97,7 @@ export class Logger {
 
     private formatMessage(entry: LogEntry): string {
         const timestamp = new Date(entry.timestamp).toISOString();
-        const level = LogLevel[entry.level];
+        const level = entry.level;
         const category = entry.category;
         const service = entry.service || this.config.serviceContext;
         
@@ -137,7 +137,7 @@ export class Logger {
             if (this.config.verboseMode) {
                 console.log(`[Metrics] Would record: ${JSON.stringify({
                     type: 'log_entry',
-                    level: LogLevel[entry.level],
+                    level: entry.level,
                     category: entry.category,
                     service: entry.service || this.config.serviceContext
                 })}`);

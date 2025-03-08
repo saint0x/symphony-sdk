@@ -67,6 +67,15 @@ export class Symphony extends BaseManager implements ISymphony {
         };
     }
 
+    get logger() {
+        return {
+            debug: (category: string, message: string, data?: any) => this._logger.debug(category as LogCategory, message, data),
+            info: (category: string, message: string, data?: any) => this._logger.info(category as LogCategory, message, data),
+            warn: (category: string, message: string, data?: any) => this._logger.warn(category as LogCategory, message, data),
+            error: (category: string, message: string, data?: any) => this._logger.error(category as LogCategory, message, data)
+        };
+    }
+
     private constructor() {
         super(null as any, 'Symphony');
         

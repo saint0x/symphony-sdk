@@ -28,8 +28,9 @@ export const readFileTool: ToolConfig = {
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: metrics.end()
+                error: error instanceof Error ? error.message : String(error),
+                metrics: metrics.end(),
+                result: null
             };
         }
     }
@@ -58,8 +59,9 @@ export const writeFileTool: ToolConfig = {
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: metrics.end()
+                error: error instanceof Error ? error.message : String(error),
+                metrics: metrics.end(),
+                result: null
             };
         }
     }
@@ -113,8 +115,9 @@ export const webSearchTool: ToolConfig = {
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: metrics.end()
+                error: error instanceof Error ? error.message : String(error),
+                metrics: metrics.end(),
+                result: null
             };
         }
     },
@@ -181,8 +184,9 @@ export const parseDocumentTool: ToolConfig = {
         } catch (error) {
             return {
                 success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: metrics.end()
+                error: error instanceof Error ? error.message : String(error),
+                metrics: metrics.end(),
+                result: null
             };
         }
     }
