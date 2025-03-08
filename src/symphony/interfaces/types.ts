@@ -21,7 +21,7 @@ export interface SymphonyConfig {
         retryDelay: number;
     };
     logging: {
-        level: 'debug' | 'info' | 'warn' | 'error';
+        level: LogLevel;
         format: 'json' | 'text';
     };
     metrics: {
@@ -39,68 +39,6 @@ export interface GlobalMetrics {
     getAll(): Record<string, any>;
 }
 
-export interface TeamConfig {
-    name: string;
-    description: string;
-    agents: string[];
-}
-
-export interface PipelineConfig {
-    name: string;
-    description: string;
-    steps: PipelineStep[];
-}
-
-export interface PipelineStep {
-    id: string;
-    name: string;
-    description: string;
-    inputs: any;
-    handler: (params: any) => Promise<any>;
-}
-
-export interface ToolResult<T = any> {
-    success: boolean;
-    result?: T;
-    error?: Error;
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-        [key: string]: any;
-    };
-}
-
-export interface Tool<P = any, R = any> {
-    name: string;
-    description: string;
-    run(params: P): Promise<ToolResult<R>>;
-}
-
-export interface AgentOptions {
-    onProgress?: (update: { status: string; result?: any }) => void;
-    onMetrics?: (metrics: { [key: string]: any }) => void;
-}
-
-export interface AgentResult<T = any> {
-    success: boolean;
-    result?: T;
-    error?: Error;
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-        toolCalls: number;
-        [key: string]: any;
-    };
-}
-
-export interface Agent {
-    name: string;
-    description: string;
-    run(task: string, options?: AgentOptions): Promise<AgentResult>;
-}
-
 export interface SymphonyUtils {
     validation: {
         validate(data: any, schema: string): Promise<{ isValid: boolean; errors: string[] }>;
@@ -113,13 +51,12 @@ export interface SymphonyUtils {
 }
 
 export interface ISymphony {
-    readonly tools: IToolService;
     readonly agent: IAgentService;
+    readonly tool: IToolService;
     readonly team: ITeamService;
     readonly pipeline: IPipelineService;
-    readonly components: ComponentManager;
-    readonly validation: IValidationManager;
     readonly componentManager: ComponentManager;
+    readonly validation: IValidationManager;
     readonly types: {
         CapabilityBuilder: {
             team(capability: string): string;
@@ -155,12 +92,12 @@ export interface ISymphony {
         error(category: string, message: string, data?: any): void;
     };
 
+    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
+    isInitialized(): boolean;
     getConfig(): SymphonyConfig;
     updateConfig(config: Partial<SymphonyConfig>): void;
-    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
     getRegistry(): Promise<Registry | null>;
     getServiceBus(): ServiceBus;
-    isInitialized(): boolean;
     startMetric(id: string, metadata?: Record<string, any>): void;
     endMetric(id: string, metadata?: Record<string, any>): void;
     getMetric(id: string): Record<string, any> | undefined;

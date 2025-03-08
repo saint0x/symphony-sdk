@@ -13,6 +13,8 @@ import { ISymphony, SymphonyConfig, SymphonyUtils } from './interfaces/types';
 import { IToolService, IAgentService, ITeamService, IPipelineService } from '../services/interfaces';
 import { IValidationManager } from '../managers/validation';
 import { BaseManager } from '../managers/base';
+import { symphonyInference } from './inference/integration';
+import { AgentConfig, TeamConfig, PipelineConfig, ToolConfig } from '../types/sdk';
 
 export class Symphony extends BaseManager implements ISymphony {
     private static instance: Symphony;
@@ -33,7 +35,7 @@ export class Symphony extends BaseManager implements ISymphony {
             retryDelay: 1000
         },
         logging: {
-            level: 'info' as const,
+            level: LogLevel.INFO,
             format: 'json' as const
         },
         metrics: {
@@ -44,7 +46,6 @@ export class Symphony extends BaseManager implements ISymphony {
     private initPromise?: Promise<void>;
 
     readonly validation!: IValidationManager;
-    readonly team!: ITeamService;
     readonly metrics!: {
         startTime: number;
         start(id: string, metadata?: Record<string, any>): void;
@@ -53,8 +54,9 @@ export class Symphony extends BaseManager implements ISymphony {
         update(id: string, metadata: Record<string, any>): void;
         getAll(): Record<string, any>;
     };
-    readonly tools!: IToolService;
+    readonly tool!: IToolService;
     readonly agent!: IAgentService;
+    readonly team!: ITeamService;
     readonly pipeline!: IPipelineService;
     readonly components!: ComponentManager;
     readonly componentManager!: ComponentManager;
@@ -141,11 +143,39 @@ export class Symphony extends BaseManager implements ISymphony {
         this.addDependency(this._teamService);
         this.addDependency(this._pipelineService);
 
-        // Expose services through interfaces
-        this.tools = this._toolService;
-        this.agent = this._agentService;
-        this.team = this._teamService;
-        this.pipeline = this._pipelineService;
+        // Initialize service interfaces with create methods
+        (this as any).tool = {
+            ...this._toolService,
+            create: async (input: string | Partial<ToolConfig>) => {
+                const config = await symphonyInference.enhanceTool(input);
+                return this._components.create('tool', config);
+            }
+        };
+
+        (this as any).agent = {
+            ...this._agentService,
+            create: async (input: string | Partial<AgentConfig>) => {
+                const config = await symphonyInference.enhanceAgent(input);
+                return this._components.create('agent', config);
+            }
+        };
+
+        (this as any).team = {
+            ...this._teamService,
+            create: async (input: string | Partial<TeamConfig>) => {
+                const config = await symphonyInference.enhanceTeam(input);
+                return this._components.create('team', config);
+            }
+        };
+
+        (this as any).pipeline = {
+            ...this._pipelineService,
+            create: async (input: string | Partial<PipelineConfig>) => {
+                const config = await symphonyInference.enhancePipeline(input);
+                return this._components.create('pipeline', config);
+            }
+        };
+
         this.validation = this._validationManager;
         this.components = this._components;
         this.componentManager = this._components;
@@ -178,10 +208,10 @@ export class Symphony extends BaseManager implements ISymphony {
     private mapLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): LogLevel {
         switch (level) {
             case 'debug': return LogLevel.DEBUG;
-            case 'info': return LogLevel.NORMAL;
-            case 'warn': return LogLevel.VERBOSE;
+            case 'info': return LogLevel.INFO;
+            case 'warn': return LogLevel.WARN;
             case 'error': return LogLevel.ERROR;
-            default: return LogLevel.NORMAL;
+            default: return LogLevel.INFO;
         }
     }
 

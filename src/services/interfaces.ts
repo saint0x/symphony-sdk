@@ -1,5 +1,15 @@
 import { BaseManager } from '../managers/base';
 import { ISymphony as CoreSymphony } from '../symphony/interfaces/types';
+import {
+    Agent,
+    Tool,
+    Team,
+    Pipeline,
+    AgentConfig,
+    ToolConfig,
+    TeamConfig,
+    PipelineConfig
+} from '../types/sdk';
 
 export interface ISymphony extends BaseManager {
     readonly tools: IToolService;
@@ -39,50 +49,19 @@ export interface ISymphony extends BaseManager {
 }
 
 export interface IToolService extends BaseManager {
-    create(config: {
-        name: string;
-        description: string;
-        inputs: string[];
-        handler: (params: any) => Promise<any>;
-    }): Promise<any>;
+    create(input: string | Partial<ToolConfig>): Promise<Tool>;
 }
 
 export interface IAgentService extends BaseManager {
-    create(config: {
-        name: string;
-        description: string;
-        task: string;
-        tools: any[];
-        llm: {
-            provider: string;
-            model: string;
-            temperature?: number;
-            maxTokens?: number;
-        };
-        maxCalls?: number;
-        requireApproval?: boolean;
-        timeout?: number;
-    }): Promise<any>;
+    create(input: string | Partial<AgentConfig>): Promise<Agent>;
 }
 
 export interface ITeamService extends BaseManager {
-    create(config: {
-        name: string;
-        description: string;
-        agents: string[];
-    }): Promise<any>;
+    create(input: string | Partial<TeamConfig>): Promise<Team>;
 }
 
 export interface IPipelineService extends BaseManager {
-    create(config: {
-        name: string;
-        description: string;
-        steps: {
-            name: string;
-            description: string;
-            handler: (params: any) => Promise<any>;
-        }[];
-    }): Promise<any>;
+    create(input: string | Partial<PipelineConfig>): Promise<Pipeline>;
 }
 
 export class ToolService extends BaseManager implements IToolService {
@@ -90,12 +69,7 @@ export class ToolService extends BaseManager implements IToolService {
         super(symphony as any, 'ToolService');
     }
 
-    async create(_config: {
-        name: string;
-        description: string;
-        inputs: string[];
-        handler: (params: any) => Promise<any>;
-    }): Promise<any> {
+    async create(input: string | Partial<ToolConfig>): Promise<Tool> {
         throw new Error('Not implemented');
     }
 }
@@ -105,21 +79,7 @@ export class AgentService extends BaseManager implements IAgentService {
         super(symphony as any, 'AgentService');
     }
 
-    async create(_config: {
-        name: string;
-        description: string;
-        task: string;
-        tools: any[];
-        llm: {
-            provider: string;
-            model: string;
-            temperature?: number;
-            maxTokens?: number;
-        };
-        maxCalls?: number;
-        requireApproval?: boolean;
-        timeout?: number;
-    }): Promise<any> {
+    async create(input: string | Partial<AgentConfig>): Promise<Agent> {
         throw new Error('Not implemented');
     }
 }
@@ -129,15 +89,7 @@ export class PipelineService extends BaseManager implements IPipelineService {
         super(symphony as any, 'PipelineService');
     }
 
-    async create(_config: {
-        name: string;
-        description: string;
-        steps: {
-            name: string;
-            description: string;
-            handler: (params: any) => Promise<any>;
-        }[];
-    }): Promise<any> {
+    async create(input: string | Partial<PipelineConfig>): Promise<Pipeline> {
         throw new Error('Not implemented');
     }
 } 

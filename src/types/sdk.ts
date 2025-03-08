@@ -10,7 +10,7 @@ export interface ToolConfig extends ServiceBaseConfig {
     inputs: string[];
     outputs?: string[];
     chained?: number;
-    handler: (params: any) => Promise<ToolResult>;
+    handler: (params: any) => Promise<ToolResult<any>>;
     timeout?: number;
     retry?: RetryConfig;
     cache?: CacheConfig;
@@ -18,10 +18,10 @@ export interface ToolConfig extends ServiceBaseConfig {
     monitoring?: MonitoringConfig;
 }
 
-export interface ToolResult {
+export interface ToolResult<T = any> {
     success: boolean;
-    result: any;
-    error?: string;
+    result?: T;
+    error?: Error;
     metrics?: {
         duration: number;
         startTime: number;
@@ -76,16 +76,14 @@ export interface AgentConfig extends ServiceBaseConfig {
     requireApproval?: boolean;
     timeout?: number;
     memory?: MemoryConfig;
-    name: string;
-    description: string;
     capabilities: string[];
-    handler: (params: any) => Promise<any>;
+    handler: (params: any) => Promise<ToolResult<any>>;
 }
 
 export interface LLMConfig {
     provider: 'openai' | 'anthropic' | 'google';
     apiKey: string;
-    model?: string;
+    model: string;
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
@@ -157,8 +155,8 @@ export interface ExecutionMetrics {
 // Logging types
 export enum LogLevel {
     DEBUG = 'debug',
-    NORMAL = 'info',
-    VERBOSE = 'warn',
+    INFO = 'info',
+    WARN = 'warn',
     ERROR = 'error'
 }
 
@@ -209,7 +207,8 @@ export interface PipelineConfig extends ServiceBaseConfig {
     steps: PipelineStep[];
     onError?: (error: Error, context: any) => Promise<{ retry: boolean; delay?: number }>;
     errorStrategy?: ErrorStrategy;
-    metrics?: {
+    validation?: ValidationConfig;
+    metrics: {
         enabled: boolean;
         detailed: boolean;
         trackMemory: boolean;
@@ -217,9 +216,12 @@ export interface PipelineConfig extends ServiceBaseConfig {
 }
 
 export interface PipelineStep {
+    id: string;
     name: string;
-    tool: string | ToolConfig;
     description: string;
+    tool: string | ToolConfig;
+    inputs: any;
+    handler: (params: any) => Promise<ToolResult<any>>;
     chained: number;
     expects: Record<string, string>;
     outputs: Record<string, string>;
@@ -232,14 +234,96 @@ export interface PipelineStep {
     };
 }
 
-export interface ComponentCapability {
+// Component types
+export interface Agent {
+    id: string;
     name: string;
     description: string;
-    version: string;
+    task: string;
+    tools: Array<string | ToolConfig>;
+    run(task: string, options?: AgentOptions): Promise<AgentResult>;
 }
 
-export interface ComponentRequirement {
-    capability: string;
-    version: string;
-    optional?: boolean;
+export interface Tool {
+    id: string;
+    name: string;
+    description: string;
+    run(params: any): Promise<ToolResult<any>>;
+}
+
+export interface Team {
+    id: string;
+    name: string;
+    description: string;
+    agents: Array<string | AgentConfig>;
+    run(task: string, options?: TeamOptions): Promise<TeamResult>;
+}
+
+export interface Pipeline {
+    id: string;
+    name: string;
+    description: string;
+    steps: PipelineStep[];
+    run(input: any, options?: PipelineOptions): Promise<PipelineResult>;
+}
+
+// Result types
+export interface AgentResult<T = any> {
+    success: boolean;
+    result?: T;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        toolCalls: number;
+        [key: string]: any;
+    };
+}
+
+export interface TeamResult {
+    success: boolean;
+    result: any;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        agentCalls: number;
+        [key: string]: any;
+    };
+}
+
+export interface PipelineResult {
+    success: boolean;
+    result: any;
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        stepResults: {
+            [key: string]: any;
+        };
+        [key: string]: any;
+    };
+}
+
+// Option types
+export interface AgentOptions {
+    onProgress?: (update: { status: string; result?: any }) => void;
+    onMetrics?: (metrics: { [key: string]: any }) => void;
+    timeout?: number;
+}
+
+export interface TeamOptions {
+    onProgress?: (update: { status: string; agent?: string; result?: any }) => void;
+    onMetrics?: (metrics: { [key: string]: any }) => void;
+    timeout?: number;
+}
+
+export interface PipelineOptions {
+    onStepComplete?: (step: PipelineStep, result: any) => void;
+    onMetrics?: (metrics: { [key: string]: any }) => void;
+    timeout?: number;
 } 

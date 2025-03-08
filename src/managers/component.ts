@@ -1,5 +1,4 @@
 import type { Symphony } from '../symphony';
-import { ComponentRegistry } from './registry';
 import { BaseManager } from './base';
 import { 
     Component,
@@ -7,22 +6,35 @@ import {
     ComponentInstance,
     CapabilityBuilder,
     CommonCapabilities,
-    ComponentPath
+    ComponentPath,
+    ComponentType
 } from '../types/metadata';
+import { Registry } from '../symphony/registry';
+import { 
+    Agent,
+    Tool,
+    Team,
+    Pipeline,
+    AgentConfig,
+    ToolConfig,
+    TeamConfig,
+    PipelineConfig
+} from '../types/sdk';
 
 export class ComponentManager extends BaseManager {
     private static instance: ComponentManager;
-    private registry: ComponentRegistry;
+    private registry: Registry;
     private _symphony: Symphony | null = null;
+    protected initialized: boolean = false;  // Changed to protected to match BaseManager
 
-    protected constructor() {
-        super(null as any, 'ComponentManager');
-        this.registry = ComponentRegistry.getInstance();
+    protected constructor(symphony?: Symphony) {
+        super(symphony || null as any, 'ComponentManager');
+        this.registry = new Registry(symphony || null as any);
     }
 
     static getInstance(symphony?: Symphony): ComponentManager {
         if (!this.instance) {
-            this.instance = new ComponentManager();
+            this.instance = new ComponentManager(symphony);
         }
         if (symphony && !this.instance._symphony) {
             this.instance.setSymphony(symphony);
@@ -33,6 +45,7 @@ export class ComponentManager extends BaseManager {
     setSymphony(symphony: Symphony): void {
         this._symphony = symphony;
         (this as any).symphony = symphony;
+        this.registry = new Registry(symphony);
     }
 
     /**
@@ -46,7 +59,11 @@ export class ComponentManager extends BaseManager {
             throw new Error('ComponentManager must be initialized with Symphony instance');
         }
         
-        await this.registry.register(metadata, instance);
+        await this.registry.registerService({
+            id: metadata.id,
+            capabilities: metadata.capabilities.map(c => c.name),
+            status: 'ready'
+        });
 
         // Create a proxy to handle method calls with automatic routing
         return new Proxy(instance, {
@@ -58,11 +75,20 @@ export class ComponentManager extends BaseManager {
                         try {
                             const result = await original.apply(target, args);
                             const latency = Date.now() - startTime;
-                            this.registry.updateMetrics(metadata.id, latency, true);
+                            this._symphony?.metrics.update(metadata.id, {
+                                latency,
+                                success: true,
+                                lastCall: Date.now()
+                            });
                             return result;
                         } catch (error) {
                             const latency = Date.now() - startTime;
-                            this.registry.updateMetrics(metadata.id, latency, false);
+                            this._symphony?.metrics.update(metadata.id, {
+                                latency,
+                                success: false,
+                                error: error as Error,
+                                lastCall: Date.now()
+                            });
                             throw error;
                         }
                     };
@@ -77,15 +103,42 @@ export class ComponentManager extends BaseManager {
      */
     findComponents(capability: string): ComponentInstance[] {
         this.assertInitialized();
-        return this.registry.findByCapability(capability);
+        const services = this.registry.findServicesByCapability(capability);
+        return services.map(service => ({
+            metadata: {
+                id: service.id,
+                name: service.id,
+                description: 'Dynamically registered component',
+                type: 'TOOL' as ComponentType,
+                version: '1.0.0',
+                capabilities: service.capabilities.map(c => ({
+                    name: c,
+                    description: `Provides ${c} capability`,
+                    version: '1.0.0'
+                })),
+                requirements: [],
+                provides: service.capabilities,
+                tags: []
+            },
+            instance: {} as Component,
+            status: service.status === 'ready' ? 'ready' : 'error'
+        }));
     }
 
     /**
      * Find optimal path between components
      */
-    findOptimalPath(inputCapability: string, outputCapability: string): ComponentPath | null {
+    findOptimalPath(outputCapability: string): ComponentPath | null {
         this.assertInitialized();
-        return this.registry.findOptimalPath(inputCapability, outputCapability);
+        const services = this.registry.findServicesByCapability(outputCapability);
+        if (!services.length) return null;
+        
+        // Simple direct path for now
+        return {
+            components: [services[0].id],
+            totalLatency: 0,
+            successProbability: 1.0
+        };
     }
 
     /**
@@ -93,7 +146,28 @@ export class ComponentManager extends BaseManager {
      */
     getComponent(id: string): ComponentInstance | undefined {
         this.assertInitialized();
-        return this.registry.getComponent(id);
+        const service = this.registry.getService(id);
+        if (!service) return undefined;
+        
+        return {
+            metadata: {
+                id: service.id,
+                name: service.id,
+                description: 'Dynamically registered component',
+                type: 'TOOL' as ComponentType,
+                version: '1.0.0',
+                capabilities: service.capabilities.map(c => ({
+                    name: c,
+                    description: `Provides ${c} capability`,
+                    version: '1.0.0'
+                })),
+                requirements: [],
+                provides: service.capabilities,
+                tags: []
+            },
+            instance: {} as Component,
+            status: service.status === 'ready' ? 'ready' : 'error'
+        };
     }
 
     protected async initializeInternal(): Promise<void> {
@@ -103,10 +177,89 @@ export class ComponentManager extends BaseManager {
 
         // Initialize registry
         await this.registry.initialize();
+        this.initialized = true;
+    }
+
+    public async create(
+        type: 'agent' | 'tool' | 'team' | 'pipeline',
+        config: AgentConfig | ToolConfig | TeamConfig | PipelineConfig
+    ): Promise<Agent | Tool | Team | Pipeline> {
+        if (!this.initialized) {
+            throw new Error('ComponentManager not initialized');
+        }
+
+        try {
+            switch (type) {
+                case 'agent':
+                    return await this.createAgent(config as AgentConfig);
+                case 'tool':
+                    return await this.createTool(config as ToolConfig);
+                case 'team':
+                    return await this.createTeam(config as TeamConfig);
+                case 'pipeline':
+                    return await this.createPipeline(config as PipelineConfig);
+                default:
+                    throw new Error(`Unknown component type: ${type}`);
+            }
+        } catch (error) {
+            this.logError('Failed to create component', { type, error });
+            throw error;
+        }
+    }
+
+    private async createAgent(config: AgentConfig): Promise<Agent> {
+        return {
+            id: config.name,
+            name: config.name,
+            description: config.description || '',
+            task: config.task || '',
+            tools: config.tools || [],
+            run: async (userTask: string) => {
+                throw new Error(`Not implemented for task: ${userTask}`);
+            }
+        };
+    }
+
+    private async createTool(config: ToolConfig): Promise<Tool> {
+        return {
+            id: config.name,
+            name: config.name,
+            description: config.description || '',
+            run: async (toolParams: any) => {
+                throw new Error(`Not implemented for params: ${JSON.stringify(toolParams)}`);
+            }
+        };
+    }
+
+    private async createTeam(config: TeamConfig): Promise<Team> {
+        return {
+            id: config.name,
+            name: config.name,
+            description: config.description || '',
+            agents: config.agents || [],
+            run: async (teamTask: string) => {
+                throw new Error(`Not implemented for task: ${teamTask}`);
+            }
+        };
+    }
+
+    private async createPipeline(config: PipelineConfig): Promise<Pipeline> {
+        return {
+            id: config.name,
+            name: config.name,
+            description: config.description || '',
+            steps: config.steps || [],
+            run: async (pipelineInput: any) => {
+                throw new Error(`Not implemented for input: ${JSON.stringify(pipelineInput)}`);
+            }
+        };
+    }
+
+    public async getRegistry(): Promise<Registry | null> {
+        return this.registry;
     }
 }
 
 // Export types and utilities
 export * from '../types/metadata';
-export { ComponentRegistry } from './registry';
 export { CapabilityBuilder, CommonCapabilities }; 
