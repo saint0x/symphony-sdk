@@ -1,9 +1,22 @@
 import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
+import { IPipelineService } from './interfaces';
 
-export class PipelineService extends BaseManager {
+export class PipelineService extends BaseManager implements IPipelineService {
     constructor(symphony: ISymphony) {
         super(symphony as any, 'PipelineService');
+    }
+
+    async create(config: {
+        name: string;
+        description: string;
+        steps: {
+            name: string;
+            description: string;
+            handler: (params: any) => Promise<any>;
+        }[];
+    }): Promise<any> {
+        return this.createPipeline(config);
     }
 
     async initialize(): Promise<void> {

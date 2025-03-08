@@ -1,9 +1,19 @@
 import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
+import { IToolService } from './interfaces';
 
-export class ToolService extends BaseManager {
+export class ToolService extends BaseManager implements IToolService {
     constructor(symphony: ISymphony) {
         super(symphony as any, 'ToolService');
+    }
+
+    async create(config: {
+        name: string;
+        description: string;
+        inputs: string[];
+        handler: (params: any) => Promise<any>;
+    }): Promise<any> {
+        return this.createTool(config);
     }
 
     async initialize(): Promise<void> {

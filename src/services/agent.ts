@@ -1,9 +1,28 @@
 import { ISymphony } from './interfaces';
 import { BaseManager } from '../managers/base';
+import { IAgentService } from './interfaces';
 
-export class AgentService extends BaseManager {
+export class AgentService extends BaseManager implements IAgentService {
     constructor(symphony: ISymphony) {
         super(symphony as any, 'AgentService');
+    }
+
+    async create(config: {
+        name: string;
+        description: string;
+        task: string;
+        tools: any[];
+        llm: {
+            provider: string;
+            model: string;
+            temperature?: number;
+            maxTokens?: number;
+        };
+        maxCalls?: number;
+        requireApproval?: boolean;
+        timeout?: number;
+    }): Promise<any> {
+        return this.createAgent(config);
     }
 
     async initialize(): Promise<void> {
