@@ -1,4 +1,13 @@
 import { LogLevel } from '../../types/sdk';
+import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from '../../types/metadata';
+
+export interface IComponentManager {
+    register(metadata: ComponentMetadata, instance: Component): Promise<void>;
+    findComponents(capability: string): ComponentInstance[];
+    findOptimalPath(inputCapability: string, outputCapability: string): ComponentPath | null;
+    getComponent(id: string): ComponentInstance | undefined;
+    initialize(): Promise<void>;
+}
 
 export interface SymphonyConfig {
     serviceRegistry: {

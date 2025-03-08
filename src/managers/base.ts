@@ -1,11 +1,11 @@
 import { logger, LogCategory } from '../utils/logger';
-import { Symphony } from '../symphony/core/symphony';
+import { ISymphony } from '../symphony/interfaces/types';
 
 export abstract class BaseManager {
     protected initialized: boolean = false;
 
     protected constructor(
-        protected symphony: Symphony,
+        protected symphony: ISymphony,
         protected name: string
     ) {}
 
