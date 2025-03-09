@@ -5,6 +5,9 @@ import type {
     ToolResult, AgentResult, TeamResult, PipelineResult
 } from 'symphonic';
 
+// Initialize Symphony
+await symphony.initialize();
+
 // Export core types for better inference
 export type {
     Tool, Agent, Team, Pipeline,

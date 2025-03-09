@@ -1,6 +1,12 @@
 import { symphony } from 'symphonic';
 import CalculatorAgent from './agents/calculator';
+import TransformerAgent from './agents/transformer';
 import type { AgentResult } from 'symphonic';
+
+// Define extended result type that includes metadata
+interface ExtendedAgentResult extends AgentResult {
+    metadata?: Record<string, unknown>;
+}
 
 // Track active test state
 let isTestRunning = false;
@@ -16,14 +22,11 @@ async function testAgent() {
         console.log('[TEST] Initializing Symphony...');
         await symphony.initialize();
         
-        // Create calculator agent
-        console.log('[TEST] Creating Calculator Agent...');
-        const agentStartTime = Date.now();
+        // Test Calculator Agent
+        console.log('\n[TEST] Testing Calculator Agent...');
         const calculatorAgent = new CalculatorAgent();
-        console.log(`[TEST] Calculator Agent created in ${Date.now() - agentStartTime}ms`);
-
-        // Test cases with type inference
-        const tests: Array<{
+        
+        const calculatorTests: Array<{
             description: string;
             task: string;
             expectedResult: number;
@@ -45,11 +48,11 @@ async function testAgent() {
             }
         ];
 
-        // Run each test with type inference
-        for (const test of tests) {
+        // Run calculator tests
+        for (const test of calculatorTests) {
             if (!isTestRunning) break;
             
-            console.log(`\n[TEST] Running: ${test.description}`);
+            console.log(`\n[TEST] Running Calculator: ${test.description}`);
             console.log(`[TEST] Task: ${test.task}`);
             
             const testStartTime = Date.now();
@@ -65,6 +68,80 @@ async function testAgent() {
                         duration: result.metrics.duration,
                         toolCalls: result.metrics.toolCalls
                     });
+                }
+            } else {
+                console.error('[TEST] Error:', result.error?.message);
+            }
+        }
+
+        // Test Transformer Agent
+        console.log('\n[TEST] Testing Transformer Agent...');
+        const transformerAgent = new TransformerAgent();
+
+        const transformerTests: Array<{
+            description: string;
+            task: string;
+            expectedResult?: any;  // Can be any type
+            validate: (result: any) => boolean;
+        }> = [
+            {
+                description: 'String Uppercase Test',
+                task: 'Transform "hello world" to uppercase',
+                expectedResult: 'HELLO WORLD',
+                validate: (result: any) => result === 'HELLO WORLD'
+            },
+            {
+                description: 'Object JSON Test',
+                task: 'Transform {"name": "test", "value": 123} to json',
+                validate: (result: any) => {
+                    try {
+                        const parsed = JSON.parse(result);
+                        return parsed.name === 'test' && parsed.value === 123;
+                    } catch {
+                        return false;
+                    }
+                }
+            },
+            {
+                description: 'String Reverse Test',
+                task: 'Reverse "typescript"',
+                expectedResult: 'tpircsepyt',
+                validate: (result: any) => result === 'tpircsepyt'
+            },
+            {
+                description: 'Base64 Encoding Test',
+                task: 'Transform "test data" to base64',
+                expectedResult: 'dGVzdCBkYXRh',
+                validate: (result: any) => result === 'dGVzdCBkYXRh'
+            }
+        ];
+
+        // Run transformer tests
+        for (const test of transformerTests) {
+            if (!isTestRunning) break;
+            
+            console.log(`\n[TEST] Running Transformer: ${test.description}`);
+            console.log(`[TEST] Task: ${test.task}`);
+            
+            const testStartTime = Date.now();
+            const result = await transformerAgent.run(test.task) as ExtendedAgentResult;
+            console.log(`[TEST] Completed in ${Date.now() - testStartTime}ms`);
+            
+            if (result.success) {
+                console.log(`[TEST] Result: ${result.result}`);
+                if (test.expectedResult !== undefined) {
+                    console.log(`[TEST] Expected: ${test.expectedResult}`);
+                }
+                console.log(`[TEST] Status: ${test.validate(result.result) ? '✅ PASSED' : '❌ FAILED'}`);
+                if (result.metrics) {
+                    console.log('[TEST] Metrics:', {
+                        duration: result.metrics.duration,
+                        toolCalls: result.metrics.toolCalls,
+                        transformations: result.metrics.transformations
+                    });
+                }
+                if (result.metadata) {
+                    console.log('[TEST] Metadata:', result.metadata);
                 }
             } else {
                 console.error('[TEST] Error:', result.error?.message);

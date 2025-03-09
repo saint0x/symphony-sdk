@@ -1,144 +1,124 @@
-import sdkInstance from '../sdk';
-import CalculatorAgent from '../agents/calculator';
+import { symphony } from 'symphonic';
+import type { Symphony, Pipeline, PipelineConfig } from 'symphonic';
 import CalculatorTeam from '../teams/calculator';
 
-interface CalculatorInput {
-    operation: string;
-    numbers: number[];
-}
-
-interface CalculatorMetrics {
-    duration: number;
-    startTime: number;
-    endTime: number;
-    stepResults?: {
-        validation?: any;
-        calculation?: any;
-        error?: {
-            message: string;
-            stack?: string;
-        };
+interface PipelineResult {
+    success: boolean;
+    result?: number[];
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        teamCalls?: number;
+        agentCalls?: number;
+        toolCalls?: number;
     };
 }
 
-interface CalculatorResult {
-    success: boolean;
-    result: number | null;
-    error?: Error;
-    metrics: CalculatorMetrics;
+interface ProgressUpdate {
+    status: string;
+    result?: PipelineResult;
 }
 
 class CalculatorPipeline {
-    private calculatorAgent = new CalculatorAgent();
     private calculatorTeam = new CalculatorTeam();
-    private pipeline: Promise<any>;
+    private pipeline: Pipeline;
     
     constructor() {
-        this.pipeline = sdkInstance.then(sdk =>
-            sdk.pipeline.create({
-                name: 'Calculator Pipeline',
-                description: 'A pipeline that coordinates calculator agents and teams',
-                steps: [
-                    {
-                        id: 'validate',
-                        name: 'Input Validation',
-                        description: 'Validates the input numbers and operation',
-                        tool: 'validator',
-                        inputs: ['operation', 'numbers'],
-                        handler: async ({ operation, numbers }: CalculatorInput) => {
-                            if (!operation || !numbers || !Array.isArray(numbers)) {
-                                return {
-                                    success: false,
-                                    error: new Error('Invalid input format'),
-                                    result: null
+        const config: PipelineConfig = {
+            name: 'Calculator Pipeline',
+            description: 'A pipeline that processes multiple calculation tasks in sequence',
+            steps: [
+                {
+                    name: 'Process Tasks',
+                    description: 'Process multiple calculation tasks in sequence',
+                    execute: async function*(this: CalculatorPipeline, input: { task: string } & Record<string, any>): AsyncGenerator<PipelineResult | ProgressUpdate> {
+                        const startTime = Date.now();
+                        const tasks = input.tasks as string[];
+
+                        if (!tasks || tasks.length === 0) {
+                            const endTime = Date.now();
+                            yield {
+                                success: false,
+                                error: new Error('No tasks provided'),
+                                result: [],
+                                metrics: {
+                                    duration: endTime - startTime,
+                                    startTime,
+                                    endTime,
+                                    teamCalls: 0,
+                                    agentCalls: 0,
+                                    toolCalls: 0
+                                }
+                            };
+                            return;
+                        }
+
+                        try {
+                            const results: PipelineResult[] = [];
+                            for (const task of tasks) {
+                                const result = await this.calculatorTeam.run(task);
+                                const pipelineResult: PipelineResult = {
+                                    success: result.success,
+                                    result: Array.isArray(result.result) ? result.result : [result.result as number],
+                                    error: result.error,
+                                    metrics: {
+                                        duration: result.metrics?.duration || 0,
+                                        startTime: result.metrics?.startTime || Date.now(),
+                                        endTime: result.metrics?.endTime || Date.now(),
+                                        teamCalls: 1,
+                                        agentCalls: result.metrics?.agentCalls || 0,
+                                        toolCalls: result.metrics?.toolCalls || 0
+                                    }
                                 };
+                                yield { status: `Completed ${task}`, result: pipelineResult };
+                                results.push(pipelineResult);
                             }
-                            return { success: true, result: { operation, numbers } };
-                        },
-                        expects: { operation: 'string', numbers: 'array' },
-                        outputs: { operation: 'string', numbers: 'array' },
-                        chained: 0
-                    },
-                    {
-                        id: 'calculate',
-                        name: 'Calculation',
-                        description: 'Performs the arithmetic operation',
-                        tool: 'calculator',
-                        inputs: ['operation', 'numbers'],
-                        handler: async ({ operation, numbers }: CalculatorInput) => {
-                            const task = `${operation} the numbers ${numbers.join(', ')}`;
-                            return this.calculatorAgent.run(task);
-                        },
-                        expects: { operation: 'string', numbers: 'array' },
-                        outputs: { result: 'number' },
-                        chained: 1
-                    }
-                ],
-                validation: {
-                    schema: {
-                        operation: {
-                            type: 'string',
-                            required: true,
-                            enum: ['add', 'subtract', 'multiply', 'divide']
-                        },
-                        numbers: {
-                            type: 'array',
-                            required: true
+
+                            const endTime = Date.now();
+
+                            // Combine all results
+                            const successfulResults = results.filter(r => r.success);
+                            yield {
+                                success: successfulResults.length > 0,
+                                result: successfulResults.flatMap(r => r.result || []),
+                                metrics: {
+                                    duration: endTime - startTime,
+                                    startTime,
+                                    endTime,
+                                    teamCalls: results.length,
+                                    agentCalls: results.reduce((sum, r) => sum + (r.metrics?.agentCalls || 0), 0),
+                                    toolCalls: results.reduce((sum, r) => sum + (r.metrics?.toolCalls || 0), 0)
+                                }
+                            };
+                        } catch (error) {
+                            const endTime = Date.now();
+                            yield {
+                                success: false,
+                                error: error instanceof Error ? error : new Error(String(error)),
+                                result: [],
+                                metrics: {
+                                    duration: endTime - startTime,
+                                    startTime,
+                                    endTime,
+                                    teamCalls: 0,
+                                    agentCalls: 0,
+                                    toolCalls: 0
+                                }
+                            };
                         }
                     }
-                },
-                errorStrategy: {
-                    type: 'retry',
-                    maxRetries: 3
-                },
-                metrics: {
-                    enabled: true,
-                    detailed: true,
-                    trackMemory: true
                 }
-            })
-        );
+            ],
+            onError: 'continue'
+        };
+
+        this.pipeline = symphony.pipeline.create(config);
     }
 
-    async run(input: CalculatorInput): Promise<CalculatorResult> {
-        const pipeline = await this.pipeline;
-        const startTime = Date.now();
-        
-        try {
-            const result = await pipeline.run(input);
-            const endTime = Date.now();
-
-            return {
-                ...result,
-                metrics: {
-                    duration: endTime - startTime,
-                    startTime,
-                    endTime,
-                    stepResults: {
-                        validation: result.metrics?.validation,
-                        calculation: result.metrics?.calculation
-                    }
-                }
-            };
-        } catch (error) {
-            const endTime = Date.now();
-            return {
-                success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                result: null,
-                metrics: {
-                    duration: endTime - startTime,
-                    startTime,
-                    endTime,
-                    stepResults: {
-                        error: {
-                            message: error instanceof Error ? error.message : String(error),
-                            stack: error instanceof Error ? error.stack : undefined
-                        }
-                    }
-                }
-            };
-        }
+    async run(tasks: string[]): Promise<PipelineResult> {
+        return this.pipeline.run({ task: '', tasks });
     }
 }
 

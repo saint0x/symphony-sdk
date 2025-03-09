@@ -1,4 +1,6 @@
 import sdkInstance from '../sdk';
+import { symphony } from 'symphonic';
+import type { Symphony } from 'symphonic';
 
 interface TripleSubParams {
     num1: number;
@@ -66,4 +68,8 @@ class TripleSubTool {
     }
 }
 
-export default TripleSubTool; 
+export default TripleSubTool;
+
+export const initialize = async (symphony: Symphony): Promise<void> => {
+    // Initialization logic here
+}; 
