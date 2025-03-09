@@ -1,51 +1,104 @@
-import { PipelineConfig, PipelineStep, ToolConfig } from '../types/sdk';
+import { ISymphony } from '../types/symphony';
+import { PipelineConfig, PipelineStep } from '../types/sdk';
+import { BaseService } from '../services/base';
 import { createMetricsTracker } from '../utils/metrics';
-import { validatePipelineConfig } from '../utils/validation';
-import { standardTools } from '../tools/standard';
 
-export class BasePipeline {
-    protected name: string;
-    protected description: string;
-    protected steps: PipelineStep[];
-    protected onError?: PipelineConfig['onError'];
-    protected metrics: PipelineConfig['metrics'];
+export abstract class BasePipeline extends BaseService {
+    protected steps: PipelineStep[] = [];
+    protected readonly config: PipelineConfig;
     protected metricsTracker = createMetricsTracker();
 
-    constructor(config: PipelineConfig) {
-        validatePipelineConfig(config);
-
-        this.name = config.name;
-        this.description = config.description;
-        this.steps = config.steps;
-        this.onError = config.onError;
-        this.metrics = config.metrics || {
-            enabled: true,
-            detailed: true,
-            trackMemory: true
-        };
+    constructor(symphony: ISymphony, name: string, config: PipelineConfig) {
+        super(symphony, name);
+        this.config = config;
     }
 
-    private async executeStep(step: PipelineStep, input: any): Promise<any> {
-        this.metricsTracker.trackOperation(`step_${step.name}_start`);
+    protected async validateStep(step: PipelineStep): Promise<void> {
+        // Validate step configuration
+        if (!step.name || !step.type) {
+            throw new Error('Step must have name and type');
+        }
 
-        try {
-            // Validate input against expectations
-            this.validateInput(step, input);
+        // Validate tool configuration if it's a tool step
+        if (step.type === 'tool' && step.tool) {
+            const toolConfig = typeof step.tool === 'string' ? { name: step.tool } : step.tool;
+            await this.symphony.validation.validate(toolConfig, 'tool');
+        }
 
-            // Get tool implementation
-            const toolKey = typeof step.tool === 'string' ? step.tool : step.tool.name;
-            const tool = typeof step.tool === 'string' 
-                ? standardTools.find(t => t.name === toolKey) 
-                : step.tool;
-            if (!tool) {
-                throw new Error(`Tool '${toolKey}' not found`);
+        // Validate retry configuration
+        if (step.retryConfig) {
+            if (step.retryConfig.maxAttempts < 1) {
+                throw new Error('maxAttempts must be >= 1');
             }
+            if (step.retryConfig.delay < 0) {
+                throw new Error('delay must be >= 0');
+            }
+        }
 
-            // Execute tool with retry logic if configured
-            const result = await this.executeWithRetry(tool, input, step.retry);
+        // Validate input/output mappings
+        if (step.expects) {
+            const entries = Object.entries(step.expects);
+            for (const [key, value] of entries) {
+                if (!value) {
+                    throw new Error(`Invalid input mapping for ${key}`);
+                }
+            }
+        }
 
-            // Validate output
-            this.validateOutput(step, result);
+        if (step.outputs) {
+            const entries = Object.entries(step.outputs);
+            for (const [key, value] of entries) {
+                if (!value) {
+                    throw new Error(`Invalid output mapping for ${key}`);
+                }
+            }
+        }
+
+        // Validate conditions
+        if (step.conditions?.requiredFields) {
+            for (const field of step.conditions.requiredFields) {
+                if (!field) {
+                    throw new Error('Required field cannot be empty');
+                }
+            }
+        }
+    }
+
+    protected async executeStep(step: PipelineStep, input: any): Promise<any> {
+        this.metricsTracker.trackOperation(`step_${step.name}_start`);
+        
+        try {
+            // Get step inputs
+            const stepInput = step.input ? this.resolveStepInputs(step.input, input) : input;
+
+            // Execute step based on type
+            let result;
+            switch (step.type) {
+                case 'tool':
+                    const toolName = typeof step.tool === 'string' ? step.tool : step.tool?.name;
+                    if (!toolName) {
+                        throw new Error('Tool name is required');
+                    }
+                    const tool = await this.symphony.tool.getTool(toolName);
+                    result = await tool.run(stepInput);
+                    break;
+                case 'agent':
+                    if (!step.agent) {
+                        throw new Error('Agent name is required');
+                    }
+                    const agent = await this.symphony.agent.getAgent(step.agent);
+                    result = await agent.run(stepInput);
+                    break;
+                case 'team':
+                    if (!step.team) {
+                        throw new Error('Team name is required');
+                    }
+                    const team = await this.symphony.team.getTeam(step.team);
+                    result = await team.run(stepInput);
+                    break;
+                default:
+                    throw new Error(`Unknown step type: ${step.type}`);
+            }
 
             this.metricsTracker.trackOperation(`step_${step.name}_complete`);
             return result;
@@ -55,75 +108,50 @@ export class BasePipeline {
         }
     }
 
-    private validateInput(step: PipelineStep, input: any) {
-        for (const [key, type] of Object.entries(step.expects)) {
-            if (!(key in input)) {
-                throw new Error(`Missing required input '${key}' for step '${step.name}'`);
-            }
-            if (typeof input[key] !== type) {
-                throw new Error(`Invalid type for input '${key}' in step '${step.name}'. Expected ${type}, got ${typeof input[key]}`);
+    protected resolveStepInputs(inputs: { step: string; field: string }[], context: any): any {
+        const result: Record<string, any> = {};
+        for (const input of inputs) {
+            if (context[input.step] && context[input.step][input.field] !== undefined) {
+                result[input.field] = context[input.step][input.field];
             }
         }
+        return result;
     }
 
-    private validateOutput(step: PipelineStep, output: any) {
-        // Basic type validation
-        for (const [key, type] of Object.entries(step.outputs)) {
-            if (!(key in output)) {
-                throw new Error(`Missing required output '${key}' from step '${step.name}'`);
-            }
-            if (typeof output[key] !== type) {
-                throw new Error(`Invalid type for output '${key}' from step '${step.name}'. Expected ${type}, got ${typeof output[key]}`);
-            }
+    protected compareSteps(a: PipelineStep, b: PipelineStep): number {
+        // If a depends on b's output, b should come first
+        if (a.input?.some(input => input.step === b.name)) {
+            return 1;
         }
-
-        // Custom validation if configured
-        if (step.conditions?.validateOutput && !step.conditions.validateOutput(output)) {
-            throw new Error(`Output validation failed for step '${step.name}'`);
+        // If b depends on a's output, a should come first
+        if (b.input?.some(input => input.step === a.name)) {
+            return -1;
         }
+        // Otherwise maintain original order
+        return 0;
     }
 
-    private async executeWithRetry(tool: ToolConfig, input: any, retry?: PipelineStep['retry']): Promise<any> {
-        let lastError: Error | null = null;
-        const maxAttempts = retry?.maxAttempts || 1;
-        const delay = retry?.delay || 1000;
+    abstract run(input: any): Promise<any>;
 
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                const result = await tool.handler(input);
-                if (!result.success) {
-                    throw result.error || new Error('Tool execution failed');
-                }
-                return result.result;
-            } catch (error) {
-                lastError = error instanceof Error ? error : new Error(String(error));
-                if (attempt < maxAttempts) {
-                    await new Promise(resolve => setTimeout(resolve, delay * attempt));
-                }
-            }
-        }
-
-        throw lastError || new Error('Tool execution failed after retries');
-    }
-
-    async run(input: any): Promise<any> {
-        this.metricsTracker.trackOperation('pipeline_start');
+    async *executeStream(input: any): AsyncGenerator<any, void, unknown> {
+        this.metricsTracker.trackOperation('pipeline_stream_start');
         
         try {
             let currentInput = input;
             const stepResults = new Map<string, any>();
 
             // Execute steps in order based on chaining
-            const orderedSteps = [...this.steps].sort((a, b) => a.chained - b.chained);
+            const orderedSteps = [...this.steps].sort((a, b) => this.compareSteps(a, b));
 
             for (const step of orderedSteps) {
                 try {
                     const result = await this.executeStep(step, currentInput);
                     stepResults.set(step.name, result);
                     currentInput = { ...currentInput, ...result };
+                    yield result;
                 } catch (error) {
-                    if (this.onError) {
-                        const errorResult = await this.onError(
+                    if (this.config.onError) {
+                        const errorResult = await this.config.onError(
                             error instanceof Error ? error : new Error(String(error)),
                             { step, input: currentInput, results: stepResults }
                         );
@@ -136,6 +164,7 @@ export class BasePipeline {
                             const retryResult = await this.executeStep(step, currentInput);
                             stepResults.set(step.name, retryResult);
                             currentInput = { ...currentInput, ...retryResult };
+                            yield retryResult;
                             continue;
                         }
                     }
@@ -143,103 +172,10 @@ export class BasePipeline {
                 }
             }
 
-            this.metricsTracker.trackOperation('pipeline_complete');
-            return {
-                success: true,
-                results: Object.fromEntries(stepResults),
-                metrics: this.metricsTracker.end()
-            };
+            this.metricsTracker.trackOperation('pipeline_stream_complete');
         } catch (error) {
-            this.metricsTracker.trackOperation('pipeline_error');
-            return {
-                success: false,
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: this.metricsTracker.end()
-            };
-        }
-    }
-
-    async *executeStream(input: any): AsyncGenerator<any, void, unknown> {
-        this.metricsTracker.trackOperation('stream_start');
-        
-        try {
-            let currentInput = input;
-            const stepResults = new Map<string, any>();
-
-            // Execute steps in order based on chaining
-            const orderedSteps = [...this.steps].sort((a, b) => a.chained - b.chained);
-
-            for (const step of orderedSteps) {
-                try {
-                    yield {
-                        type: 'step_start',
-                        step: step.name
-                    };
-
-                    const result = await this.executeStep(step, currentInput);
-                    stepResults.set(step.name, result);
-                    currentInput = { ...currentInput, ...result };
-
-                    yield {
-                        type: 'step_complete',
-                        step: step.name,
-                        result,
-                        metrics: this.metricsTracker.end()
-                    };
-                } catch (error) {
-                    yield {
-                        type: 'step_error',
-                        step: step.name,
-                        error: error instanceof Error ? error : new Error(String(error)),
-                        metrics: this.metricsTracker.end()
-                    };
-
-                    if (this.onError) {
-                        const errorResult = await this.onError(
-                            error instanceof Error ? error : new Error(String(error)),
-                            { step, input: currentInput, results: stepResults }
-                        );
-                        
-                        if (errorResult.retry) {
-                            yield {
-                                type: 'step_retry',
-                                step: step.name
-                            };
-
-                            if (errorResult.delay) {
-                                await new Promise(resolve => setTimeout(resolve, errorResult.delay));
-                            }
-
-                            const retryResult = await this.executeStep(step, currentInput);
-                            stepResults.set(step.name, retryResult);
-                            currentInput = { ...currentInput, ...retryResult };
-
-                            yield {
-                                type: 'step_retry_complete',
-                                step: step.name,
-                                result: retryResult,
-                                metrics: this.metricsTracker.end()
-                            };
-                            continue;
-                        }
-                    }
-                    throw error;
-                }
-            }
-
-            this.metricsTracker.trackOperation('stream_complete');
-            yield {
-                type: 'complete',
-                results: Object.fromEntries(stepResults),
-                metrics: this.metricsTracker.end()
-            };
-        } catch (error) {
-            this.metricsTracker.trackOperation('stream_error');
-            yield {
-                type: 'error',
-                error: error instanceof Error ? error : new Error(String(error)),
-                metrics: this.metricsTracker.end()
-            };
+            this.metricsTracker.trackOperation('pipeline_stream_error');
+            throw error;
         }
     }
 } 

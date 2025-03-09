@@ -1,125 +1,124 @@
-import { symphony } from 'symphonic';
-import type { Symphony, Pipeline, PipelineConfig } from 'symphonic';
-import CalculatorTeam from '../teams/calculator';
+import { symphony } from '../sdk';
+import { Pipeline, PipelineConfig, PipelineResult, PipelineStep } from '../types/sdk';
+import { ToolLifecycleState } from '../types/lifecycle';
 
-interface PipelineResult {
-    success: boolean;
-    result?: number[];
-    error?: Error;
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-        teamCalls?: number;
-        agentCalls?: number;
-        toolCalls?: number;
-    };
-}
+export class CalculatorPipeline implements Pipeline {
+    private _state: ToolLifecycleState = ToolLifecycleState.CREATED;
+    private _steps: PipelineStep[];
 
-interface ProgressUpdate {
-    status: string;
-    result?: PipelineResult;
-}
-
-class CalculatorPipeline {
-    private calculatorTeam = new CalculatorTeam();
-    private pipeline: Pipeline;
-    
     constructor() {
-        const config: PipelineConfig = {
-            name: 'Calculator Pipeline',
-            description: 'A pipeline that processes multiple calculation tasks in sequence',
-            steps: [
-                {
-                    name: 'Process Tasks',
-                    description: 'Process multiple calculation tasks in sequence',
-                    execute: async function*(this: CalculatorPipeline, input: { task: string } & Record<string, any>): AsyncGenerator<PipelineResult | ProgressUpdate> {
-                        const startTime = Date.now();
-                        const tasks = input.tasks as string[];
-
-                        if (!tasks || tasks.length === 0) {
-                            const endTime = Date.now();
-                            yield {
-                                success: false,
-                                error: new Error('No tasks provided'),
-                                result: [],
-                                metrics: {
-                                    duration: endTime - startTime,
-                                    startTime,
-                                    endTime,
-                                    teamCalls: 0,
-                                    agentCalls: 0,
-                                    toolCalls: 0
-                                }
-                            };
-                            return;
-                        }
-
-                        try {
-                            const results: PipelineResult[] = [];
-                            for (const task of tasks) {
-                                const result = await this.calculatorTeam.run(task);
-                                const pipelineResult: PipelineResult = {
-                                    success: result.success,
-                                    result: Array.isArray(result.result) ? result.result : [result.result as number],
-                                    error: result.error,
-                                    metrics: {
-                                        duration: result.metrics?.duration || 0,
-                                        startTime: result.metrics?.startTime || Date.now(),
-                                        endTime: result.metrics?.endTime || Date.now(),
-                                        teamCalls: 1,
-                                        agentCalls: result.metrics?.agentCalls || 0,
-                                        toolCalls: result.metrics?.toolCalls || 0
-                                    }
-                                };
-                                yield { status: `Completed ${task}`, result: pipelineResult };
-                                results.push(pipelineResult);
-                            }
-
-                            const endTime = Date.now();
-
-                            // Combine all results
-                            const successfulResults = results.filter(r => r.success);
-                            yield {
-                                success: successfulResults.length > 0,
-                                result: successfulResults.flatMap(r => r.result || []),
-                                metrics: {
-                                    duration: endTime - startTime,
-                                    startTime,
-                                    endTime,
-                                    teamCalls: results.length,
-                                    agentCalls: results.reduce((sum, r) => sum + (r.metrics?.agentCalls || 0), 0),
-                                    toolCalls: results.reduce((sum, r) => sum + (r.metrics?.toolCalls || 0), 0)
-                                }
-                            };
-                        } catch (error) {
-                            const endTime = Date.now();
-                            yield {
-                                success: false,
-                                error: error instanceof Error ? error : new Error(String(error)),
-                                result: [],
-                                metrics: {
-                                    duration: endTime - startTime,
-                                    startTime,
-                                    endTime,
-                                    teamCalls: 0,
-                                    agentCalls: 0,
-                                    toolCalls: 0
-                                }
-                            };
-                        }
-                    }
+        this._steps = [
+            {
+                name: 'parse',
+                type: 'tool',
+                config: {
+                    type: 'parser',
+                    operation: 'parse_math'
                 }
-            ],
-            onError: 'continue'
-        };
-
-        this.pipeline = symphony.pipeline.create(config);
+            },
+            {
+                name: 'validate',
+                type: 'tool',
+                config: {
+                    type: 'validator',
+                    rules: ['math_expression']
+                }
+            },
+            {
+                name: 'calculate',
+                type: 'agent',
+                config: {
+                    agent: 'calculator',
+                    timeout: 5000
+                },
+                retryConfig: {
+                    maxAttempts: 3,
+                    delay: 1000
+                }
+            }
+        ];
     }
 
-    async run(tasks: string[]): Promise<PipelineResult> {
-        return this.pipeline.run({ task: '', tasks });
+    get name(): string {
+        return 'calculator_pipeline';
     }
-}
 
-export default CalculatorPipeline; 
+    get description(): string {
+        return 'Pipeline for processing and executing calculator operations';
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    get steps(): PipelineStep[] {
+        return this._steps;
+    }
+
+    async initialize(): Promise<void> {
+        // Register with pipeline service
+        await symphony.pipeline.createPipeline(this.name, {
+            name: this.name,
+            description: this.description,
+            steps: this.steps,
+            onError: async (error: Error, context: any) => {
+                // Implement retry logic based on error type
+                if (error.message.includes('timeout')) {
+                    return { retry: true, delay: 2000 };
+                }
+                return { retry: false };
+            }
+        });
+
+        this._state = ToolLifecycleState.READY;
+    }
+
+    async run(input: any): Promise<PipelineResult> {
+        const startTime = Date.now();
+        const stepResults: Record<string, any> = {};
+
+        try {
+            // Step 1: Parse input
+            const parser = await symphony.tool.getTool('parser');
+            const parsedResult = await parser.run({
+                input,
+                operation: 'parse_math'
+            });
+            stepResults.parse = parsedResult;
+
+            // Step 2: Validate
+            const validator = await symphony.tool.getTool('validator');
+            const validationResult = await validator.run({
+                expression: parsedResult.result
+            });
+            stepResults.validate = validationResult;
+
+            // Step 3: Calculate
+            const calculator = await symphony.agent.getAgent('calculator');
+            const calculationResult = await calculator.run(parsedResult.result);
+            stepResults.calculate = calculationResult;
+
+            return {
+                success: true,
+                result: calculationResult.result,
+                metrics: {
+                    duration: Date.now() - startTime,
+                    startTime,
+                    endTime: Date.now(),
+                    stepResults
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                metrics: {
+                    duration: Date.now() - startTime,
+                    startTime,
+                    endTime: Date.now(),
+                    stepResults
+                }
+            };
+        }
+    }
+} 

@@ -2,32 +2,35 @@
 export interface ServiceBaseConfig {
     name: string;
     description: string;
+    version?: string;
+    enabled?: boolean;
     executeStream?: (input: { task: string } & Record<string, any>) => AsyncGenerator<any>;
 }
 
 // Tool types
-export interface ToolConfig extends ServiceBaseConfig {
-    inputs: string[];
+export interface ToolConfig {
+    name: string;
+    description?: string;
+    type: string;
+    apiKey?: string;
+    timeout?: number;
+    retryCount?: number;
+    maxSize?: number;
+    config: Record<string, any>;
+    inputs?: string[];
     outputs?: string[];
     capabilities?: string[];
-    chained?: number;
-    handler: (params: any) => Promise<ToolResult<any>>;
-    timeout?: number;
-    retry?: RetryConfig;
-    cache?: CacheConfig;
-    validation?: ValidationConfig;
-    monitoring?: MonitoringConfig;
+    handler?: (params: any) => Promise<ToolResult<any>>;
 }
 
 export interface ToolResult<T = any> {
     success: boolean;
     result?: T;
-    error?: Error;
+    error?: string;
     metrics?: {
         duration: number;
         startTime: number;
         endTime: number;
-        [key: string]: any;
     };
 }
 
@@ -69,25 +72,30 @@ export interface MonitoringConfig {
 }
 
 // Agent types
-export interface AgentConfig extends ServiceBaseConfig {
+export type LLMConfig = {
+    model: string;
+    apiKey?: string;
+    provider?: string;
+} | string;
+
+export interface AgentConfig {
+    name: string;
+    description: string;
+    systemPrompt?: string;
     task: string;
-    tools: Array<string | ToolConfig>;
+    tools: string[];
+    capabilities?: string[];
     llm: LLMConfig;
+    thresholds?: {
+        fastPath?: number;
+        confidence?: number;
+        performance?: number;
+    };
     maxCalls?: number;
     requireApproval?: boolean;
     timeout?: number;
+    handler?: (params: any) => Promise<ToolResult<any>>;
     memory?: MemoryConfig;
-    capabilities: string[];
-    handler: (params: any) => Promise<ToolResult<any>>;
-}
-
-export interface LLMConfig {
-    provider: 'openai' | 'anthropic' | 'google';
-    apiKey: string;
-    model: string;
-    temperature?: number;
-    maxTokens?: number;
-    timeout?: number;
 }
 
 export interface BaseMemoryConfig {
@@ -103,13 +111,19 @@ export interface MemoryConfig {
 }
 
 // Team types
-export interface TeamConfig extends ServiceBaseConfig {
+export interface TeamConfig {
+    name: string;
+    description: string;
     agents: Array<string | AgentConfig>;
+    capabilities?: string[];
     manager?: boolean;
     strategy?: TeamStrategy;
     delegationStrategy?: DelegationStrategy;
-    log?: LogConfig;
-    sharedMemory?: MemoryConfig;
+    log?: {
+        inputs?: boolean;
+        outputs?: boolean;
+        metrics?: boolean;
+    };
 }
 
 export interface TeamStrategy {
@@ -206,12 +220,17 @@ export interface ErrorStrategy {
 }
 
 // Pipeline types
-export interface PipelineConfig extends ServiceBaseConfig {
+export interface PipelineConfig {
+    name: string;
+    description?: string;
     steps: PipelineStep[];
-    onError?: (error: Error, context: any) => Promise<{ retry: boolean; delay?: number }>;
-    errorStrategy?: ErrorStrategy;
-    validation?: ValidationConfig;
-    metrics: {
+    onError?: (error: Error, context: { step: PipelineStep; input: any; results: Map<string, any> }) => Promise<{ retry: boolean; delay?: number }>;
+    errorStrategy?: {
+        type: 'stop' | 'continue' | 'retry';
+        maxAttempts?: number;
+        delay?: number;
+    };
+    metrics?: {
         enabled: boolean;
         detailed: boolean;
         trackMemory: boolean;
@@ -219,96 +238,105 @@ export interface PipelineConfig extends ServiceBaseConfig {
 }
 
 export interface PipelineStep {
-    id: string;
     name: string;
-    description: string;
-    tool: string | ToolConfig;
-    inputs: any;
-    handler: (params: any) => Promise<ToolResult<any>>;
-    chained: number;
-    expects: Record<string, string>;
-    outputs: Record<string, string>;
-    inputMap?: ((input: any) => Promise<any>) | Record<string, any>;
+    type: 'tool' | 'agent' | 'team';
+    tool?: string | ToolConfig;
+    agent?: string;
+    team?: string;
+    input?: { step: string; field: string }[];
+    config?: Record<string, any>;
+    retryConfig?: {
+        maxAttempts: number;
+        delay: number;
+    };
     retry?: RetryConfig;
+    chained?: number;
+    expects?: Record<string, string>;
+    outputs?: Record<string, string>;
     conditions?: {
         requiredFields?: string[];
         validateOutput?: (output: any) => boolean;
         customValidation?: (context: any) => Promise<boolean>;
     };
+    inputMap?: ((input: any) => Promise<any>) | Record<string, any>;
+    handler?: (params: any) => Promise<ToolResult<any>>;
 }
 
 // Component types
 export interface Agent {
-    id: string;
     name: string;
     description: string;
-    task: string;
-    tools: Array<string | ToolConfig>;
-    run(task: string, options?: AgentOptions): Promise<AgentResult>;
+    systemPrompt?: string;
+    tools: string[];
+    state: ToolLifecycleState;
+    run(task: string): Promise<AgentResult>;
 }
 
-export interface Tool {
-    id: string;
+export interface Tool<P = any, R = any> {
     name: string;
     description: string;
-    run(params: any): Promise<ToolResult<any>>;
+    state: ToolLifecycleState;
+    run(params: P): Promise<ToolResult<R>>;
 }
 
 export interface Team {
-    id: string;
     name: string;
     description: string;
-    agents: Array<string | AgentConfig>;
-    run(task: string, options?: TeamOptions): Promise<TeamResult>;
+    state: ToolLifecycleState;
+    agents: string[];
+    run(input: any): Promise<any>;
 }
 
 export interface Pipeline {
-    id: string;
     name: string;
     description: string;
+    state: ToolLifecycleState;
     steps: PipelineStep[];
-    run(input: any, options?: PipelineOptions): Promise<PipelineResult>;
+    run(input: any): Promise<any>;
 }
 
 // Result types
 export interface AgentResult<T = any> {
     success: boolean;
     result?: T;
-    error?: Error;
+    error?: string;
     metrics?: {
         duration: number;
         startTime: number;
         endTime: number;
         toolCalls: number;
-        [key: string]: any;
+        confidence?: number;
+        performance?: number;
+        llmUsage?: {
+            promptTokens: number;
+            completionTokens: number;
+            totalTokens: number;
+            model: string;
+        };
     };
 }
 
-export interface TeamResult {
+export interface TeamResult<T = any> {
     success: boolean;
-    result: any;
-    error?: Error;
+    result?: T;
+    error?: string;
     metrics?: {
         duration: number;
         startTime: number;
         endTime: number;
         agentCalls: number;
-        [key: string]: any;
     };
 }
 
-export interface PipelineResult {
+export interface PipelineResult<T = any> {
     success: boolean;
-    result: any;
-    error?: Error;
+    result?: T;
+    error?: string;
     metrics?: {
         duration: number;
         startTime: number;
         endTime: number;
-        stepResults: {
-            [key: string]: any;
-        };
-        [key: string]: any;
+        stepResults: Record<string, any>;
     };
 }
 
@@ -329,4 +357,47 @@ export interface PipelineOptions {
     onStepComplete?: (step: PipelineStep, result: any) => void;
     onMetrics?: (metrics: { [key: string]: any }) => void;
     timeout?: number;
+}
+
+export enum ToolLifecycleState {
+    PENDING = 'PENDING',
+    INITIALIZING = 'INITIALIZING',
+    READY = 'READY',
+    ERROR = 'ERROR',
+    DEGRADED = 'DEGRADED'
+}
+
+export interface HealthStatus {
+    status: ToolLifecycleState;
+    message?: string;
+    details?: Record<string, any>;
+    timestamp: number;
+    degraded: boolean;
+    dependencies: {
+        name: string;
+        status: ToolLifecycleState;
+        required: boolean;
+    }[];
+}
+
+export interface ToolLifecycle {
+    id: string;
+    state: ToolLifecycleState;
+    dependencies: string[];
+    capabilities: string[];
+    healthCheck(): Promise<HealthStatus>;
+    validateDependencies(): Promise<boolean>;
+    initialize(): Promise<void>;
+}
+
+export interface ToolStateEvent {
+    toolId: string;
+    previousState: ToolLifecycleState;
+    newState: ToolLifecycleState;
+    timestamp: number;
+    metadata?: Record<string, any>;
+}
+
+export interface ToolEventHandler {
+    (event: ToolStateEvent): Promise<void> | void;
 } 

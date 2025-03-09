@@ -1,312 +1,252 @@
-import { ToolService } from '../services/tool';
-import { AgentService } from '../services/agent';
-import { TeamManager } from '../managers/team';
-import { PipelineService } from '../services/pipeline';
-import { ComponentManager } from '../managers/component';
-import { MetricsService } from '../services/metrics';
-import { ValidationManager } from '../managers/validation';
-import { Registry } from './registry';
-import { ServiceBus } from '../core/servicebus';
-import { LogCategory } from '../utils/logger';
-import { LogLevel } from '../types/sdk';
-import { ISymphony, SymphonyConfig, SymphonyUtils } from './interfaces/types';
+import { ISymphony, SymphonyConfig, IMetricsAPI } from '../types/symphony';
 import { IToolService, IAgentService, ITeamService, IPipelineService } from '../services/interfaces';
-import { IValidationManager } from '../managers/validation';
-import { BaseManager } from '../managers/base';
-import { symphonyInference } from './inference/integration';
-import { AgentConfig, TeamConfig, PipelineConfig, ToolConfig } from '../types/sdk';
+import { ValidationManager, IValidationManager } from '../managers/validation';
+import { ServiceRegistry } from '../proto/symphonic/core/types';
+import { LLMHandler } from '../llm/handler';
+import { ContextManager } from '../proto/symphonic/core/cache/context';
+import { ServiceBus } from '../services/bus';
+import { ComponentManager } from './components/component-manager';
+import { MetricsService } from '../services/metrics';
+import { Logger } from '../utils/logger';
+import { ToolLifecycleState } from '../types/lifecycle';
+import { CapabilityBuilder, CommonCapabilities as TypedCommonCapabilities } from '../types/capabilities';
+import { LogLevel } from '../types/sdk';
+import { ToolService } from './services/tool';
+import { AgentService } from './services/agent';
+import { TeamService } from './services/team';
+import { PipelineService } from './services/pipeline';
 
-export class Symphony extends BaseManager implements ISymphony {
-    private static instance: Symphony;
-    protected _registry: Registry | null = null;
-    protected _initialized: boolean = false;
-    protected _toolService: ToolService;
-    protected _agentService: AgentService;
-    protected _teamService: TeamManager;
-    protected _pipelineService: PipelineService;
-    protected _validationManager: ValidationManager;
-    protected _metrics: MetricsService;
-    protected _components: ComponentManager;
-    protected _bus: ServiceBus;
-    protected _config: SymphonyConfig = {
-        serviceRegistry: {
-            enabled: false,
-            maxRetries: 3,
-            retryDelay: 1000
-        },
-        logging: {
-            level: LogLevel.INFO,
-            format: 'json' as const
-        },
-        metrics: {
-            enabled: true,
-            detailed: false
-        }
-    };
-    private initPromise?: Promise<void>;
+// Flatten CommonCapabilities to match ISymphony interface
+const CommonCapabilities = {
+    TOOL_USE: TypedCommonCapabilities.AGENT.TOOL_USE,
+    COORDINATION: TypedCommonCapabilities.TEAM.COORDINATION,
+    PARALLEL: TypedCommonCapabilities.PROCESSING.PARALLEL,
+    ADD: TypedCommonCapabilities.NUMERIC.ADD
+} as {
+    readonly TOOL_USE: string;
+    readonly COORDINATION: string;
+    readonly PARALLEL: string;
+    readonly ADD: string;
+};
 
-    readonly validation!: IValidationManager;
-    readonly metrics!: {
-        startTime: number;
-        start(id: string, metadata?: Record<string, any>): void;
-        end(id: string, metadata?: Record<string, any>): void;
-        get(id: string): Record<string, any> | undefined;
-        update(id: string, metadata: Record<string, any>): void;
-        getAll(): Record<string, any>;
-    };
+export class Symphony implements ISymphony {
+    private _services: Map<string, any> = new Map();
+    private _validationManager!: ValidationManager;
+    private _components: ComponentManager;
+    private _componentManager: ComponentManager;
+    private _logger: Logger;
+    private _contextManager!: ContextManager;
+    private _serviceRegistry!: ServiceRegistry;
+    private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
+    private _config: SymphonyConfig;
+
+    readonly name: string = 'Symphony';
+    readonly initialized: boolean = false;
+    readonly isInitialized: boolean = false;
+    readonly llm!: LLMHandler;
+    readonly bus!: ServiceBus;
     readonly tool!: IToolService;
     readonly agent!: IAgentService;
     readonly team!: ITeamService;
     readonly pipeline!: IPipelineService;
-    readonly components!: ComponentManager;
-    readonly componentManager!: ComponentManager;
+    readonly validation!: IValidationManager;
+    readonly validationManager!: IValidationManager;
+    readonly metrics!: IMetricsAPI;
     readonly types = {
-        CapabilityBuilder: {
-            team: (capability: string) => `team.${capability}`,
-            agent: (capability: string) => `agent.${capability}`,
-            numeric: (capability: string) => `numeric.${capability}`,
-            processing: (capability: string) => `processing.${capability}`
-        },
-        CommonCapabilities: {
-            TOOL_USE: 'tool.use',
-            COORDINATION: 'coordination',
-            PARALLEL: 'parallel',
-            ADD: 'add'
-        },
-        DEFAULT_LLM_CONFIG: {
-            provider: 'openai',
-            model: 'gpt-4',
-            temperature: 0.7,
-            maxTokens: 2000
-        }
+        CapabilityBuilder,
+        CommonCapabilities
     };
 
-    get logger() {
-        const logger = this.getLogger();
-        return {
-            debug: (category: string, message: string, data?: any) => logger.debug(category as LogCategory, message, data),
-            info: (category: string, message: string, data?: any) => logger.info(category as LogCategory, message, data),
-            warn: (category: string, message: string, data?: any) => logger.warn(category as LogCategory, message, data),
-            error: (category: string, message: string, data?: any) => logger.error(category as LogCategory, message, data)
-        };
-    }
-
-    get utils(): SymphonyUtils {
-        return {
-            validation: {
-                validate: async (data: any, schema: string) => {
-                    return this.validation.validate(data, schema);
-                }
-            },
-            metrics: {
-                start: (id: string, metadata?: Record<string, any>) => this._metrics.start(id, metadata),
-                end: (id: string, metadata?: Record<string, any>) => this._metrics.end(id, metadata),
-                get: (id: string) => this._metrics.get(id)
-            }
-        };
-    }
-
-    private constructor() {
-        super(null as any, 'Symphony');
-        
-        // Initialize core services
-        this._metrics = new MetricsService();
+    constructor(config: SymphonyConfig) {
+        // Use envConfig singleton which already handles environment loading
+        this._config = config;
+        this._logger = Logger.getInstance('Symphony');
         this._components = ComponentManager.getInstance(this);
-        this._registry = new Registry(this);
-        
-        // Initialize metrics property
-        this.metrics = {
-            startTime: this._metrics.startTime,
-            start: (id: string, metadata?: Record<string, any>) => this._metrics.start(id, metadata),
-            end: (id: string, metadata?: Record<string, any>) => this._metrics.end(id, metadata),
-            get: (id: string) => this._metrics.get(id),
-            update: (id: string, metadata: Record<string, any>) => this._metrics.update(id, metadata),
-            getAll: () => this._metrics.getAll()
-        };
-        
-        // Update self-reference now that we have metrics
-        (this as any).symphony = this;
-        
-        // Create service instances
-        this._toolService = new ToolService(this);
-        this._agentService = new AgentService(this);
-        this._teamService = TeamManager.getInstance(this);
-        this._pipelineService = new PipelineService(this);
+        this._componentManager = this._components;
+
+        // Initialize core services
+        this.llm = LLMHandler.getInstance();
+        this.bus = new ServiceBus();
+
+        // Initialize validation manager first as other services depend on it
         this._validationManager = ValidationManager.getInstance(this);
-        this._bus = new ServiceBus();
-
-        // Add dependencies
-        this.addDependency(this._components);
-        this.addDependency(this._validationManager);
-        this.addDependency(this._toolService);
-        this.addDependency(this._agentService);
-        this.addDependency(this._teamService);
-        this.addDependency(this._pipelineService);
-
-        // Initialize service interfaces with create methods
-        (this as any).tool = {
-            ...this._toolService,
-            create: async (input: string | Partial<ToolConfig>) => {
-                const config = await symphonyInference.enhanceTool(input);
-                return this._components.create('tool', config);
-            }
-        };
-
-        (this as any).agent = {
-            ...this._agentService,
-            create: async (input: string | Partial<AgentConfig>) => {
-                const config = await symphonyInference.enhanceAgent(input);
-                return this._components.create('agent', config);
-            }
-        };
-
-        (this as any).team = {
-            ...this._teamService,
-            create: async (input: string | Partial<TeamConfig>) => {
-                const config = await symphonyInference.enhanceTeam(input);
-                return this._components.create('team', config);
-            }
-        };
-
-        (this as any).pipeline = {
-            ...this._pipelineService,
-            create: async (input: string | Partial<PipelineConfig>) => {
-                const config = await symphonyInference.enhancePipeline(input);
-                return this._components.create('pipeline', config);
-            }
-        };
-
         this.validation = this._validationManager;
-        this.components = this._components;
-        this.componentManager = this._components;
-        
-        this.logInfo('Symphony SDK initialized');
+        this.validationManager = this._validationManager;
+
+        // Initialize metrics service
+        const metricsService = new MetricsService();
+        Object.defineProperty(this, 'metrics', {
+            value: {
+                startTime: metricsService.startTime,
+                start: (id: string, metadata?: Record<string, any>) => metricsService.start(id, metadata),
+                end: (id: string, metadata?: Record<string, any>) => metricsService.end(id, metadata),
+                get: (id: string) => metricsService.get(id),
+                update: (id: string, metadata: Record<string, any>) => metricsService.update(id, metadata),
+                getAll: () => metricsService.getAll()
+            },
+            writable: false
+        });
+
+        // Initialize tool service
+        const toolService = new ToolService(this);
+        Object.defineProperty(this, 'tool', { value: toolService, writable: false });
+
+        // Initialize agent service
+        const agentService = new AgentService(this);
+        Object.defineProperty(this, 'agent', { value: agentService, writable: false });
+
+        // Initialize team service
+        const teamService = new TeamService(this);
+        Object.defineProperty(this, 'team', { value: teamService, writable: false });
+
+        // Initialize pipeline service
+        const pipelineService = new PipelineService(this);
+        Object.defineProperty(this, 'pipeline', { value: pipelineService, writable: false });
+
+        // Register services
+        this._services.set('llm', this.llm);
+        this._services.set('bus', this.bus);
+        this._services.set('tool', toolService);
+        this._services.set('agent', agentService);
+        this._services.set('team', teamService);
+        this._services.set('pipeline', pipelineService);
+        this._services.set('validation', this.validationManager);
+        this._services.set('metrics', metricsService);
+        this._services.set('component', this._componentManager);
+
+        // Initialize async services
+        Promise.all([
+            ContextManager.getInstance(),
+            ServiceRegistry.getInstance(),
+            metricsService.initialize()
+        ]).then(([contextManager, registry]) => {
+            this._contextManager = contextManager;
+            this._serviceRegistry = registry;
+        }).catch(error => {
+            this._logger.error('Symphony', 'Failed to initialize async services', { error });
+        });
     }
 
-    static getInstance(): Symphony {
-        if (!Symphony.instance) {
-            Symphony.instance = new Symphony();
-        }
-        return Symphony.instance;
+    get logger(): Logger {
+        return this._logger;
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    get contextManager(): ContextManager {
+        return this._contextManager;
+    }
+
+    get serviceRegistry(): ServiceRegistry {
+        return this._serviceRegistry;
+    }
+
+    get components(): ComponentManager {
+        return this._components;
+    }
+
+    get componentManager(): ComponentManager {
+        return this._componentManager;
+    }
+
+    getDependencies(): string[] {
+        return [];
     }
 
     getConfig(): SymphonyConfig {
-        return { ...this._config };
+        return this._config;
     }
 
     updateConfig(config: Partial<SymphonyConfig>): void {
-        this._config = {
-            ...this._config,
-            ...config
-        };
-
-        if (config.logging?.level) {
-            this.getLogger().setMinLevel(this.mapLogLevel(config.logging.level));
-        }
+        this._config = { ...this._config, ...config };
     }
 
-    private mapLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): LogLevel {
-        switch (level) {
-            case 'debug': return LogLevel.DEBUG;
-            case 'info': return LogLevel.INFO;
-            case 'warn': return LogLevel.WARN;
-            case 'error': return LogLevel.ERROR;
-            default: return LogLevel.INFO;
-        }
-    }
-
-    async initialize(options: { logLevel?: LogLevel } = {}): Promise<void> {
-        if (this.initPromise) return this.initPromise;
-
-        this.initPromise = (async () => {
-            try {
-                if (options.logLevel) {
-                    this.getLogger().setMinLevel(options.logLevel);
-                }
-
-                // Initialize core managers first
-                await this._components.initialize();
-                await this._validationManager.initialize();
-
-                // Initialize registry after core managers
-                if (this._registry) {
-                    await this._registry.initialize();
-                }
-
-                // Initialize services that depend on core managers
-                await this._toolService.initialize();
-                this._registry?.updateServiceStatus('tool', 'ready');
-
-                await this._agentService.initialize();
-                this._registry?.updateServiceStatus('agent', 'ready');
-
-                await this._teamService.initialize();
-                this._registry?.updateServiceStatus('team', 'ready');
-
-                await this._pipelineService.initialize();
-                this._registry?.updateServiceStatus('pipeline', 'ready');
-
-                this._initialized = true;
-                this.logInfo('Symphony initialization complete');
-            } catch (error) {
-                this._initialized = false;
-                this.initPromise = undefined;
-                this.logError('Symphony initialization failed', { error });
-                throw error;
-            }
-        })();
-
-        return this.initPromise;
-    }
-
-    async getRegistry(): Promise<Registry | null> {
-        if (!this._initialized) {
-            throw new Error('Symphony must be initialized before accessing registry');
-        }
-        return this._registry;
+    async getRegistry(): Promise<ServiceRegistry> {
+        return this.serviceRegistry;
     }
 
     getServiceBus(): ServiceBus {
-        return this._bus;
-    }
-
-    isInitialized(): boolean {
-        return this._initialized;
+        return this.bus;
     }
 
     startMetric(id: string, metadata?: Record<string, any>): void {
-        if (!this._initialized) {
-            throw new Error('Symphony must be initialized before using metrics');
-        }
-        this._metrics.start(id, metadata);
+        new MetricsService().start(id, metadata);
     }
 
     endMetric(id: string, metadata?: Record<string, any>): void {
-        if (!this._initialized) {
-            throw new Error('Symphony must be initialized before using metrics');
-        }
-        this._metrics.end(id, metadata);
+        new MetricsService().end(id, metadata);
     }
 
-    getMetric(id: string): Record<string, any> | undefined {
-        if (!this._initialized) {
-            throw new Error('Symphony must be initialized before using metrics');
-        }
-        return this._metrics.get(id);
+    getMetric(id: string): any {
+        return new MetricsService().get(id);
     }
 
-    protected async initializeInternal(): Promise<void> {
-        // Already handled in initialize()
+    async initialize(): Promise<void> {
+        if (this.state === ToolLifecycleState.READY) {
+            return;
+        }
+
+        this._state = ToolLifecycleState.INITIALIZING;
+        this._logger.info('Symphony', 'Initializing...');
+
+        try {
+            // Wait for async services to be ready
+            await Promise.all([
+                ContextManager.getInstance(),
+                ServiceRegistry.getInstance()
+            ]);
+
+            // Initialize all services
+            await Promise.all([
+                this.tool.initialize(),
+                this.agent.initialize(),
+                this.team.initialize(),
+                this.pipeline.initialize(),
+                this.validationManager.initialize(),
+                this.componentManager.initialize()
+            ]);
+
+            this._state = ToolLifecycleState.READY;
+            Object.defineProperty(this, 'initialized', { value: true, writable: false });
+            this._logger.info('Symphony', 'Initialization complete');
+        } catch (error) {
+            this._state = ToolLifecycleState.ERROR;
+            this._logger.error('Symphony', 'Initialization failed', { error });
+            throw error;
+        }
+    }
+
+    async getService(name: string): Promise<any> {
+        return this._services.get(name);
+    }
+
+    getState(): ToolLifecycleState {
+        return this._state;
     }
 }
 
-// Export the default instance
-export const symphony = Symphony.getInstance();
+// Export default instance
+export const symphony = new Symphony({
+    serviceRegistry: {
+        enabled: true,
+        maxRetries: 3,
+        retryDelay: 1000
+    },
+    logging: {
+        level: LogLevel.INFO,
+        format: 'json'
+    },
+    metrics: { enabled: true, detailed: true }
+});
 
 // Export types and utilities
-export type { SymphonyConfig, ISymphony } from './interfaces/types';
+export { ToolLifecycleState } from '../types/lifecycle';
+export type { ISymphony } from '../types/symphony';
 export type * from '../types/metadata';
 export type * from '../types/components';
 export * from '../types/capabilities';
-export { ComponentManager, CapabilityBuilder, CommonCapabilities } from '../managers/component';
+export * from '../types/interfaces';
+export { ComponentManager } from './components/component-manager';
 export { TeamService } from './services/team'; 

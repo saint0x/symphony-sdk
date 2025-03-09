@@ -81,13 +81,14 @@ export class PipelineExecutor {
                     };
 
                     // Handle error based on strategy
-                    if (config.errorStrategy?.type === 'stop') {
+                    if (!config.errorStrategy?.type || config.errorStrategy.type === 'stop') {
                         throw new Error(`Pipeline step ${step.name} failed: ${error.message}`);
-                    } else if (config.errorStrategy?.type === 'skip') {
-                        stepResults.push(stepError);
-                        continue;
-                    } else if (config.errorStrategy?.type === 'retry') {
-                        const retryResult = await this.handleRetry(step, currentData, config.errorStrategy);
+                    } else if (config.errorStrategy.type === 'retry') {
+                        const retryStrategy: ErrorStrategy = {
+                            type: 'retry',
+                            maxRetries: config.errorStrategy.maxAttempts
+                        };
+                        const retryResult = await this.handleRetry(step, currentData, retryStrategy);
                         if (retryResult.success) {
                             stepResults.push({
                                 step: step.name,
@@ -101,21 +102,12 @@ export class PipelineExecutor {
                                 ...stepError,
                                 retries: retryResult.retries
                             });
-                            if (config.errorStrategy.fallback) {
-                                const fallbackResult = await this.executeStep(
-                                    config.errorStrategy.fallback,
-                                    currentData
-                                );
-                                stepResults.push({
-                                    step: `${step.name}_fallback`,
-                                    success: true,
-                                    data: fallbackResult
-                                });
-                                currentData = fallbackResult;
-                            } else {
-                                throw new Error(`Pipeline step ${step.name} failed after ${retryResult.retries} retries`);
-                            }
+                            throw new Error(`Pipeline step ${step.name} failed after ${retryResult.retries} retries`);
                         }
+                    } else {
+                        // Skip the failed step
+                        stepResults.push(stepError);
+                        continue;
                     }
                 }
             }
@@ -161,9 +153,13 @@ export class PipelineExecutor {
         // Map input using inputMap function
         const transformedInput = typeof step.inputMap === 'function' 
             ? await step.inputMap(input)
-            : step.inputMap;
+            : step.inputMap || input;
 
         // Execute tool
+        if (!step.tool) {
+            throw new Error(`No tool specified for step: ${step.name}`);
+        }
+
         const toolId = typeof step.tool === 'string' ? step.tool : step.tool.name;
         const result = await this.serviceRegistry.executeCall(
             toolId,
@@ -171,11 +167,7 @@ export class PipelineExecutor {
             transformedInput
         );
 
-        if (!result.success) {
-            throw new Error(`Tool execution failed: ${result.error?.message}`);
-        }
-
-        return result.data;
+        return result;
     }
 
     private async handleRetry(
@@ -183,41 +175,25 @@ export class PipelineExecutor {
         input: any,
         errorStrategy: ErrorStrategy
     ): Promise<{ success: boolean; data?: any; retries: number }> {
-        const maxRetries = errorStrategy.maxRetries || 3;
         let retries = 0;
+        const maxRetries = errorStrategy.maxRetries || 3;
+        const retryDelay = 1000;
 
         while (retries < maxRetries) {
             try {
                 retries++;
-                const result = await this.executeStep(step, input);
-                return {
-                    success: true,
-                    data: result,
-                    retries
-                };
-            } catch (error) {
-                logger.warn(LogCategory.SYSTEM, `Retry ${retries}/${maxRetries} failed`, {
-                    metadata: {
-                        step: step.name,
-                        error: error instanceof Error ? error.message : String(error)
-                    }
-                });
-
-                if (retries === maxRetries) {
-                    return {
-                        success: false,
-                        retries
-                    };
+                if (retries > 1) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelay * retries));
                 }
-
-                // Wait before retrying
-                await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+                const result = await this.executeStep(step, input);
+                return { success: true, data: result, retries };
+            } catch (error) {
+                if (retries === maxRetries) {
+                    return { success: false, retries };
+                }
             }
         }
 
-        return {
-            success: false,
-            retries
-        };
+        return { success: false, retries };
     }
 } 

@@ -15,7 +15,7 @@ export class Registry extends BaseManager {
 
     constructor() {
         super(null as any, 'Registry');
-        this.logger = Logger.getInstance({ serviceContext: 'Registry' });
+        this.logger = Logger.getInstance('Registry');
     }
 
     registerService(service: ServiceInstance): void {

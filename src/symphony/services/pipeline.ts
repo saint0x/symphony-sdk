@@ -1,6 +1,6 @@
-import { ISymphony } from '../interfaces/types';
+import { ISymphony } from '../../types/symphony';
 import { BaseManager } from '../../managers/base';
-import { PipelineConfig } from '../../types/sdk';
+import { PipelineConfig, ToolConfig } from '../../types/sdk';
 import { assertString } from '../../utils/validation';
 import { ToolService } from '../../services/tool';
 
@@ -38,9 +38,15 @@ export class PipelineService extends BaseManager {
                     const metricId = `pipeline_${config.name}_run_${Date.now()}`;
                     this.symphony.startMetric(metricId, { pipelineName: config.name, input });
 
+                    const stepResults: Array<{
+                        step: string;
+                        success: boolean;
+                        result?: any;
+                        error?: string;
+                    }> = [];
+
                     try {
                         let currentInput = input;
-                        const stepResults = [];
 
                         for (const step of config.steps) {
                             const stepMetricId = `step_${step.name}_${Date.now()}`;
@@ -58,17 +64,21 @@ export class PipelineService extends BaseManager {
                                 // Run step
                                 const result = await (async () => {
                                     if (typeof step.tool === 'string') {
-                                        return await this.toolService.createTool({
+                                        const toolConfig: ToolConfig = {
                                             name: step.name,
-                                            description: step.description,
-                                            inputs: Object.keys(step.expects),
-                                            handler: async () => {
-                                                const result = await step.tool;
-                                                return { result };
+                                            type: 'pipeline_step',
+                                            config: {
+                                                handler: async () => {
+                                                    const result = await step.tool;
+                                                    return { success: true, result };
+                                                }
                                             }
-                                        });
+                                        };
+                                        return await this.toolService.createTool(step.name, toolConfig);
+                                    } else if (step.tool) {
+                                        return await this.toolService.createTool(step.name, step.tool);
                                     } else {
-                                        return await this.toolService.createTool(step.tool);
+                                        throw new Error(`No tool specified for step: ${step.name}`);
                                     }
                                 })();
 
@@ -78,42 +88,49 @@ export class PipelineService extends BaseManager {
 
                                 const toolResult = await result.run(stepInput);
                                 stepResults.push({
-                                    stepId: step.name,
-                                    result: toolResult.result
+                                    step: step.name,
+                                    success: true,
+                                    result: toolResult
                                 });
 
                                 // Update current input for next step
-                                currentInput = toolResult.result;
+                                if (step.outputs && typeof step.outputs === 'object') {
+                                    currentInput = Object.entries(step.outputs).reduce((acc, [key, value]) => {
+                                        if (typeof toolResult === 'object' && value in toolResult) {
+                                            acc[key] = toolResult[value as keyof typeof toolResult];
+                                        }
+                                        return acc;
+                                    }, {} as Record<string, any>);
+                                } else {
+                                    currentInput = toolResult;
+                                }
 
-                                this.symphony.endMetric(stepMetricId, {
-                                    success: true,
-                                    result: toolResult.result
-                                });
                             } catch (error) {
-                                this.symphony.endMetric(stepMetricId, {
+                                stepResults.push({
+                                    step: step.name,
                                     success: false,
                                     error: error instanceof Error ? error.message : String(error)
                                 });
                                 throw error;
+                            } finally {
+                                this.symphony.endMetric(stepMetricId);
                             }
                         }
 
-                        this.symphony.endMetric(metricId, {
-                            success: true,
-                            stepResults
-                        });
-
+                        this.symphony.endMetric(metricId);
                         return {
                             success: true,
-                            result: currentInput,
-                            stepResults
+                            steps: stepResults,
+                            result: currentInput
                         };
+
                     } catch (error) {
-                        this.symphony.endMetric(metricId, {
+                        this.symphony.endMetric(metricId);
+                        return {
                             success: false,
-                            error: error instanceof Error ? error.message : String(error)
-                        });
-                        throw error;
+                            error: error instanceof Error ? error.message : String(error),
+                            steps: stepResults
+                        };
                     }
                 }
             };

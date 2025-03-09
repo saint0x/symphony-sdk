@@ -1,7 +1,8 @@
-import { AgentConfig, LLMConfig, ToolConfig, MemoryConfig } from '../types/sdk';
+import { AgentConfig, ToolConfig, MemoryConfig } from '../types/sdk';
 import { createMetricsTracker } from '../utils/metrics';
 import { validateAgentConfig } from '../utils/validation';
 import { OpenAIProvider } from '../llm/providers/openai';
+import { LLMConfig } from '../llm/types';
 import { standardTools } from '../tools/standard';
 import { Memory, createMemory } from '../memory';
 
@@ -35,7 +36,16 @@ export class BaseAgent {
         this.initializeMemories(config.memory);
 
         // Initialize LLM
-        this.llm = new OpenAIProvider(config.llm as LLMConfig);
+        const llmConfig: LLMConfig = typeof config.llm === 'string' ? {
+            provider: 'openai' as const,
+            apiKey: process.env.OPENAI_API_KEY || '',
+            model: config.llm
+        } : {
+            provider: (config.llm.provider || 'openai') as 'openai' | 'anthropic' | 'google',
+            apiKey: config.llm.apiKey || process.env.OPENAI_API_KEY || '',
+            model: config.llm.model
+        };
+        this.llm = new OpenAIProvider(llmConfig);
 
         // Initialize tools
         this.initializeTools(config.tools);
@@ -111,41 +121,18 @@ export class BaseAgent {
     protected async executeTool(toolName: string, params: any): Promise<any> {
         const tool = this.tools.get(toolName);
         if (!tool) {
-            throw new Error(`Tool '${toolName}' not found`);
+            throw new Error(`Tool ${toolName} not found`);
         }
 
-        this.metrics.trackOperation(`tool_execution_${toolName}`);
-
-        // Store tool execution in episodic memory
-        if (this.currentEpisodeId) {
-            await this.episodicMemory.add(`tool_execution:${Date.now()}`, {
-                tool: toolName,
-                params,
-                timestamp: Date.now()
-            });
+        if (!tool.handler) {
+            throw new Error(`Tool ${toolName} does not have a handler`);
         }
 
-        const result = await tool.handler(params);
-        
-        if (!result.success) {
-            const error = new Error(`Tool '${toolName}' execution failed: ${result.error}`);
-            // Store error in short-term memory
-            await this.memorize(`error:${Date.now()}`, {
-                tool: toolName,
-                error: error.message,
-                params
-            }, 'short_term');
-            throw error;
+        try {
+            return await tool.handler(params);
+        } catch (error) {
+            throw new Error(`Failed to execute tool ${toolName}: ${error instanceof Error ? error.message : String(error)}`);
         }
-
-        // Store successful result in short-term memory
-        await this.memorize(`result:${toolName}:${Date.now()}`, {
-            tool: toolName,
-            result: result.result,
-            params
-        }, 'short_term');
-
-        return result.result;
     }
 
     protected async planTask(task: string): Promise<string[]> {

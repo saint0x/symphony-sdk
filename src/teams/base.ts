@@ -1,4 +1,4 @@
-import { TeamConfig, AgentConfig } from '../types/sdk';
+import { TeamConfig, AgentConfig, TeamStrategy } from '../types/sdk';
 import { BaseAgent } from '../agents/base';
 import { createMetricsTracker } from '../utils/metrics';
 import { validateTeamConfig } from '../utils/validation';
@@ -8,8 +8,12 @@ export class BaseTeam {
     protected description: string;
     protected agents: Map<string, BaseAgent>;
     protected manager: boolean;
-    protected strategy: Required<TeamConfig>['strategy'];
-    protected log: Required<TeamConfig>['log'];
+    protected strategy: TeamStrategy;
+    protected log: {
+        inputs: boolean;
+        outputs: boolean;
+        metrics: boolean;
+    };
     protected metrics = createMetricsTracker();
 
     constructor(config: TeamConfig) {
@@ -18,9 +22,13 @@ export class BaseTeam {
         this.name = config.name;
         this.description = config.description;
         this.agents = new Map();
-        this.manager = config.manager || false;
-        this.strategy = config.strategy || {};
-        this.log = config.log || { inputs: true, outputs: true, metrics: true };
+        this.manager = config.manager ?? false;
+        this.strategy = config.strategy ?? {};
+        this.log = {
+            inputs: config.log?.inputs ?? true,
+            outputs: config.log?.outputs ?? true,
+            metrics: config.log?.metrics ?? true
+        };
 
         // Initialize agents
         this.initializeAgents(config.agents);

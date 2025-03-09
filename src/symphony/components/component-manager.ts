@@ -1,6 +1,7 @@
 import { BaseManager } from '../../managers/base';
-import { ISymphony, IComponentManager } from '../interfaces/types';
+import { ISymphony } from '../../types/symphony';
 import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from '../../types/metadata';
+import { IComponentManager } from '../../types/interfaces';
 
 export class ComponentManager extends BaseManager implements IComponentManager {
     private static instance: ComponentManager;

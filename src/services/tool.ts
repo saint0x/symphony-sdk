@@ -1,73 +1,100 @@
-import { ISymphony } from '../symphony/interfaces/types';
-import { BaseManager } from '../managers/base';
-import { IToolService } from './interfaces';
-import { ValidationManager } from '../managers/validation';
+import { BaseService } from './base';
+import { ISymphony } from '../types/symphony';
+import { ToolLifecycleState } from '../types/lifecycle';
+import { IToolService } from '../types/interfaces';
+import { Tool, ToolConfig, ToolLifecycleState as SDKToolLifecycleState } from '../types/sdk';
 
-export class ToolService extends BaseManager implements IToolService {
+export class ToolService extends BaseService implements IToolService {
+    private tools: Map<string, Tool> = new Map();
+
     constructor(symphony: ISymphony) {
         super(symphony, 'ToolService');
-        const validationManager = ValidationManager.getInstance(symphony);
-        if (validationManager instanceof BaseManager) {
-            this.addDependency(validationManager);
-        }
+        this._dependencies = ['ValidationService'];
     }
 
-    async create(config: {
-        name: string;
-        description: string;
-        inputs: string[];
-        handler: (params: any) => Promise<any>;
-    }): Promise<any> {
-        return this.createTool(config);
+    get state(): ToolLifecycleState {
+        return this._state;
     }
 
-    async createTool(config: any): Promise<any> {
-        this.assertInitialized();
+    getDependencies(): string[] {
+        return this._dependencies;
+    }
+
+    async createTool(name: string, config: ToolConfig): Promise<Tool> {
         return this.withErrorHandling('createTool', async () => {
-            const validation = await this.symphony.validation.validate(config, 'ToolConfig');
-            if (!validation.isValid) {
-                throw new Error(`Invalid tool configuration: ${validation.errors.join(', ')}`);
+            this.assertInitialized();
+            
+            if (this.tools.has(name)) {
+                throw new Error(`Tool ${name} already exists`);
             }
 
-            if (!this.symphony.isInitialized()) {
-                throw new Error('Symphony must be initialized before creating tools');
-            }
+            // Validate tool config
+            await this.symphony.validation.validate(config, 'tool');
 
-            const registry = await this.symphony.getRegistry();
-            if (!registry) {
-                throw new Error('Service registry is not available');
-            }
-
-            const tool = {
-                ...config,
-                run: async (params: any) => {
-                    const metricId = `tool_${config.name}_run_${Date.now()}`;
-                    this.symphony.startMetric(metricId, { toolName: config.name, params });
-
+            const tool: Tool = {
+                name,
+                description: config.description || `Tool ${name}`,
+                state: SDKToolLifecycleState.PENDING,
+                run: async (input: any) => {
+                    const startTime = Date.now();
                     try {
-                        const result = await config.handler(params);
-                        this.symphony.endMetric(metricId, {
+                        // Execute tool logic
+                        const result = await this.executeTool(input);
+                        return {
                             success: true,
-                            result: result.result
-                        });
-                        return result;
+                            result,
+                            metrics: {
+                                duration: Date.now() - startTime,
+                                startTime,
+                                endTime: Date.now()
+                            }
+                        };
                     } catch (error) {
-                        this.symphony.endMetric(metricId, {
+                        return {
                             success: false,
-                            error: error instanceof Error ? error.message : String(error)
-                        });
-                        throw error;
+                            error: error instanceof Error ? error.message : String(error),
+                            metrics: {
+                                duration: Date.now() - startTime,
+                                startTime,
+                                endTime: Date.now()
+                            }
+                        };
                     }
                 }
             };
 
-            registry.registerTool(config.name, tool);
-            this.logInfo(`Created tool: ${config.name}`, { toolName: config.name });
+            this.tools.set(name, tool);
             return tool;
-        }, { toolName: config.name });
+        });
+    }
+
+    async getTool(name: string): Promise<Tool> {
+        return this.withErrorHandling('getTool', async () => {
+            this.assertInitialized();
+            
+            const tool = this.tools.get(name);
+            if (!tool) {
+                throw new Error(`Tool ${name} not found`);
+            }
+            return tool;
+        });
+    }
+
+    async listTools(): Promise<string[]> {
+        return this.withErrorHandling('listTools', async () => {
+            this.assertInitialized();
+            return Array.from(this.tools.keys());
+        });
     }
 
     protected async initializeInternal(): Promise<void> {
-        // No additional initialization needed
+        this.logInfo('Initializing tool service');
+        this._state = ToolLifecycleState.READY;
+    }
+
+    private async executeTool(input: any): Promise<any> {
+        // Implement tool-specific logic here
+        // This is where you would handle different tool types and their execution
+        throw new Error(`Tool execution not implemented for input: ${JSON.stringify(input)}`);
     }
 } 

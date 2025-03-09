@@ -1,96 +1,89 @@
-import { logger, LogCategory } from '../utils/logger';
+import { BaseService } from './base';
+import { ISymphony } from '../types/symphony';
+import { ToolLifecycleState } from '../types/lifecycle';
+import { IMetricsService } from '../types/interfaces';
 
-export interface MetricData {
-    startTime?: number;
-    endTime?: number;
-    duration?: number;
-    success?: boolean;
-    error?: string;
-    [key: string]: any;
-}
-
-export class MetricsService {
-    private metrics: Map<string, MetricData>;
-    readonly startTime: number;
+export class MetricsService extends BaseService implements IMetricsService {
+    private metrics: Map<string, any> = new Map();
+    private readonly _startTime: number;
+    protected _state: ToolLifecycleState = ToolLifecycleState.PENDING;
+    protected _dependencies: string[] = [];
+    protected initialized = false;
 
     constructor() {
-        this.metrics = new Map();
-        this.startTime = Date.now();
+        super({} as ISymphony, 'MetricsService');
+        this._startTime = Date.now();
+        this._state = ToolLifecycleState.READY;
+        this.initialized = true;
     }
 
-    start(metricId: string, metadata?: Record<string, any>): void {
-        this.metrics.set(metricId, {
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return this._dependencies;
+    }
+
+    get startTime(): number {
+        return this._startTime;
+    }
+
+    async initialize(): Promise<void> {
+        if (this.initialized) {
+            this.logInfo('Already initialized');
+            return;
+        }
+
+        await this.initializeInternal();
+        this._state = ToolLifecycleState.READY;
+        this.initialized = true;
+        this.logInfo('Initialization complete');
+    }
+
+    start(id: string, metadata?: Record<string, any>): void {
+        this.metrics.set(id, {
             startTime: Date.now(),
-            ...metadata
+            metadata
         });
-
-        logger.debug(LogCategory.METRICS, `Started metric: ${metricId}`, {
-            metadata: {
-                metricId,
-                ...metadata
-            }
-        });
+        this.logDebug(`Started metric: ${id}`, { metadata });
     }
 
-    end(metricId: string, metadata?: Record<string, any>): void {
-        const metric = this.metrics.get(metricId);
+    end(id: string, metadata?: Record<string, any>): void {
+        const metric = this.metrics.get(id);
         if (!metric) {
-            logger.warn(LogCategory.METRICS, `Attempted to end non-existent metric: ${metricId}`);
+            this.logError(`Metric ${id} not found`, new Error(`Metric ${id} not found`));
             return;
         }
 
-        const endTime = Date.now();
-        const duration = metric.startTime ? endTime - metric.startTime : 0;
-
-        this.metrics.set(metricId, {
-            ...metric,
-            ...metadata,
-            endTime,
-            duration
-        });
-
-        logger.debug(LogCategory.METRICS, `Ended metric: ${metricId}`, {
-            metadata: {
-                metricId,
-                duration,
-                ...metadata
-            }
-        });
+        metric.endTime = Date.now();
+        metric.duration = metric.endTime - metric.startTime;
+        if (metadata) {
+            metric.metadata = { ...metric.metadata, ...metadata };
+        }
+        this.logDebug(`Ended metric: ${id}`, { duration: metric.duration, metadata: metric.metadata });
     }
 
-    get(metricId: string): MetricData | undefined {
-        return this.metrics.get(metricId);
+    get(id: string): any {
+        return this.metrics.get(id);
     }
 
-    update(metricId: string, metadata: Record<string, any>): void {
-        const metric = this.metrics.get(metricId);
+    update(id: string, metadata: Record<string, any>): void {
+        const metric = this.metrics.get(id);
         if (!metric) {
-            logger.warn(LogCategory.METRICS, `Attempted to update non-existent metric: ${metricId}`);
+            this.logError(`Metric ${id} not found`, new Error(`Metric ${id} not found`));
             return;
         }
 
-        this.metrics.set(metricId, {
-            ...metric,
-            ...metadata
-        });
-
-        logger.debug(LogCategory.METRICS, `Updated metric: ${metricId}`, {
-            metadata: {
-                metricId,
-                ...metadata
-            }
-        });
+        metric.metadata = { ...metric.metadata, ...metadata };
+        this.logDebug(`Updated metric: ${id}`, { metadata: metric.metadata });
     }
 
-    getAll(): Record<string, MetricData> {
-        return Object.fromEntries(this.metrics);
+    getAll(): Map<string, any> {
+        return this.metrics;
     }
 
-    clear(metricId: string): void {
-        this.metrics.delete(metricId);
+    protected async initializeInternal(): Promise<void> {
+        // Nothing to initialize
     }
-
-    clearAll(): void {
-        this.metrics.clear();
-    }
-} 
+}

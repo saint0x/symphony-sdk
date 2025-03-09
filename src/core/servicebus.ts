@@ -1,88 +1,169 @@
-import { Logger, LogCategory } from '../utils/logger';
+import { BaseManager } from '../managers/base';
+import { ISymphony } from '../types/symphony';
+import { LRUCache } from 'lru-cache';
 
-interface Message {
-    type: string;
-    service: string;
-    payload: any;
-    correlationId?: string;
-    timestamp: number;
+export interface MessageHandler {
+    (message: any): Promise<void> | void;
 }
 
-interface MessageHandler {
-    handle(message: Message): Promise<void>;
+export interface MessageOptions {
+    priority?: number;
+    retain?: boolean;
+    expireInMs?: number;
 }
 
-export class ServiceBus {
+export class ServiceBus extends BaseManager {
     private handlers = new Map<string, Set<MessageHandler>>();
-    private pending = new Map<string, (value: any) => void>();
-    private logger: Logger;
+    private retainedMessages = new Map<string, any>();
+    private priorityQueue = new Map<number, Set<string>>();
+    private messageCache: LRUCache<string, any>;
+    protected initialized = false;
+    protected dependencies: BaseManager[] = [];
 
-    constructor() {
-        this.logger = Logger.getInstance({ serviceContext: 'ServiceBus' });
-    }
-
-    async publish(message: Message): Promise<void> {
-        const handlers = this.handlers.get(message.type) || new Set();
+    constructor(symphony: ISymphony) {
+        super(symphony, 'ServiceBus');
         
-        try {
-            await Promise.all(
-                Array.from(handlers).map(handler => 
-                    handler.handle(message)
-                )
-            );
-            
-            this.logger.debug(LogCategory.SYSTEM, `Message published: ${message.type}`, {
-                metadata: {
-                    service: message.service,
-                    correlationId: message.correlationId
-                }
-            });
-        } catch (error) {
-            this.logger.error(LogCategory.ERROR, `Message handling failed: ${message.type}`, {
-                error,
-                metadata: {
-                    service: message.service,
-                    correlationId: message.correlationId
-                }
-            });
-            throw error;
+        // Initialize LRU cache for message deduplication and quick access
+        this.messageCache = new LRUCache({
+            max: 1000,  // Store last 1000 messages
+            ttl: 1000 * 60 * 5  // Messages expire after 5 minutes
+        });
+
+        // Initialize priority levels (1-5, 1 being highest)
+        for (let i = 1; i <= 5; i++) {
+            this.priorityQueue.set(i, new Set());
         }
     }
 
-    subscribe(messageType: string, handler: MessageHandler): void {
+    // Implement BaseManager's abstract methods
+    protected async initializeInternal(): Promise<void> {
+        // Start periodic priority queue processing
+        setInterval(() => {
+            this.processPriorityQueue().catch(error => {
+                this.logError('Error processing priority queue', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            });
+        }, 100); // Process every 100ms
+
+        this.initialized = true;
+    }
+
+    isInitialized(): boolean {
+        return this.initialized;
+    }
+
+    addDependency(manager: BaseManager): void {
+        this.dependencies.push(manager);
+    }
+
+    getDependencies(): BaseManager[] {
+        return this.dependencies;
+    }
+
+    subscribeToMessage(messageType: string, handler: MessageHandler): void {
         if (!this.handlers.has(messageType)) {
             this.handlers.set(messageType, new Set());
         }
         this.handlers.get(messageType)!.add(handler);
-        
-        this.logger.debug(LogCategory.SYSTEM, `Handler subscribed: ${messageType}`);
     }
 
-    async request<T>(message: Message): Promise<T> {
-        return new Promise((resolve, reject) => {
-            const correlationId = message.correlationId || `${Date.now()}-${Math.random()}`;
-            this.pending.set(correlationId, resolve);
-            
-            this.publish({
-                ...message,
-                correlationId
-            }).catch(reject);
-            
-            // Cleanup after timeout
-            setTimeout(() => {
-                if (this.pending.has(correlationId)) {
-                    this.pending.delete(correlationId);
-                    reject(new Error(`Request timeout: ${message.type}`));
-                }
-            }, 30000); // 30s timeout
+    unsubscribeFromMessage(messageType: string, handler: MessageHandler): void {
+        const handlers = this.handlers.get(messageType);
+        if (handlers) {
+            handlers.delete(handler);
+        }
+    }
+
+    // Override BaseManager's publish method
+    async publish(message: any): Promise<void>;
+    async publish(topic: string, message: any, options?: MessageOptions): Promise<void>;
+    async publish(topicOrMessage: string | any, message?: any, options: MessageOptions = {}): Promise<void> {
+        this.assertInitialized();
+
+        // If only one argument, treat it as a message with default topic
+        const topic = typeof topicOrMessage === 'string' ? topicOrMessage : 'default';
+        const actualMessage = typeof topicOrMessage === 'string' ? message : topicOrMessage;
+
+        // Handle retained messages
+        if (options.retain) {
+            this.retainedMessages.set(topic, actualMessage);
+        }
+
+        // Add to message cache
+        const messageId = `${topic}-${Date.now()}`;
+        this.messageCache.set(messageId, actualMessage);
+
+        // Add to priority queue
+        const priority = options.priority || 3; // Default priority is 3
+        this.priorityQueue.get(priority)?.add(messageId);
+
+        // Process immediately if high priority (1-2)
+        if (priority <= 2) {
+            await this.processMessageInternal(topic, actualMessage);
+        }
+
+        this.logInfo('Message published', {
+            topic,
+            messageId,
+            priority,
+            options
         });
     }
 
-    handleResponse(correlationId: string, response: any): void {
-        const resolver = this.pending.get(correlationId);
-        if (resolver) {
-            resolver(response);
-            this.pending.delete(correlationId);
+    getRetainedMessage(topic: string): any {
+        return this.retainedMessages.get(topic);
+    }
+
+    private async processPriorityQueue(): Promise<void> {
+        // Process messages in priority order (1 to 5)
+        for (let priority = 1; priority <= 5; priority++) {
+            const messages = this.priorityQueue.get(priority);
+            if (!messages || messages.size === 0) continue;
+
+            for (const messageId of messages) {
+                const message = this.messageCache.get(messageId);
+                if (!message) {
+                    messages.delete(messageId);
+                    continue;
+                }
+
+                const [topic] = messageId.split('-');
+                await this.processMessageInternal(topic, message);
+                messages.delete(messageId);
+
+                this.logInfo('Message processed', {
+                    messageId,
+                    priority
+                });
+            }
         }
+    }
+
+    protected async processMessage(message: any): Promise<void> {
+        await this.processMessageInternal('default', message);
+    }
+
+    private async processMessageInternal(topic: string, message: any): Promise<void> {
+        const handlers = this.handlers.get(topic);
+        if (!handlers) return;
+
+        const promises = Array.from(handlers).map(handler => {
+            try {
+                return Promise.resolve(handler(message));
+            } catch (error) {
+                this.logError('Error in message handler', {
+                    topic,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+                return Promise.reject(error);
+            }
+        });
+
+        await Promise.allSettled(promises);
+    }
+
+    clearRetainedMessages(): void {
+        this.retainedMessages.clear();
     }
 } 

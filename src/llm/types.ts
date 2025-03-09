@@ -58,6 +58,7 @@ export interface LLMResponse {
             total: number;
         };
     };
+    toString(): string;
 }
 
 export interface LLMProvider {

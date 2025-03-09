@@ -1,5 +1,5 @@
 import { LogCategory } from '../utils/logger';
-import { ISymphony } from '../symphony/interfaces/types';
+import { ISymphony } from '../types/symphony';
 import { Logger } from '../utils/logger';
 
 export abstract class BaseManager {
@@ -12,7 +12,7 @@ export abstract class BaseManager {
     constructor(symphony: ISymphony, name: string) {
         this.symphony = symphony;
         this.name = name;
-        this._logger = Logger.getInstance({ serviceContext: name });
+        this._logger = Logger.getInstance(name);
     }
 
     protected getLogger(): Logger {

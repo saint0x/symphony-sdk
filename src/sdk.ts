@@ -1,53 +1,76 @@
-import { Symphony, symphony } from './symphony';
-import type { ISymphony, SymphonyConfig } from './symphony/interfaces/types';
-import type { IComponentManager } from './symphony/interfaces/types';
-import type { IToolService, IAgentService, ITeamService, IPipelineService } from './services/interfaces';
-import type { IValidationManager } from './managers/validation';
-import type { ComponentManager } from './managers/component';
-import type { 
-    Component, ComponentConfig, ComponentType,
-    Tool, Agent, Team, Pipeline
-} from './types/components';
-import type {
-    ComponentInstance, ComponentPath, ComponentMetadata,
-    ComponentCapability, ComponentRequirement
-} from './types/metadata';
-import type {
-    ToolConfig, AgentConfig, TeamConfig, PipelineConfig,
-    ToolResult, AgentResult, TeamResult
-} from './types/sdk';
+import { Symphony } from './symphony';
+import { symphony } from './symphony';
 
-// Re-export types
+// Export all types
 export type {
-    ISymphony,
-    SymphonyConfig,
-    IComponentManager,
-    ComponentManager,
-    ComponentInstance,
-    ComponentMetadata,
-    Component,
-    ComponentPath,
     Tool,
     Agent,
     Team,
     Pipeline,
-    ToolConfig,
-    AgentConfig,
-    TeamConfig,
-    PipelineConfig,
-    IToolService,
-    IAgentService,
-    ITeamService,
-    IPipelineService,
-    IValidationManager,
+    ISymphony,
+    IMetricsAPI,
     ComponentConfig,
     ComponentType,
     ComponentCapability,
     ComponentRequirement,
-    ToolResult,
-    AgentResult,
-    TeamResult
-};
+    ComponentInstance,
+    ComponentMetadata,
+    Component,
+    ComponentPath
+} from './types';
+
+// Export service interfaces
+export type {
+    IService,
+    IToolService,
+    IAgentService,
+    ITeamService,
+    IPipelineService,
+    IComponentService,
+    IRegistryService,
+    IValidationService,
+    IContextService,
+    ILLMService,
+    IMetricsService,
+    IServiceBus
+} from './types/interfaces';
+
+// Export core services
+export * from './services';
 
 // Export the Symphony class and instance
-export { Symphony, symphony }; 
+export { Symphony, symphony };
+
+// Re-export core types
+export type {
+    ToolConfig,
+    AgentConfig,
+    TeamConfig,
+    PipelineConfig,
+    ToolResult,
+    AgentResult,
+    TeamResult,
+    PipelineResult,
+    PipelineStep,
+    ToolLifecycleState,
+    ToolStateEvent
+} from './types/sdk';
+
+// Re-export lifecycle types
+export type {
+    ToolStateChangeHandler,
+    ILifecycleManager
+} from './types/lifecycle';
+
+// Re-export logging types
+export type {
+    ILogger,
+    Logger,
+    LogLevel
+} from './types/logging';
+
+// Re-export interfaces
+export * from './types/interfaces';
+export * from './types/components';
+export * from './types/metadata';
+export * from './types/symphony'; 

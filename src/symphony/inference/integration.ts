@@ -2,15 +2,21 @@ import {
     AgentConfig,
     ToolConfig,
     TeamConfig,
-    PipelineConfig,
-    ToolResult,
-    PipelineStep
+    PipelineConfig
 } from '../../types/sdk';
 import { ComponentType } from '../../types/components';
-import { ComponentCapability } from '../../types/metadata';
-import { AgentPattern, ToolPattern, TeamPattern, PipelinePattern } from './types';
+import { AgentPattern, ToolPattern, TeamPattern, PipelinePattern, InferencePattern } from './types';
 import { InferenceEngine } from './engine';
 import { patternSystem } from './patterns';
+
+interface NamedConfig {
+    name: string;
+    [key: string]: any;
+}
+
+function isNamedConfig(value: any): value is NamedConfig {
+    return value && typeof value === 'object' && typeof value.name === 'string';
+}
 
 /**
  * Symphony inference integration
@@ -34,24 +40,35 @@ export class SymphonyInference {
      * Convert agent config to pattern
      */
     private toAgentPattern(config: Partial<AgentConfig>): AgentPattern {
+        const capabilities = config.capabilities || [];
+        const tools = Array.isArray(config.tools) 
+            ? config.tools.map(t => {
+                if (typeof t === 'string') return t;
+                return isNamedConfig(t as any) ? (t as NamedConfig).name : '';
+            }).filter(Boolean)
+            : [];
+        
         return {
-            name: config.name || '',
+            name: config.name || 'default_agent',
             type: 'agent' as const,
-            capabilities: [],
+            capabilities,
             metadata: {
-                id: config.name || '',
-                name: config.name || '',
-                description: '',
+                id: config.name || 'default_agent',
+                name: config.name || 'default_agent',
+                description: config.description || '',
                 type: 'agent' as ComponentType,
                 version: '1.0.0',
-                capabilities: [] as ComponentCapability[],
+                capabilities: capabilities.map(cap => ({ name: cap })),
                 requirements: [],
                 provides: [],
                 tags: []
             },
-            task: config.task || '',
-            tools: (config.tools || []).map(t => typeof t === 'string' ? t : t.name),
-            llm: config.llm || 'default'
+            task: config.task || 'default_task',
+            tools,
+            llm: config.llm || {
+                model: 'gpt-4',
+                provider: 'openai'
+            }
         };
     }
 
@@ -60,25 +77,30 @@ export class SymphonyInference {
      */
     private toToolPattern(config: Partial<ToolConfig>): ToolPattern {
         const inferredTypes = patternSystem.inferTypes(config);
+        const capabilities = inferredTypes.capabilities || [];
         
         return {
-            name: config.name || '',
+            name: config.name || 'default_tool',
             type: 'tool' as const,
-            capabilities: inferredTypes.capabilities,
+            capabilities,
             metadata: {
-                id: config.name || '',
-                name: config.name || '',
+                id: config.name || 'default_tool',
+                name: config.name || 'default_tool',
                 description: config.description || '',
                 type: 'tool' as ComponentType,
                 version: '1.0.0',
-                capabilities: [] as ComponentCapability[],
+                capabilities: capabilities.map(cap => ({ name: cap })),
                 requirements: [],
                 provides: [],
                 tags: []
             },
-            inputs: config.inputs || inferredTypes.inputs,
-            outputs: config.outputs || inferredTypes.outputs,
-            validation: config.validation
+            inputs: ['input'],  // Default input
+            outputs: ['output'], // Default output
+            apiKey: config.apiKey,
+            timeout: config.timeout,
+            retryCount: config.retryCount,
+            maxSize: config.maxSize,
+            config: {}
         };
     }
 
@@ -86,23 +108,31 @@ export class SymphonyInference {
      * Convert team config to pattern
      */
     private toTeamPattern(config: Partial<TeamConfig>): TeamPattern {
+        const capabilities = config.capabilities || [];
+        const agents = Array.isArray(config.agents)
+            ? config.agents.map(a => {
+                if (typeof a === 'string') return a;
+                return isNamedConfig(a as any) ? (a as NamedConfig).name : '';
+            }).filter(Boolean)
+            : [];
+        
         return {
-            name: config.name || '',
+            name: config.name || 'default_team',
             type: 'team' as const,
-            capabilities: [],
+            capabilities,
             metadata: {
-                id: config.name || '',
-                name: config.name || '',
-                description: '',
+                id: config.name || 'default_team',
+                name: config.name || 'default_team',
+                description: config.description || '',
                 type: 'team' as ComponentType,
                 version: '1.0.0',
-                capabilities: [] as ComponentCapability[],
+                capabilities: capabilities.map(cap => ({ name: cap })),
                 requirements: [],
                 provides: [],
                 tags: []
             },
-            agents: (config.agents || []).map(a => typeof a === 'string' ? a : a.name),
-            strategy: config.strategy?.name
+            agents,
+            config: {}
         };
     }
 
@@ -110,130 +140,107 @@ export class SymphonyInference {
      * Convert pipeline config to pattern
      */
     private toPipelinePattern(config: Partial<PipelineConfig>): PipelinePattern {
+        const capabilities: string[] = [];
+        const steps = Array.isArray(config.steps)
+            ? config.steps.map(s => ({
+                name: s.name || 'default_step',
+                type: s.type || 'tool',
+                tool: s.tool || '',
+                agent: s.agent,
+                team: s.team,
+                input: Array.isArray(s.input) ? s.input : [],
+                config: s.config || {},
+                retryConfig: s.retryConfig,
+                retry: s.retry,
+                chained: s.chained,
+                expects: s.expects || {},
+                outputs: s.outputs || {},
+                conditions: s.conditions,
+                inputMap: s.inputMap,
+                handler: s.handler
+            }))
+            : [];
+        
         return {
-            name: config.name || '',
+            name: config.name || 'default_pipeline',
             type: 'pipeline' as const,
-            capabilities: [],
+            capabilities,
             metadata: {
-                id: config.name || '',
-                name: config.name || '',
-                description: '',
+                id: config.name || 'default_pipeline',
+                name: config.name || 'default_pipeline',
+                description: config.description || '',
                 type: 'pipeline' as ComponentType,
                 version: '1.0.0',
-                capabilities: [] as ComponentCapability[],
+                capabilities: capabilities.map(cap => ({ name: cap })),
                 requirements: [],
                 provides: [],
                 tags: []
             },
-            steps: (config.steps || []).map(s => s.name),
-            validation: config.validation
+            steps,
+            onError: config.onError,
+            errorStrategy: config.errorStrategy,
+            metrics: config.metrics || {
+                enabled: true,
+                detailed: true,
+                trackMemory: true
+            },
+            config: {}
         };
     }
 
     /**
      * Convert pattern to agent config
      */
-    private fromAgentPattern(pattern: AgentPattern): AgentConfig {
+    private fromAgentPattern(pattern: AgentPattern & InferencePattern): AgentConfig {
         return {
             name: pattern.name,
             description: pattern.metadata.description,
             task: pattern.task,
             tools: pattern.tools,
-            llm: typeof pattern.llm === 'string' ? {
-                provider: 'openai',
-                model: 'gpt-4',
-                apiKey: process.env.OPENAI_API_KEY || ''
-            } : pattern.llm,
-            capabilities: pattern.capabilities,
-            handler: async () => ({
-                success: true,
-                result: {},
-                error: undefined
-            })
+            llm: pattern.llm,
+            capabilities: pattern.capabilities
         };
     }
 
     /**
      * Convert pattern to tool config
      */
-    private fromToolPattern(pattern: ToolPattern): ToolConfig {
-        const detectedPattern = patternSystem.detectPattern({
-            name: pattern.name,
-            inputs: pattern.inputs,
-            outputs: pattern.outputs
-        });
-
-        const implementation = detectedPattern 
-            ? patternSystem.getImplementation(detectedPattern.name)
-            : undefined;
-
+    private fromToolPattern(pattern: ToolPattern & InferencePattern): ToolConfig {
         return {
             name: pattern.name,
-            description: pattern.metadata?.description || `A ${pattern.name} tool`,
-            inputs: pattern.inputs || [],
-            outputs: pattern.outputs || [],
-            handler: implementation?.handler || (async () => ({
-                success: true,
-                result: {},
-                error: undefined
-            })),
-            validation: pattern.validation
+            description: pattern.metadata.description,
+            type: pattern.type,
+            apiKey: pattern.apiKey,
+            timeout: pattern.timeout,
+            retryCount: pattern.retryCount,
+            maxSize: pattern.maxSize,
+            config: pattern.config || {}
         };
     }
 
     /**
      * Convert pattern to team config
      */
-    private fromTeamPattern(pattern: TeamPattern): TeamConfig {
+    private fromTeamPattern(pattern: TeamPattern & InferencePattern): TeamConfig {
         return {
             name: pattern.name,
             description: pattern.metadata.description,
             agents: pattern.agents,
-            strategy: pattern.strategy ? {
-                name: pattern.strategy,
-                description: `Strategy ${pattern.strategy}`,
-                assignmentLogic: async (task: string, agents: string[]) => {
-                    // Simple strategy: assign all agents to all tasks
-                    console.log(`Assigning task: ${task} to agents: ${agents.join(', ')}`);
-                    return agents;
-                },
-                coordinationRules: {
-                    maxParallelTasks: 5,
-                    taskTimeout: 30000
-                }
-            } : undefined,
-            manager: false,
-            log: {
-                inputs: true,
-                outputs: true
-            }
+            capabilities: pattern.capabilities
         };
     }
 
     /**
      * Convert pattern to pipeline config
      */
-    private fromPipelinePattern(pattern: PipelinePattern): PipelineConfig {
+    private fromPipelinePattern(pattern: PipelinePattern & InferencePattern): PipelineConfig {
         return {
             name: pattern.name,
             description: pattern.metadata.description,
-            steps: pattern.steps.map(stepName => ({
-                id: stepName,
-                name: stepName,
-                description: `Step ${stepName}`,
-                tool: stepName,
-                inputs: {},
-                outputs: {},
-                chained: 0,
-                expects: {},
-                handler: async () => ({
-                    success: true,
-                    result: {},
-                    error: undefined
-                } as ToolResult)
-            } as PipelineStep)),
-            validation: pattern.validation,
-            metrics: {
+            steps: pattern.steps,
+            onError: pattern.onError,
+            errorStrategy: pattern.errorStrategy,
+            metrics: pattern.metrics || {
                 enabled: true,
                 detailed: true,
                 trackMemory: true
@@ -245,56 +252,48 @@ export class SymphonyInference {
      * Enhance agent configuration
      */
     async enhanceAgent(base: string | Partial<AgentConfig>): Promise<AgentConfig> {
-        const pattern = typeof base === 'string' ? 
-            (await this.engine.inferConfig<AgentPattern>(base, 'agent')).base : 
-            this.toAgentPattern(base);
-        const enhanced = await this.engine.inferConfig<AgentPattern>({
-            ...pattern,
-            type: 'agent' as const
-        }, 'agent').base;
-        return this.fromAgentPattern(enhanced as AgentPattern);
+        const inferredPattern = typeof base === 'string' 
+            ? await this.engine.inferConfig<AgentPattern>(base, 'agent')
+            : { base: this.toAgentPattern(base) };
+
+        const pattern = inferredPattern.base as AgentPattern & InferencePattern;
+        return this.fromAgentPattern(pattern);
     }
 
     /**
      * Enhance tool configuration
      */
     async enhanceTool(base: string | Partial<ToolConfig>): Promise<ToolConfig> {
-        const pattern = typeof base === 'string' ? 
-            (await this.engine.inferConfig<ToolPattern>(base, 'tool')).base : 
-            this.toToolPattern(base);
-        const enhanced = await this.engine.inferConfig<ToolPattern>({
-            ...pattern,
-            type: 'tool' as const
-        }, 'tool').base;
-        return this.fromToolPattern(enhanced as ToolPattern);
+        const inferredPattern = typeof base === 'string'
+            ? await this.engine.inferConfig<ToolPattern>(base, 'tool')
+            : { base: this.toToolPattern(base) };
+
+        const pattern = inferredPattern.base as ToolPattern & InferencePattern;
+        return this.fromToolPattern(pattern);
     }
 
     /**
      * Enhance team configuration
      */
     async enhanceTeam(base: string | Partial<TeamConfig>): Promise<TeamConfig> {
-        const pattern = typeof base === 'string' ? 
-            (await this.engine.inferConfig<TeamPattern>(base, 'team')).base : 
-            this.toTeamPattern(base);
-        const enhanced = await this.engine.inferConfig<TeamPattern>({
-            ...pattern,
-            type: 'team' as const
-        }, 'team').base;
-        return this.fromTeamPattern(enhanced as TeamPattern);
+        const inferredPattern = typeof base === 'string'
+            ? await this.engine.inferConfig<TeamPattern>(base, 'team')
+            : { base: this.toTeamPattern(base) };
+
+        const pattern = inferredPattern.base as TeamPattern & InferencePattern;
+        return this.fromTeamPattern(pattern);
     }
 
     /**
      * Enhance pipeline configuration
      */
     async enhancePipeline(base: string | Partial<PipelineConfig>): Promise<PipelineConfig> {
-        const pattern = typeof base === 'string' ? 
-            (await this.engine.inferConfig<PipelinePattern>(base, 'pipeline')).base : 
-            this.toPipelinePattern(base);
-        const enhanced = await this.engine.inferConfig<PipelinePattern>({
-            ...pattern,
-            type: 'pipeline' as const
-        }, 'pipeline').base;
-        return this.fromPipelinePattern(enhanced as PipelinePattern);
+        const inferredPattern = typeof base === 'string'
+            ? await this.engine.inferConfig<PipelinePattern>(base, 'pipeline')
+            : { base: this.toPipelinePattern(base) };
+
+        const pattern = inferredPattern.base as PipelinePattern & InferencePattern;
+        return this.fromPipelinePattern(pattern);
     }
 }
 

@@ -1,4 +1,4 @@
-import { LLMConfig, ValidationConfig, RetryConfig } from '../../types/sdk';
+import { LLMConfig, PipelineConfig, PipelineStep } from '../../types/sdk';
 import { ComponentMetadata } from '../../types/metadata';
 
 /**
@@ -15,45 +15,93 @@ export interface InferencePattern {
  * Configuration patterns for different component types
  */
 export interface AgentPattern extends InferencePattern {
-    type: 'agent';
+    readonly type: 'agent';
+    description?: string;
+    systemPrompt?: string;
     task: string;
     tools: string[];
-    llm: LLMConfig | string;
+    capabilities: string[];
+    llm: LLMConfig;
+    thresholds?: {
+        fastPath?: number;
+        confidence?: number;
+        performance?: number;
+    };
+    maxCalls?: number;
+    requireApproval?: boolean;
 }
 
 export interface ToolPattern extends InferencePattern {
-    type: 'tool';
+    readonly type: 'tool';
+    description?: string;
     inputs: string[];
-    outputs?: string[];
-    validation?: ValidationConfig;
+    outputs: string[];
+    apiKey?: string;
+    timeout?: number;
+    retryCount?: number;
+    maxSize?: number;
+    config: Record<string, any>;
+    validation?: InferenceValidationConfig;
 }
 
 export interface TeamPattern extends InferencePattern {
-    type: 'team';
+    readonly type: 'team';
+    description?: string;
     agents: string[];
-    strategy?: string;
+    capabilities: string[];
+    config: Record<string, any>;
+    strategy?: 'collaborative' | 'parallel' | 'load-balanced';
 }
 
 export interface PipelinePattern extends InferencePattern {
-    type: 'pipeline';
-    steps: string[];
-    validation?: ValidationConfig;
+    readonly type: 'pipeline';
+    description?: string;
+    steps: PipelineStep[];
+    onError?: PipelineConfig['onError'];
+    errorStrategy?: PipelineConfig['errorStrategy'];
+    metrics?: {
+        enabled: boolean;
+        detailed: boolean;
+        trackMemory: boolean;
+    };
+    config: Record<string, any>;
+    validation?: InferenceValidationConfig;
 }
 
 /**
- * Smart configuration options
+ * Smart configuration type with optimization metadata
  */
 export interface SmartConfig<T extends InferencePattern> {
     base: Partial<T>;
-    advanced?: {
-        retry?: RetryConfig;
-        validation?: ValidationConfig;
-        metrics?: {
-            enabled: boolean;
-            detailed?: boolean;
-            custom?: Record<string, any>;
-        };
+    optimizations?: OptimizationStrategy[];
+    metrics?: {
+        latency?: number;
+        throughput?: number;
+        cost?: number;
     };
+    advanced?: {
+        customValidation?: boolean;
+        debugMode?: boolean;
+        timeoutMs?: number;
+    };
+}
+
+/**
+ * Optimization strategy for configuration enhancement
+ */
+export interface OptimizationStrategy {
+    priority: number;
+    condition: (config: Partial<InferencePattern>) => boolean;
+    enhance: (config: Partial<InferencePattern>) => InferencePattern;
+}
+
+/**
+ * Runtime optimization metadata
+ */
+export interface RuntimeOptimization {
+    strategy: OptimizationStrategy;
+    caching: boolean;
+    priority: number;
 }
 
 /**
@@ -119,18 +167,29 @@ export interface ToolSet {
     compatibility?: string[];
 }
 
-/**
- * Runtime optimization types
- */
-export interface OptimizationStrategy {
-    priority: number;
-    condition: (config: Partial<InferencePattern>) => boolean;
-    enhance: (config: Partial<InferencePattern>) => InferencePattern;
+export interface InferenceValidationConfig {
+    schema: {
+        input?: {
+            type: string;
+            required: boolean;
+        };
+        output?: {
+            type: string;
+            required: boolean;
+        };
+        flow?: {
+            type: string;
+            required: boolean;
+        };
+    };
 }
 
-export interface RuntimeOptimization {
-    caching?: boolean;
-    lazy?: boolean;
-    priority?: number;
-    strategy?: OptimizationStrategy;
-} 
+export type InferredPattern<T extends InferencePattern> = {
+    base: T;
+    optimizations?: any[];
+    metrics?: {
+        latency?: number;
+        throughput?: number;
+        cost?: number;
+    };
+}; 

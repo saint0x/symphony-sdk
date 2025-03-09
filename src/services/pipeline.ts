@@ -1,111 +1,145 @@
-import { ISymphony } from '../symphony/interfaces/types';
-import { BaseManager } from '../managers/base';
-import { IPipelineService } from './interfaces';
-import { Pipeline, PipelineConfig } from '../types/sdk';
-import { generateId } from '../utils/id';
+import { BaseService } from './base';
+import { IPipelineService } from '../types/interfaces';
+import { Pipeline, PipelineConfig, ToolLifecycleState as SDKToolLifecycleState } from '../types/sdk';
+import { ToolLifecycleState } from '../types/lifecycle';
+import { ISymphony } from '../types/symphony';
 
-export class PipelineService extends BaseManager implements IPipelineService {
+export class PipelineService extends BaseService implements IPipelineService {
+    private pipelines: Map<string, Pipeline> = new Map();
+
     constructor(symphony: ISymphony) {
         super(symphony, 'PipelineService');
-        // Add dependencies
-        this.addDependency(symphony.validation);
-        this.addDependency(symphony.componentManager);
-        this.addDependency(symphony.tool);
-        this.addDependency(symphony.agent);
-        this.addDependency(symphony.team);
+        this._dependencies = ['ToolService', 'AgentService', 'TeamService'];
     }
 
-    async create(input: string | Partial<PipelineConfig>): Promise<Pipeline> {
-        if (typeof input === 'string') {
-            // Create from name
-            return this.createFromName(input);
-        } else {
-            // Create from config
-            return this.createPipeline(input);
-        }
+    get state(): ToolLifecycleState {
+        return this._state;
     }
 
-    private async createFromName(name: string): Promise<Pipeline> {
-        // Create pipeline from name using inference
-        const config: Partial<PipelineConfig> = {
-            name,
-            description: `Pipeline ${name}`,
-            steps: []
-        };
-        return this.createPipeline(config);
-    }
-
-    private async createPipeline(config: Partial<PipelineConfig>): Promise<Pipeline> {
-        this.assertInitialized();
+    async createPipeline(name: string, config: PipelineConfig): Promise<Pipeline> {
         return this.withErrorHandling('createPipeline', async () => {
-            const validation = await this.symphony.validation.validate(config, 'PipelineConfig');
-            if (!validation.isValid) {
-                throw new Error(`Invalid pipeline configuration: ${validation.errors.join(', ')}`);
+            this.assertInitialized();
+            
+            if (this.pipelines.has(name)) {
+                throw new Error(`Pipeline ${name} already exists`);
+            }
+
+            // Validate pipeline config
+            await this.symphony.validation.validate(config, 'pipeline');
+
+            // Validate step dependencies
+            for (const step of config.steps) {
+                switch (step.type) {
+                    case 'tool':
+                        await this.symphony.tool.getTool(typeof step.tool === 'string' ? step.tool : step.tool?.name || '');
+                        break;
+                    case 'agent':
+                        if (step.config?.agent) {
+                            await this.symphony.agent.getAgent(step.config.agent);
+                        }
+                        break;
+                    case 'team':
+                        if (step.config?.team) {
+                            await this.symphony.team.getTeam(step.config.team);
+                        }
+                        break;
+                }
             }
 
             const pipeline: Pipeline = {
-                id: generateId(),
-                name: config.name || 'Unnamed Pipeline',
-                description: config.description || 'No description provided',
-                steps: config.steps || [],
-                run: async (input?: any) => {
-                    const metricId = `pipeline_${config.name}_run_${Date.now()}`;
-                    this.symphony.startMetric(metricId, { pipelineName: config.name, input });
-
+                name,
+                description: config.description || `Pipeline ${name}`,
+                state: SDKToolLifecycleState.PENDING,
+                steps: config.steps,
+                run: async (input: any) => {
+                    const startTime = Date.now();
                     try {
-                        let currentInput = input;
-                        const stepResults = [];
-
-                        for (const step of config.steps || []) {
-                            const stepMetricId = `step_${step.id}_${Date.now()}`;
-                            this.symphony.startMetric(stepMetricId, {
-                                stepId: step.id,
-                                input: currentInput
-                            });
-
+                        // Execute pipeline logic
+                        const stepResults = new Map<string, any>();
+                        
+                        // Execute each step in sequence
+                        for (let i = 0; i < config.steps.length; i++) {
+                            const step = config.steps[i];
                             try {
-                                const result = await step.handler(currentInput);
-                                stepResults.push(result);
-                                currentInput = result;
-
-                                this.symphony.endMetric(stepMetricId, {
-                                    success: true,
-                                    output: result
-                                });
+                                let result;
+                                switch (step.type) {
+                                    case 'tool':
+                                        const tool = await this.symphony.tool.getTool(typeof step.tool === 'string' ? step.tool : step.tool?.name || '');
+                                        result = await tool.run(input);
+                                        break;
+                                    case 'agent':
+                                        if (step.config?.agent) {
+                                            const agent = await this.symphony.agent.getAgent(step.config.agent);
+                                            result = await agent.run(input);
+                                        }
+                                        break;
+                                    case 'team':
+                                        if (step.config?.team) {
+                                            const team = await this.symphony.team.getTeam(step.config.team);
+                                            result = await team.run(input);
+                                        }
+                                        break;
+                                }
+                                stepResults.set(step.name, result);
                             } catch (error) {
-                                this.symphony.endMetric(stepMetricId, {
-                                    success: false,
-                                    error: error instanceof Error ? error.message : String(error)
-                                });
-                                throw error;
+                                stepResults.set(step.name, { error: error instanceof Error ? error.message : String(error) });
+                                if (!config.errorStrategy?.type || config.errorStrategy.type === 'stop') {
+                                    throw error;
+                                }
                             }
                         }
 
-                        this.symphony.endMetric(metricId, {
-                            success: true,
-                            results: stepResults
-                        });
-
                         return {
                             success: true,
-                            result: stepResults
+                            result: Object.fromEntries(stepResults),
+                            metrics: {
+                                duration: Date.now() - startTime,
+                                startTime,
+                                endTime: Date.now(),
+                                stepResults: Object.fromEntries(stepResults)
+                            }
                         };
                     } catch (error) {
-                        this.symphony.endMetric(metricId, {
+                        return {
                             success: false,
-                            error: error instanceof Error ? error.message : String(error)
-                        });
-                        throw error;
+                            error: error instanceof Error ? error.message : String(error),
+                            metrics: {
+                                duration: Date.now() - startTime,
+                                startTime,
+                                endTime: Date.now(),
+                                stepResults: {}
+                            }
+                        };
                     }
                 }
             };
 
-            this.logInfo(`Created pipeline: ${config.name}`);
+            this.pipelines.set(name, pipeline);
             return pipeline;
         });
     }
 
+    async getPipeline(name: string): Promise<Pipeline> {
+        return this.withErrorHandling('getPipeline', async () => {
+            this.assertInitialized();
+            
+            const pipeline = this.pipelines.get(name);
+            if (!pipeline) {
+                throw new Error(`Pipeline ${name} not found`);
+            }
+            return pipeline;
+        });
+    }
+
+    async listPipelines(): Promise<string[]> {
+        return this.withErrorHandling('listPipelines', async () => {
+            this.assertInitialized();
+            return Array.from(this.pipelines.keys());
+        });
+    }
+
     protected async initializeInternal(): Promise<void> {
-        // No additional initialization needed
+        this.logInfo('Initializing pipeline service');
+        this._state = ToolLifecycleState.READY;
     }
 } 

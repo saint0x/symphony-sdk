@@ -112,7 +112,7 @@ export class PatternSystem {
         this.patterns.set(pattern.name, pattern);
         
         // Update capability index - O(1) operation
-        pattern.capabilities.forEach(cap => {
+        pattern.capabilities.forEach((cap: string) => {
             if (!this.capabilityIndex.has(cap)) {
                 this.capabilityIndex.set(cap, new Set());
             }

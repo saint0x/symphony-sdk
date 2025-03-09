@@ -59,23 +59,38 @@ export interface LogMetadata {
     correlationId?: string;
 }
 
+export interface LogMetrics {
+    duration?: number;
+    startTime?: number;
+    endTime?: number;
+    resourceUsage?: {
+        memory?: number;
+        cpu?: number;
+    };
+    customMetrics?: Record<string, number>;
+}
+
 // Logger implementation
 export class Logger {
     private static instance: Logger;
     private config: LoggerConfig;
 
-    private constructor(config: Partial<LoggerConfig> = {}) {
+    constructor(context: string) {
         this.config = {
             ...DEFAULT_CONFIG,
-            ...config
+            serviceContext: context
         };
     }
 
-    static getInstance(config?: Partial<LoggerConfig>): Logger {
+    public static getInstance(context: string = 'default'): Logger {
         if (!Logger.instance) {
-            Logger.instance = new Logger(config);
+            Logger.instance = new Logger(context);
         }
         return Logger.instance;
+    }
+
+    public static createLogger(context: string): Logger {
+        return new Logger(context);
     }
 
     setConfig(config: Partial<LoggerConfig>): void {
@@ -93,107 +108,28 @@ export class Logger {
         this.config.minLevel = level;
     }
 
-    private shouldLog(level: LogLevel): boolean {
-        return level >= this.config.minLevel;
-    }
-
-    private formatMessage(entry: LogEntry): string {
-        const timestamp = new Date(entry.timestamp).toISOString();
-        const level = entry.level;
-        const category = entry.category;
-        const service = entry.service || this.config.serviceContext;
-        
-        let message = `[${timestamp}] ${level} [${category}] [${service}] ${entry.message}`;
-        
-        if (entry.metadata) {
-            message += `\n  Metadata: ${JSON.stringify(entry.metadata, null, 2)}`;
-        }
-        
-        if (entry.trace && this.config.verboseMode) {
-            message += `\n  Trace: ${entry.trace}`;
-        }
-        
-        return message;
-    }
-
-    private async persistLog(entry: LogEntry): Promise<void> {
-        if (!this.config.enableDatabase) return;
-
-        try {
-            // TODO: Implement database persistence
-            // For now, just console.log
-            if (this.config.verboseMode) {
-                console.log(`[DB] Would persist log: ${JSON.stringify(entry)}`);
-            }
-        } catch (error: any) {
-            console.error('Failed to persist log:', error.message);
+    public info(context: string, message: string, data?: Record<string, any>): void {
+        if (this.config.minLevel <= LogLevel.INFO) {
+            console.log(`[INFO][${context}] ${message}`, data || '');
         }
     }
 
-    private recordMetrics(entry: LogEntry): void {
-        if (!this.config.enableMetrics) return;
-
-        try {
-            // TODO: Implement metrics recording
-            // For now, just console.log
-            if (this.config.verboseMode) {
-                console.log(`[Metrics] Would record: ${JSON.stringify({
-                    type: 'log_entry',
-                    level: entry.level,
-                    category: entry.category,
-                    service: entry.service || this.config.serviceContext
-                })}`);
-            }
-        } catch (error: any) {
-            console.error('Failed to record metrics:', error.message);
+    public error(context: string, message: string, data?: Record<string, any>): void {
+        if (this.config.minLevel <= LogLevel.ERROR) {
+            console.error(`[ERROR][${context}] ${message}`, data || '');
         }
     }
 
-    debug(category: LogCategory, message: string, data?: LogMetadata): void {
-        if (!this.shouldLog(LogLevel.DEBUG)) return;
-        const entry = this.createLogEntry(LogLevel.DEBUG, category, message, data);
-        this.formatMessage(entry);
-        this.persistLog(entry);
-        this.recordMetrics(entry);
-        console.debug(`[${category}] ${message}`, data);
+    public warn(context: string, message: string, data?: Record<string, any>): void {
+        if (this.config.minLevel <= LogLevel.WARN) {
+            console.warn(`[WARN][${context}] ${message}`, data || '');
+        }
     }
 
-    info(category: LogCategory, message: string, data?: LogMetadata): void {
-        if (!this.shouldLog(LogLevel.NORMAL)) return;
-        const entry = this.createLogEntry(LogLevel.NORMAL, category, message, data);
-        this.formatMessage(entry);
-        this.persistLog(entry);
-        this.recordMetrics(entry);
-        console.info(`[${category}] ${message}`, data);
-    }
-
-    warn(category: LogCategory, message: string, data?: LogMetadata): void {
-        if (!this.shouldLog(LogLevel.VERBOSE)) return;
-        const entry = this.createLogEntry(LogLevel.VERBOSE, category, message, data);
-        this.formatMessage(entry);
-        this.persistLog(entry);
-        this.recordMetrics(entry);
-        console.warn(`[${category}] ${message}`, data);
-    }
-
-    error(category: LogCategory, message: string, data?: LogMetadata): void {
-        const entry = this.createLogEntry(LogLevel.ERROR, category, message, data);
-        this.formatMessage(entry);
-        this.persistLog(entry);
-        this.recordMetrics(entry);
-        console.error(`[${category}] ${message}`, data);
-    }
-
-    private createLogEntry(level: LogLevel, category: LogCategory, message: string, data?: LogMetadata): LogEntry {
-        return {
-            timestamp: Date.now(),
-            level,
-            category,
-            message,
-            metadata: data?.metadata,
-            error: data?.error,
-            service: this.config.serviceContext
-        };
+    public debug(context: string, message: string, data?: Record<string, any>): void {
+        if (this.config.minLevel <= LogLevel.DEBUG) {
+            console.debug(`[DEBUG][${context}] ${message}`, data || '');
+        }
     }
 }
 

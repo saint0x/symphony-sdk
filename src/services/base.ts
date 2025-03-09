@@ -1,91 +1,77 @@
-import { ISymphony } from '../symphony/interfaces/types';
-import { Logger, LogCategory } from '../utils/logger';
+import { ISymphony } from '../types/symphony';
+import { ToolLifecycleState } from '../types/lifecycle';
+import { Logger } from '../utils/logger';
 
 export abstract class BaseService {
-    protected initialized = false;
-    protected symphony: ISymphony;
-    protected name: string;
-    protected logger: Logger;
+    protected _state: ToolLifecycleState = ToolLifecycleState.PENDING;
+    protected _dependencies: string[] = [];
+    protected readonly logger: Logger;
+    protected readonly symphony: ISymphony;
+    protected readonly name: string;
 
     constructor(symphony: ISymphony, name: string) {
         this.symphony = symphony;
         this.name = name;
-        this.logger = Logger.getInstance({ serviceContext: name });
+        this.logger = Logger.getInstance(name);
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return this._dependencies;
+    }
+
+    protected logDebug(message: string, data?: Record<string, any>): void {
+        this.logger.debug(this.name, message, data);
     }
 
     protected logInfo(message: string, data?: Record<string, any>): void {
-        this.logger.info(LogCategory.SYSTEM, message, data);
+        this.logger.info(this.name, message, data);
     }
 
-    protected logError(message: string, error?: Error | unknown): void {
-        this.logger.error(LogCategory.ERROR, message, { error });
+    protected logWarning(message: string, data?: Record<string, any>): void {
+        this.logger.warn(this.name, message, data);
+    }
+
+    protected logError(message: string, error?: Error, data?: Record<string, any>): void {
+        this.logger.error(this.name, message, { ...data, error });
     }
 
     protected assertInitialized(): void {
-        if (!this.initialized) {
+        if (this._state !== ToolLifecycleState.READY) {
             throw new Error(`${this.name} is not initialized`);
         }
     }
 
-    protected async withErrorHandling<T>(
-        operation: string,
-        fn: () => Promise<T>
-    ): Promise<T> {
+    protected async withErrorHandling<T>(operation: string, fn: () => Promise<T>): Promise<T> {
         try {
             return await fn();
         } catch (error) {
-            this.logError(`Failed to ${operation}`, error);
+            this.logError(`Error in ${operation}`, error instanceof Error ? error : new Error(String(error)));
             throw error;
         }
-    }
-
-    protected async handleMessage(message: any): Promise<void> {
-        try {
-            await this.processMessage(message);
-        } catch (error) {
-            this.logError(`Failed to handle message: ${message.type}`, error);
-            throw error;
-        }
-    }
-
-    protected async processMessage(_message: any): Promise<void> {
-        // Override in derived classes to handle specific message types
-        throw new Error('Message handler not implemented');
-    }
-
-    protected subscribe(messageType: string): void {
-        const bus = this.symphony.getServiceBus();
-        if (bus) {
-            bus.subscribe(messageType, {
-                handle: (msg: any) => this.handleMessage(msg)
-            });
-            this.logInfo(`Subscribed to message type: ${messageType}`);
-        }
-    }
-
-    protected async publish(message: any): Promise<void> {
-        const bus = this.symphony.getServiceBus();
-        if (bus) {
-            await bus.publish({
-                ...message,
-                service: this.name,
-                timestamp: Date.now()
-            });
-        }
-    }
-
-    protected async initializeInternal(): Promise<void> {
-        // Base initialization logic - can be overridden by services
     }
 
     async initialize(): Promise<void> {
-        if (this.initialized) {
-            this.logInfo('Already initialized');
+        if (this._state === ToolLifecycleState.READY) {
             return;
         }
 
-        await this.initializeInternal();
-        this.initialized = true;
-        this.logInfo('Initialization complete');
+        this._state = ToolLifecycleState.INITIALIZING;
+        this.logInfo('Initializing...');
+
+        try {
+            await this.initializeInternal();
+            this._state = ToolLifecycleState.READY;
+            this.logInfo('Initialization complete');
+        } catch (error) {
+            this._state = ToolLifecycleState.ERROR;
+            this.logError('Initialization failed', error instanceof Error ? error : new Error(String(error)));
+            throw error;
+        }
     }
+
+    protected abstract initializeInternal(): Promise<void>;
 } 

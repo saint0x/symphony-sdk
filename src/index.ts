@@ -6,9 +6,8 @@ export { Symphony, LogLevel };
 
 // Export types and utilities
 export type { 
-    ISymphony, SymphonyConfig, IComponentManager,
-    SymphonyUtils, GlobalMetrics 
-} from './symphony/interfaces/types';
+    ISymphony, SymphonyConfig, IMetricsAPI
+} from './types/symphony';
 export type { 
     Agent, Pipeline, Team, Tool,
     ServiceBaseConfig, ToolConfig, AgentConfig, TeamConfig,
@@ -29,13 +28,24 @@ export type {
     IPipelineService 
 } from './services/interfaces';
 export type { IValidationManager } from './managers/validation';
-export { ComponentManager } from './managers/component';
+export { ComponentManager } from './symphony/components/component-manager';
 
 // Add detailed initialization logging
 console.log('[Symphony Core] Starting Symphony core initialization...');
 const initStartTime = Date.now();
 
 // Create and export the default instance
-export const symphony = Symphony.getInstance();
+export const symphony = new Symphony({
+    serviceRegistry: {
+        enabled: true,
+        maxRetries: 3,
+        retryDelay: 1000
+    },
+    logging: {
+        level: LogLevel.INFO,
+        format: 'json'
+    },
+    metrics: { enabled: true, detailed: true }
+});
 
 console.log(`[Symphony Core] Symphony core setup completed in ${Date.now() - initStartTime}ms`); 

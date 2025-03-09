@@ -19,6 +19,9 @@ export class OpenAIProvider implements LLMProvider {
     private model: string;
 
     constructor(config: LLMConfig) {
+        if (!config.apiKey) {
+            throw new Error('OpenAI API key is required in config');
+        }
         this.config = config;
         this.model = config.model || 'gpt-3.5-turbo'; // Default model if not specified
     }
@@ -41,12 +44,18 @@ export class OpenAIProvider implements LLMProvider {
                 return this.formatResponse(cached);
             }
 
+            // Get API key from config
+            const apiKey = this.config.apiKey;
+            if (!apiKey) {
+                throw new Error('OpenAI API key not found in config');
+            }
+
             metrics.trackOperation('api_request');
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.config.apiKey || process.env.OPENAI_API_KEY || ''}`
+                    'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
                     model: this.model,
@@ -84,7 +93,7 @@ export class OpenAIProvider implements LLMProvider {
 
     private formatResponse(completion: OpenAICompletion): LLMResponse {
         const now = Date.now();
-        return {
+        const response: LLMResponse = {
             content: completion.content,
             model: this.model,
             role: 'assistant',
@@ -94,7 +103,7 @@ export class OpenAIProvider implements LLMProvider {
                 total_tokens: completion.usage.total_tokens
             },
             metrics: {
-                duration: 0, // Will be set by the metrics tracker
+                duration: 0,
                 startTime: now,
                 endTime: now,
                 tokenUsage: {
@@ -102,8 +111,12 @@ export class OpenAIProvider implements LLMProvider {
                     output: completion.usage.completion_tokens,
                     total: completion.usage.total_tokens
                 }
+            },
+            toString() {
+                return this.content;
             }
         };
+        return response;
     }
 
     async *completeStream(request: LLMRequest): AsyncIterable<LLMResponse> {
@@ -111,11 +124,18 @@ export class OpenAIProvider implements LLMProvider {
 
         try {
             metrics.trackOperation('stream_preparation');
+            
+            // Get API key from config
+            const apiKey = this.config.apiKey;
+            if (!apiKey) {
+                throw new Error('OpenAI API key not found in config');
+            }
+
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.config.apiKey || process.env.OPENAI_API_KEY || ''}`
+                    'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
                     model: this.model,
@@ -150,7 +170,7 @@ export class OpenAIProvider implements LLMProvider {
                         if (line.startsWith('data: ')) {
                             const data = JSON.parse(line.slice(6));
                             if (data.choices?.[0]?.delta?.content) {
-                                yield {
+                                const streamResponse: LLMResponse = {
                                     content: data.choices[0].delta.content,
                                     model: this.model,
                                     role: 'assistant',
@@ -158,8 +178,12 @@ export class OpenAIProvider implements LLMProvider {
                                         prompt_tokens: 0,
                                         completion_tokens: 0,
                                         total_tokens: 0
+                                    },
+                                    toString() {
+                                        return this.content;
                                     }
                                 };
+                                yield streamResponse;
                             }
                         }
                     }
@@ -178,14 +202,11 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     private isOpenAICompletion(obj: any): obj is OpenAICompletion {
-        return (
-            typeof obj === 'object' &&
-            obj !== null &&
-            typeof obj.content === 'string' &&
-            typeof obj.usage === 'object' &&
-            typeof obj.usage.prompt_tokens === 'number' &&
-            typeof obj.usage.completion_tokens === 'number' &&
-            typeof obj.usage.total_tokens === 'number'
-        );
+        return obj && 
+               typeof obj.content === 'string' && 
+               obj.usage && 
+               typeof obj.usage.prompt_tokens === 'number' &&
+               typeof obj.usage.completion_tokens === 'number' &&
+               typeof obj.usage.total_tokens === 'number';
     }
 } 

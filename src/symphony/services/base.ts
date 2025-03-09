@@ -1,4 +1,4 @@
-import { ISymphony } from '../interfaces/types';
+import { ISymphony } from '../../types/symphony';
 
 export abstract class BaseService {
     protected initialized = false;

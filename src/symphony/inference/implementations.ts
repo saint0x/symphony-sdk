@@ -12,7 +12,7 @@ patternSystem.registerImplementation('numeric:operation', {
                 return {
                     success: false,
                     result: undefined,
-                    error: new Error('Both inputs must be valid numbers')
+                    error: 'Both inputs must be valid numbers'
                 };
             }
 
@@ -25,7 +25,7 @@ patternSystem.registerImplementation('numeric:operation', {
             return {
                 success: false,
                 result: undefined,
-                error: error instanceof Error ? error : new Error(String(error))
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     },
@@ -52,7 +52,7 @@ patternSystem.registerImplementation('text:transform', {
             return {
                 success: false,
                 result: undefined,
-                error: error instanceof Error ? error : new Error(String(error))
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     },
@@ -73,7 +73,7 @@ patternSystem.registerImplementation('data:process', {
                 return {
                     success: false,
                     result: undefined,
-                    error: new Error('Data input is required')
+                    error: 'Data input is required'
                 };
             }
 
@@ -101,7 +101,7 @@ patternSystem.registerImplementation('data:process', {
             return {
                 success: false,
                 result: undefined,
-                error: error instanceof Error ? error : new Error(String(error))
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }
@@ -119,7 +119,7 @@ patternSystem.registerImplementation('triple:operation', {
                 return {
                     success: false,
                     result: undefined,
-                    error: new Error('All inputs must be valid numbers')
+                    error: 'All inputs must be valid numbers'
                 };
             }
 
@@ -156,7 +156,7 @@ patternSystem.registerImplementation('triple:operation', {
             return {
                 success: false,
                 result: undefined,
-                error: error instanceof Error ? error : new Error(String(error))
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     },

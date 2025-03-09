@@ -44,6 +44,13 @@ export class LLMHandler {
             });
             // Always set OpenAI as default provider
             this.defaultProvider = 'openai';
+            
+            logger.info(LogCategory.AI, 'Provider registered successfully', {
+                metadata: {
+                    name: 'openai',
+                    type: 'OpenAIProvider'
+                }
+            });
         } else {
             throw new Error('OpenAI API key is required');
         }

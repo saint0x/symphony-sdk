@@ -1,1 +1,33 @@
- 
+# Source files
+src/
+tests/
+scripts/
+docs/
+
+# Environment files
+.env
+.env.*
+src/.env
+src/.env.*
+
+# Build artifacts
+*.tsbuildinfo
+dist/
+coverage/
+
+# Development files
+.vscode/
+.git/
+.gitignore
+.DS_Store
+*.log
+
+# Documentation
+*.md
+!README.md
+
+# Configuration files
+tsconfig.json
+tsconfig.*.json
+tsup.config.ts
+jest.config.js 

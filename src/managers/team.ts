@@ -1,12 +1,13 @@
-import { ISymphony } from '../symphony/interfaces/types';
+import { ISymphony } from '../types/symphony';
 import { BaseManager } from './base';
-import { TeamConfig } from '../types/sdk';
+import { Team, TeamConfig, ToolLifecycleState } from '../types/sdk';
 import { ValidationManager } from './validation';
-import { ITeamService } from '../services/interfaces';
+import { ITeamService } from '../types/interfaces';
 
 export class TeamManager extends BaseManager implements ITeamService {
     private static instance: TeamManager;
     private validationManager: ValidationManager;
+    private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
 
     protected constructor(symphony: ISymphony) {
         super(symphony, 'TeamManager');
@@ -24,15 +25,19 @@ export class TeamManager extends BaseManager implements ITeamService {
         return TeamManager.instance;
     }
 
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return ['ValidationManager'];
+    }
+
     protected async initializeInternal(): Promise<void> {
-        // No additional initialization needed
+        this._state = ToolLifecycleState.READY;
     }
 
-    async create(config: TeamConfig): Promise<any> {
-        return this.createTeam(config);
-    }
-
-    private async createTeam(config: TeamConfig): Promise<any> {
+    async createTeam(name: string, config: TeamConfig): Promise<Team> {
         this.assertInitialized();
         return this.withErrorHandling('createTeam', async () => {
             // Validate configuration
@@ -48,14 +53,23 @@ export class TeamManager extends BaseManager implements ITeamService {
             }
 
             // Create team
-            const team = await registry.createTeam(config);
-            this.logInfo(`Created team: ${config.name}`, { teamName: config.name });
-            
+            const result = await registry.executeCall('team', 'create', { name, config });
+            if (!result || typeof result !== 'object') {
+                throw new Error('Invalid team result from registry');
+            }
+
+            // Validate team structure
+            const team = result as unknown as Team;
+            if (!team.name || !team.agents || typeof team.run !== 'function') {
+                throw new Error('Invalid team data returned from registry');
+            }
+
+            this.logInfo(`Created team: ${name}`, { teamName: name });
             return team;
-        }, { teamName: config.name });
+        }, { teamName: name });
     }
 
-    async getTeam(teamId: string): Promise<any> {
+    async getTeam(name: string): Promise<Team> {
         this.assertInitialized();
         return this.withErrorHandling('getTeam', async () => {
             const registry = await this.symphony.getRegistry();
@@ -63,16 +77,22 @@ export class TeamManager extends BaseManager implements ITeamService {
                 throw new Error('Service registry is not available');
             }
 
-            const team = await registry.getTeam(teamId);
-            if (!team) {
-                throw new Error(`Team not found: ${teamId}`);
+            const result = await registry.executeCall('team', 'get', { name });
+            if (!result) {
+                throw new Error(`Team not found: ${name}`);
+            }
+
+            // Validate team structure
+            const team = result as unknown as Team;
+            if (!team.name || !team.agents || typeof team.run !== 'function') {
+                throw new Error(`Invalid team data for: ${name}`);
             }
 
             return team;
-        }, { teamId });
+        }, { teamName: name });
     }
 
-    async listTeams(): Promise<any[]> {
+    async listTeams(): Promise<string[]> {
         this.assertInitialized();
         return this.withErrorHandling('listTeams', async () => {
             const registry = await this.symphony.getRegistry();
@@ -80,11 +100,16 @@ export class TeamManager extends BaseManager implements ITeamService {
                 throw new Error('Service registry is not available');
             }
 
-            return registry.listTeams();
+            const result = await registry.executeCall('team', 'list', {});
+            if (!Array.isArray(result)) {
+                throw new Error('Invalid team list result from registry');
+            }
+
+            return result;
         });
     }
 
-    async deleteTeam(teamId: string): Promise<void> {
+    async deleteTeam(name: string): Promise<void> {
         this.assertInitialized();
         return this.withErrorHandling('deleteTeam', async () => {
             const registry = await this.symphony.getRegistry();
@@ -92,8 +117,8 @@ export class TeamManager extends BaseManager implements ITeamService {
                 throw new Error('Service registry is not available');
             }
 
-            await registry.deleteTeam(teamId);
-            this.logInfo(`Deleted team: ${teamId}`);
-        }, { teamId });
+            await registry.executeCall('team', 'delete', { name });
+            this.logInfo(`Deleted team: ${name}`);
+        }, { teamName: name });
     }
 } 

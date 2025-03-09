@@ -1,6 +1,7 @@
-import { ISymphony } from '../interfaces/types';
+import { ISymphony } from '../../types/symphony';
 import { BaseManager } from '../../managers/base';
 import { AgentConfig } from '../../types/sdk';
+import { ServiceConfig } from '../../proto/symphonic/core/types';
 
 interface RunableTool {
     run(input: any): Promise<any>;
@@ -72,7 +73,22 @@ export class AgentService extends BaseManager {
                 }
             };
 
-            registry.registerAgent(config.name, agent);
+            // Register the agent as a service
+            registry.registerService({
+                metadata: {
+                    id: config.name,
+                    name: config.name,
+                    version: '1.0.0',
+                    type: 'AGENT',
+                    status: 'ACTIVE',
+                    description: config.description || '',
+                    customMetadata: config
+                },
+                methods: {
+                    run: config.handler
+                }
+            } as ServiceConfig);
+
             this.logInfo(`Created agent: ${config.name}`);
             return agent;
         }, { agentName: config.name });

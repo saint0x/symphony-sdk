@@ -6,9 +6,12 @@ import {
     AgentPattern,
     ToolPattern,
     TeamPattern,
-    PipelinePattern
+    PipelinePattern,
+    InferenceValidationConfig
 } from './types';
+import { LLMConfig } from '../../types/sdk';
 import { PatternRegistryImpl } from './registry';
+import { PipelineStep } from '../../types/sdk';
 
 /**
  * Core inference engine for configuration enhancement
@@ -267,47 +270,52 @@ export class InferenceEngine {
     }
 
     private inferToolDefaults(capabilities: string[]): Partial<ToolPattern> {
-        const defaults = {
+        const defaults: Partial<ToolPattern> = {
+            type: 'tool',
             capabilities: [...capabilities],
-            inputs: [] as string[],
-            outputs: [] as string[]
+            inputs: [],
+            outputs: []
         };
 
         // Infer IO patterns based on capabilities
         if (capabilities.includes('arithmetic') || capabilities.includes('calculation')) {
-            defaults.inputs = ['input1', 'input2'];  // Generic numeric inputs
-            defaults.outputs = ['result'];  // Generic result output
-            defaults.capabilities.push('numeric-operation');
+            defaults.inputs = ['input1', 'input2'];
+            defaults.outputs = ['result'];
+            defaults.capabilities?.push('numeric-operation');
         } else if (capabilities.includes('string-manipulation') || capabilities.includes('text-processing')) {
-            defaults.inputs = ['input'];  // Generic single input
-            defaults.outputs = ['result'];  // Generic result output
-            defaults.capabilities.push('text-operation');
+            defaults.inputs = ['input'];
+            defaults.outputs = ['result'];
+            defaults.capabilities?.push('text-operation');
         } else if (capabilities.includes('data-processing')) {
             defaults.inputs = ['data'];
             defaults.outputs = ['processed'];
-            defaults.capabilities.push('data-operation');
+            defaults.capabilities?.push('data-operation');
         } else if (capabilities.includes('file-operations')) {
             defaults.inputs = ['path'];
             defaults.outputs = ['content'];
-            defaults.capabilities.push('io-operation');
+            defaults.capabilities?.push('io-operation');
         }
 
-        return {
-            ...defaults,
-            validation: this.inferValidationRules(capabilities)
-        };
+        defaults.validation = this.inferValidationRules(capabilities);
+        return defaults;
     }
 
     private inferTeamDefaults(capabilities: string[]): Partial<TeamPattern> {
         return {
-            strategy: this.inferOptimalStrategy(capabilities),
+            type: 'team',
+            strategy: this.inferOptimalStrategy(capabilities) as TeamPattern['strategy'],
             agents: this.inferRequiredAgents(capabilities)
         };
     }
 
     private inferPipelineDefaults(capabilities: string[]): Partial<PipelinePattern> {
         return {
-            steps: this.inferRequiredSteps(capabilities),
+            type: 'pipeline',
+            steps: this.inferRequiredSteps(capabilities).map(name => ({
+                name,
+                type: 'tool',
+                tool: name
+            })) as PipelineStep[],
             validation: this.inferPipelineValidation(capabilities)
         };
     }
@@ -336,13 +344,22 @@ export class InferenceEngine {
         return `Perform tasks related to ${primaryCapability}`;
     }
 
-    private inferValidationRules(capabilities: string[]): any {
-        const rules: any = {};
+    private inferValidationRules(capabilities: string[]): InferenceValidationConfig {
+        const rules: InferenceValidationConfig = {
+            schema: {}
+        };
+        
         if (capabilities.includes('input-validation')) {
-            rules.validateInput = true;
+            rules.schema.input = {
+                type: 'object',
+                required: true
+            };
         }
         if (capabilities.includes('output-validation')) {
-            rules.validateOutput = true;
+            rules.schema.output = {
+                type: 'object',
+                required: true
+            };
         }
         return rules;
     }
@@ -373,16 +390,28 @@ export class InferenceEngine {
             .map(pattern => pattern.name);
     }
 
-    private inferPipelineValidation(capabilities: string[]): any {
-        const validation: any = {};
+    private inferPipelineValidation(capabilities: string[]): InferenceValidationConfig {
+        const validation: InferenceValidationConfig = {
+            schema: {}
+        };
+        
         if (capabilities.includes('input-validation')) {
-            validation.validateInput = true;
+            validation.schema.input = {
+                type: 'object',
+                required: true
+            };
         }
         if (capabilities.includes('output-validation')) {
-            validation.validateOutput = true;
+            validation.schema.output = {
+                type: 'object',
+                required: true
+            };
         }
         if (capabilities.includes('pipeline-validation')) {
-            validation.validateFlow = true;
+            validation.schema.flow = {
+                type: 'object',
+                required: true
+            };
         }
         return validation;
     }
@@ -437,22 +466,15 @@ export class InferenceEngine {
 
         return {
             base: enhanced as T,
-            advanced: this.inferAdvancedOptions(enhanced)
+            advanced: this.inferAdvancedSettings()
         };
     }
 
-    private inferAdvancedOptions(
-        config: InferencePattern
-    ): SmartConfig<InferencePattern>['advanced'] {
+    private inferAdvancedSettings(): SmartConfig<InferencePattern>['advanced'] {
         return {
-            retry: {
-                enabled: true,
-                maxAttempts: 3
-            },
-            metrics: {
-                enabled: true,
-                detailed: config.capabilities.length > 3
-            }
+            customValidation: false,
+            debugMode: false,
+            timeoutMs: 30000
         };
     }
 
@@ -462,5 +484,55 @@ export class InferenceEngine {
             capabilities: config.capabilities?.sort(),
             name: config.name
         });
+    }
+
+    public enhance<T extends InferencePattern>(pattern: T): SmartConfig<T> {
+        const enhanced: SmartConfig<T> = {
+            base: { ...pattern, type: pattern.type } as T,
+            optimizations: [],
+            metrics: {
+                latency: 0,
+                throughput: 0,
+                cost: 0
+            },
+            advanced: this.inferAdvancedSettings()
+        };
+
+        // Update metrics based on pattern type and capabilities
+        if (pattern.type === 'agent') {
+            const agentPattern = pattern as unknown as AgentPattern;
+            if (enhanced.metrics && agentPattern.llm) {
+                enhanced.metrics.latency = this.estimateLatency(agentPattern.llm);
+                enhanced.metrics.cost = this.estimateCost(agentPattern.llm);
+            }
+        }
+
+        return enhanced;
+    }
+
+    private estimateLatency(llm: LLMConfig): number {
+        // Basic latency estimation based on model type
+        const model = typeof llm === 'string' ? llm : llm.model;
+        switch (model) {
+            case 'gpt-4':
+                return 2000; // 2 seconds
+            case 'gpt-3.5-turbo':
+                return 1000; // 1 second
+            default:
+                return 1500; // Default estimate
+        }
+    }
+
+    private estimateCost(llm: LLMConfig): number {
+        // Basic cost estimation per request
+        const model = typeof llm === 'string' ? llm : llm.model;
+        switch (model) {
+            case 'gpt-4':
+                return 0.03; // $0.03 per request
+            case 'gpt-3.5-turbo':
+                return 0.002; // $0.002 per request
+            default:
+                return 0.01; // Default estimate
+        }
     }
 } 
