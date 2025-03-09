@@ -1,23 +1,18 @@
-import { symphony } from './sdk';
-import { calculatorAgent } from './agents/calculator';
-import { tripleAddTool } from './tools/calculator';
-import { tripleSubTool } from './tools/subtractor';
-import { tripleMultTool } from './tools/multiplier';
-import { tripleDivTool } from './tools/divider';
+import sdkInstance from './sdk';
+import CalculatorAgent from './agents/calculator';
+
+interface ProgressUpdate {
+    status: string;
+    result?: any;
+}
 
 async function runComplexTest() {
     try {
-        // Initialize Symphony and all tools
-        await symphony.initialize();
-        await Promise.all([
-            tripleAddTool.initialize(),
-            tripleSubTool.initialize(),
-            tripleMultTool.initialize(),
-            tripleDivTool.initialize()
-        ]);
-        await calculatorAgent.initialize();
+        // Wait for SDK to initialize
+        await sdkInstance;
 
-        console.log('All components initialized successfully');
+        // Create calculator agent
+        const calculatorAgent = new CalculatorAgent();
 
         // Test all operations
         const tests = [
@@ -29,7 +24,7 @@ async function runComplexTest() {
             {
                 description: 'Subtraction Test',
                 task: 'Subtract 25 and 15 and 5 from 100',
-                expectedResult: 60  // 100 - 25 - 15 = 60
+                expectedResult: 55  // 100 - 25 - 15 - 5 = 55
             },
             {
                 description: 'Multiplication Test',
@@ -48,14 +43,7 @@ async function runComplexTest() {
             console.log(`\n${test.description}`);
             console.log(`Task: ${test.task}`);
             
-            const result = await calculatorAgent.run(test.task, {
-                onProgress: (update) => {
-                    console.log(`Progress: ${update.status}`);
-                    if (update.result !== undefined) {
-                        console.log(`Intermediate result: ${update.result}`);
-                    }
-                }
-            });
+            const result = await calculatorAgent.run(test.task);
             
             if (result.success) {
                 console.log(`Result: ${result.result}`);
@@ -78,25 +66,22 @@ async function runComplexTest() {
         console.log('Performing multiple calculations in sequence...');
         
         for (const task of complexTasks) {
-            const result = await calculatorAgent.run(task, {
-                onProgress: (update) => {
-                    console.log(`Progress for "${task}": ${update.status}`);
-                    if (update.result !== undefined) {
-                        console.log(`Result: ${update.result}`);
-                    }
-                }
-            });
+            const result = await calculatorAgent.run(task);
             if (result.success) {
                 console.log(`${task} = ${result.result}`);
             } else {
-                console.error(`Error with task "${task}":`, result.error?.toString());
+                console.error(`Error calculating "${task}":`, result.error?.toString());
             }
         }
 
+        console.log('\nAll tests completed');
     } catch (error) {
-        console.error('Test failed:', error);
+        console.error('Test execution error:', error);
+        process.exit(1);
     }
 }
 
-// Run the test
-runComplexTest().catch(console.error); 
+runComplexTest().catch(error => {
+    console.error('Failed to run complex test:', error);
+    process.exit(1);
+}); 

@@ -1,8 +1,2 @@
-import { calculatorTeam } from './calculator';
-
-// Initialize teams in order
-export const teams = {
-    calculatorTeam
-};
-
-export { calculatorTeam }; 
+// Export team classes
+export { default as CalculatorTeam } from './calculator'; 

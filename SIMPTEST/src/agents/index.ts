@@ -1,8 +1,2 @@
-import { calculatorAgent } from './calculator';
-
-// Initialize agents in order
-export const agents = {
-    calculatorAgent
-};
-
-export { calculatorAgent }; 
+// Export agent classes
+export { default as CalculatorAgent } from './calculator'; 

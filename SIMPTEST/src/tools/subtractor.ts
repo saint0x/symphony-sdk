@@ -1,5 +1,4 @@
-import { symphony } from '../sdk';
-import type { Tool, ToolResult } from '../sdk';
+import sdkInstance from '../sdk';
 
 interface TripleSubParams {
     num1: number;
@@ -7,74 +6,64 @@ interface TripleSubParams {
     num3: number;
 }
 
+interface TripleSubResult {
+    success: boolean;
+    result: number;
+    error?: Error;
+    metrics: {
+        startTime: number;
+        endTime: number;
+        duration: number;
+        memory: number;
+    };
+}
+
 class TripleSubTool {
-    private tool!: Tool;
-    private initialized: boolean = false;
+    private tool: Promise<any>;
 
     constructor() {
-        // Don't register in constructor
-    }
-
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
-
-        // Register the component
-        await symphony.componentManager.register({
-            id: 'tripleSub',
-            name: 'Triple Subtract Tool',
-            type: 'tool',
-            description: 'A tool that subtracts three numbers in sequence (num1 - num2 - num3)',
-            version: '1.0.0',
-            capabilities: [
-                {
-                    name: symphony.types.CapabilityBuilder.numeric('SUBTRACT'),
-                    parameters: {
-                        num1: { type: 'number', required: true },
-                        num2: { type: 'number', required: true },
-                        num3: { type: 'number', required: true }
-                    },
-                    returns: {
-                        type: 'number',
-                        description: 'The result of subtracting the three numbers in sequence'
+        this.tool = sdkInstance.then(sdk =>
+            sdk.tool.create({
+                name: 'Triple Subtract Tool',
+                description: 'A tool that subtracts three numbers (num1 - num2 - num3)',
+                handler: async ({ num1, num2, num3 }: TripleSubParams): Promise<TripleSubResult> => {
+                    try {
+                        const startTime = Date.now();
+                        const result = num1 - num2 - num3;
+                        const endTime = Date.now();
+                        return {
+                            success: true,
+                            result,
+                            metrics: {
+                                startTime,
+                                endTime,
+                                duration: endTime - startTime,
+                                memory: process.memoryUsage().heapUsed
+                            }
+                        };
+                    } catch (error) {
+                        const timestamp = Date.now();
+                        return {
+                            success: false,
+                            error: error instanceof Error ? error : new Error(String(error)),
+                            result: 0,
+                            metrics: {
+                                startTime: timestamp,
+                                endTime: timestamp,
+                                duration: 0,
+                                memory: process.memoryUsage().heapUsed
+                            }
+                        };
                     }
                 }
-            ],
-            requirements: [],  // This tool has no dependencies
-            provides: ['numeric.calculation', 'batch.processing'],
-            tags: ['math', 'arithmetic', 'subtraction']
-        }, this);
-
-        // Create the tool
-        this.tool = await symphony.tools.create({
-            name: 'tripleSub',
-            description: 'A tool that subtracts three numbers in sequence',
-            inputs: ['num1', 'num2', 'num3'],
-            handler: async (params: TripleSubParams) => {
-                const { num1, num2, num3 } = params;
-                const result = num1 - num2 - num3;
-                return {
-                    success: true,
-                    result,
-                    metrics: {
-                        duration: 0,
-                        startTime: Date.now(),
-                        endTime: Date.now()
-                    }
-                };
-            }
-        });
-
-        this.initialized = true;
+            })
+        );
     }
 
-    async run(params: TripleSubParams): Promise<ToolResult<number>> {
-        if (!this.initialized || !this.tool) {
-            await this.initialize();
-        }
-        return this.tool.run(params);
+    async run(params: TripleSubParams): Promise<TripleSubResult> {
+        const tool = await this.tool;
+        return tool.run(params);
     }
 }
 
-export const tripleSubTool = new TripleSubTool(); 
+export default TripleSubTool; 

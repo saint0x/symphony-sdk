@@ -221,13 +221,15 @@ export class ComponentManager extends BaseManager {
     }
 
     private async createTool(config: ToolConfig): Promise<Tool> {
+        if (!this._symphony) {
+            throw new Error('Symphony instance is required to create tools');
+        }
+        const tool = await this._symphony.tool.create(config);
         return {
             id: config.name,
             name: config.name,
             description: config.description || '',
-            run: async (toolParams: any) => {
-                throw new Error(`Not implemented for params: ${JSON.stringify(toolParams)}`);
-            }
+            run: tool.run
         };
     }
 

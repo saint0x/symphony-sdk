@@ -9,6 +9,7 @@ export interface ServiceBaseConfig {
 export interface ToolConfig extends ServiceBaseConfig {
     inputs: string[];
     outputs?: string[];
+    capabilities?: string[];
     chained?: number;
     handler: (params: any) => Promise<ToolResult<any>>;
     timeout?: number;

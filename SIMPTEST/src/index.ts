@@ -1,9 +1,8 @@
-import { symphony } from './sdk';
-import type { ComponentStatusDetails } from './sdk';
-import { tripleAddTool } from './tools/calculator';
-import { calculatorAgent } from './agents/calculator';
-import { calculatorTeam } from './teams/calculator';
-import { calculatorPipeline } from './pipelines/calculator';
+import sdkInstance from './sdk';
+import TripleAddTool from './tools/calculator';
+import CalculatorAgent from './agents/calculator';
+import CalculatorTeam from './teams/calculator';
+import CalculatorPipeline from './pipelines/calculator';
 
 interface MetricData {
     success: boolean;
@@ -11,140 +10,66 @@ interface MetricData {
     error?: string;
 }
 
+interface ProgressUpdate {
+    status: string;
+}
+
 async function runExample() {
     console.log('Starting Symphony SDK example...\n');
 
     try {
-        // Initialize Symphony core first
-        console.log('Initializing Symphony core...\n');
-        await symphony.initialize();
+        // Wait for SDK to initialize
+        await sdkInstance;
 
-        // Wait for registry to be ready
-        const registry = await symphony.getRegistry();
-        if (!registry) {
-            throw new Error('Failed to initialize registry');
-        }
-
-        // Initialize components in dependency order
-        console.log('Initializing components...\n');
+        // Create component instances
+        const tripleAddTool = new TripleAddTool();
+        const calculatorAgent = new CalculatorAgent();
+        const calculatorTeam = new CalculatorTeam();
+        const calculatorPipeline = new CalculatorPipeline();
         
-        // 1. Initialize tool first since others depend on it
-        await tripleAddTool.initialize();
-        console.log('Tool initialized');
-        
-        // 2. Initialize agent which depends on tool
-        await calculatorAgent.initialize();
-        console.log('Agent initialized');
-        
-        // 3. Initialize team which depends on agent
-        await calculatorTeam.initialize();
-        console.log('Team initialized');
-        
-        // 4. Initialize pipeline which depends on all above
-        await calculatorPipeline.initialize();
-        console.log('Pipeline initialized');
-        
-        console.log('\nComponent initialization completed\n');
-
         // Run test scenarios
-        await runTestScenarios();
-
+        await runTestScenarios(tripleAddTool, calculatorAgent, calculatorTeam, calculatorPipeline);
     } catch (error) {
-        console.error('\nExecution error:', error instanceof Error ? error.message : String(error));
+        console.error('Error running example:', error);
         process.exit(1);
     }
 }
 
-async function runTestScenarios() {
-    console.log('\nRunning Test Scenarios:');
-    console.log('=======================\n');
+async function runTestScenarios(
+    tripleAddTool: TripleAddTool,
+    calculatorAgent: CalculatorAgent,
+    calculatorTeam: CalculatorTeam,
+    calculatorPipeline: CalculatorPipeline
+) {
+    console.log('Running test scenarios...\n');
 
-    // 1. Direct Tool Usage
-    console.log('\n1. Direct Tool Usage:');
-    console.log('---------------------');
-    try {
-        const result = await tripleAddTool.run({ num1: 10, num2: 20, num3: 30 });
-        console.log('  Success!');
-        console.log('  Result:', result.result);
-    } catch (error) {
-        console.log('  Failed:', error instanceof Error ? error.message : String(error));
-    }
+    // Test tool
+    console.log('1. Testing Triple Add Tool:');
+    const toolResult = await tripleAddTool.run({ num1: 10, num2: 20, num3: 30 });
+    console.log('Tool result:', toolResult, '\n');
 
-    // 2. Agent with Streaming
-    console.log('\n2. Agent with Streaming:');
-    console.log('------------------------');
-    try {
-        const result = await calculatorAgent.run('Add the numbers 40, 50, and 60', {
-            onProgress: (update: { status: string; result?: any }) => console.log('  Progress:', update.status)
-        });
-        console.log('  Success!');
-        console.log('  Result:', result.result);
-    } catch (error) {
-        console.log('  Failed:', error instanceof Error ? error.message : String(error));
-    }
+    // Test agent
+    console.log('2. Testing Calculator Agent:');
+    const agentResult = await calculatorAgent.run('Add the numbers 10, 20, and 30');
+    console.log('Agent result:', agentResult, '\n');
 
-    // 3. Team Coordination
-    console.log('\n3. Team Coordination:');
-    console.log('---------------------');
-    try {
-        const result = await calculatorTeam.run('Calculate (70, 80, 90) in parallel', {
-            onProgress: (update: { status: string; result?: any }) => console.log('  Progress:', update.status)
-        });
-        console.log('  Success!');
-        console.log('  Result:', result.result);
-    } catch (error) {
-        console.log('  Failed:', error instanceof Error ? error.message : String(error));
-    }
+    // Test team
+    console.log('3. Testing Calculator Team:');
+    const teamResult = await calculatorTeam.run('Calculate (10, 20, 30) and (40, 50, 60) in parallel');
+    console.log('Team result:', teamResult, '\n');
 
-    // 4. Pipeline Execution
-    console.log('\n4. Pipeline Execution:');
-    console.log('----------------------');
-    try {
-        const result = await calculatorPipeline.run();
-        console.log('  Success!');
-        console.log('  Result:', result.result);
-    } catch (error) {
-        console.log('  Failed:', error instanceof Error ? error.message : String(error));
-    }
+    // Test pipeline
+    console.log('4. Testing Calculator Pipeline:');
+    const pipelineResult = await calculatorPipeline.run({
+        operation: 'add',
+        numbers: [10, 20, 30]
+    });
+    console.log('Pipeline result:', pipelineResult, '\n');
+
+    console.log('All test scenarios completed\n');
 }
 
-interface DependencyStatus {
-    name: string;
-    status: string;
-}
-
-function printComponentStatus(statuses: Map<string, ComponentStatusDetails>) {
-    for (const [name, state] of statuses) {
-        console.log(`\n${name}:`);
-        console.log('  Status:', state.status);
-        console.log('  Initialization Attempts:', state.initAttempts);
-        if (state.lastAttemptTime) {
-            console.log('  Last Attempt:', new Date(state.lastAttemptTime).toISOString());
-        }
-        if (state.error) {
-            console.log('  Error:', state.error.message);
-        }
-        if (state.dependencies.length > 0) {
-            console.log('  Dependencies:');
-            state.dependencies.forEach((dep: DependencyStatus) => {
-                console.log(`    ${dep.name}: ${dep.status}`);
-            });
-        }
-        if (state.validationResult) {
-            console.log('  Validation:');
-            console.log('    Success:', state.validationResult.success);
-            if (state.validationResult.lastValidated) {
-                console.log('    Last Validated:', new Date(state.validationResult.lastValidated).toISOString());
-            }
-            if (state.validationResult.error) {
-                console.log('    Error:', state.validationResult.error);
-            }
-        }
-    }
-}
-
-// Run the example
 runExample().catch(error => {
-    console.error('Fatal error:', error);
+    console.error('Failed to run example:', error);
     process.exit(1);
 });

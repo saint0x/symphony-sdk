@@ -14,7 +14,7 @@ import {
 } from '../types/sdk';
 
 export interface ISymphony extends BaseManager {
-    readonly tools: IToolService;
+    readonly tool: IToolService;
     readonly agent: IAgentService;
     readonly team: ITeamService;
     readonly pipeline: IPipelineService;

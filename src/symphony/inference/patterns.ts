@@ -34,12 +34,32 @@ export class PatternSystem {
     }
 
     private registerCorePatterns() {
+        // Triple Operation Pattern
+        this.registerPattern({
+            name: 'triple:operation',
+            match: (config) => {
+                const name = (config.name || '').toLowerCase();
+                return name.startsWith('triple') || 
+                       name.includes('three') || 
+                       (config.inputs?.length === 3 && config.outputs?.length === 1);
+            },
+            inputs: ['input1:number', 'input2:number', 'input3:number'],
+            outputs: ['result:number'],
+            capabilities: ['arithmetic', 'triple-operation'],
+            validate: (params) => {
+                return typeof params.input1 === 'number' && 
+                       typeof params.input2 === 'number' &&
+                       typeof params.input3 === 'number';
+            }
+        });
+
         // Numeric Operation Pattern
         this.registerPattern({
             name: 'numeric:operation',
             match: (config) => {
-                const name = config.name?.toLowerCase() || '';
-                return name.includes('calc') || 
+                const name = (config.name || '').toLowerCase();
+                return name === 'calculator' || 
+                       name.includes('calc') || 
                        name.includes('math') || 
                        name.includes('compute');
             },
@@ -47,8 +67,8 @@ export class PatternSystem {
             outputs: ['result:number'],
             capabilities: ['arithmetic', 'calculation'],
             validate: (params) => {
-                const values = Object.values(params);
-                return values.length >= 2 && values.every(v => typeof v === 'number');
+                return typeof params.input1 === 'number' && 
+                       typeof params.input2 === 'number';
             }
         });
 

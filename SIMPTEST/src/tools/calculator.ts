@@ -1,5 +1,4 @@
-import { symphony } from '../sdk';
-import type { Tool, ToolResult } from '../sdk';
+import symphony, { initPromise } from '../sdk';
 
 interface TripleAddParams {
     num1: number;
@@ -7,74 +6,62 @@ interface TripleAddParams {
     num3: number;
 }
 
+interface TripleAddResult {
+    success: boolean;
+    result: number;
+    error?: Error;
+    metrics: {
+        startTime: number;
+        endTime: number;
+        duration: number;
+        memory: number;
+    };
+}
+
 class TripleAddTool {
-    private tool!: Tool;
-    private initialized: boolean = false;
+    private tool: Promise<any>;
 
     constructor() {
-        // Don't register in constructor
-    }
-
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
-
-        // Register the component
-        await symphony.componentManager.register({
-            id: 'tripleAdd',
-            name: 'Triple Add Tool',
-            type: 'tool',
-            description: 'A tool that adds three numbers together',
-            version: '1.0.0',
-            capabilities: [
-                {
-                    name: symphony.types.CapabilityBuilder.numeric('ADD'),
-                    parameters: {
-                        num1: { type: 'number', required: true },
-                        num2: { type: 'number', required: true },
-                        num3: { type: 'number', required: true }
-                    },
-                    returns: {
-                        type: 'number',
-                        description: 'The sum of the three input numbers'
+        // Wait for initialization before creating tool
+        this.tool = initPromise.then(() => 
+            symphony.tool.create({
+                name: 'Triple Add Tool',
+                description: 'A tool that adds three numbers together',
+                handler: async ({ num1, num2, num3 }: TripleAddParams): Promise<TripleAddResult> => {
+                    const startTime = Date.now();
+                    try {
+                        return {
+                            success: true,
+                            result: num1 + num2 + num3,
+                            metrics: {
+                                startTime,
+                                endTime: Date.now(),
+                                duration: Date.now() - startTime,
+                                memory: process.memoryUsage().heapUsed
+                            }
+                        };
+                    } catch (error) {
+                        return {
+                            success: false,
+                            error: error instanceof Error ? error : new Error(String(error)),
+                            result: 0,
+                            metrics: {
+                                startTime,
+                                endTime: Date.now(),
+                                duration: Date.now() - startTime,
+                                memory: process.memoryUsage().heapUsed
+                            }
+                        };
                     }
                 }
-            ],
-            requirements: [],  // This tool has no dependencies
-            provides: ['numeric.calculation', 'batch.processing'],
-            tags: ['math', 'arithmetic', 'addition']
-        }, this);
-
-        // Create the tool
-        this.tool = await symphony.tool.create({
-            name: 'tripleAdd',
-            description: 'A tool that adds three numbers together',
-            inputs: ['num1', 'num2', 'num3'],
-            handler: async (params: TripleAddParams) => {
-                const { num1, num2, num3 } = params;
-                const result = num1 + num2 + num3;
-                return {
-                    success: true,
-                    result,
-                    metrics: {
-                        duration: 0,
-                        startTime: Date.now(),
-                        endTime: Date.now()
-                    }
-                };
-            }
-        });
-
-        this.initialized = true;
+            })
+        );
     }
 
-    async run(params: TripleAddParams): Promise<ToolResult<number>> {
-        if (!this.initialized || !this.tool) {
-            await this.initialize();
-        }
-        return this.tool.run(params);
+    async run(params: TripleAddParams): Promise<TripleAddResult> {
+        const tool = await this.tool;
+        return tool.run(params);
     }
 }
 
-export const tripleAddTool = new TripleAddTool(); 
+export default TripleAddTool; 

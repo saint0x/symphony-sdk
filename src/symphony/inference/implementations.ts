@@ -5,11 +5,15 @@ import { patternSystem } from './patterns';
 patternSystem.registerImplementation('numeric:operation', {
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            const input1 = Number(params.input1 ?? params.a);
-            const input2 = Number(params.input2 ?? params.b);
+            const input1 = Number(params.input1);
+            const input2 = Number(params.input2);
             
             if (isNaN(input1) || isNaN(input2)) {
-                throw new Error('Both inputs must be valid numbers');
+                return {
+                    success: false,
+                    result: undefined,
+                    error: new Error('Both inputs must be valid numbers')
+                };
             }
 
             return {
@@ -37,7 +41,7 @@ patternSystem.registerImplementation('numeric:operation', {
 patternSystem.registerImplementation('text:transform', {
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            const input = String(params.input ?? params.text);
+            const input = String(params.input);
             
             return {
                 success: true,
@@ -66,7 +70,11 @@ patternSystem.registerImplementation('data:process', {
         try {
             const data = params.data;
             if (!data) {
-                throw new Error('Data input is required');
+                return {
+                    success: false,
+                    result: undefined,
+                    error: new Error('Data input is required')
+                };
             }
 
             // Smart type detection and processing
@@ -96,5 +104,68 @@ patternSystem.registerImplementation('data:process', {
                 error: error instanceof Error ? error : new Error(String(error))
             };
         }
+    }
+});
+
+// Register triple operation implementation
+patternSystem.registerImplementation('triple:operation', {
+    handler: async (params: any): Promise<ToolResult<any>> => {
+        try {
+            const input1 = Number(params.input1);
+            const input2 = Number(params.input2);
+            const input3 = Number(params.input3);
+            
+            if (isNaN(input1) || isNaN(input2) || isNaN(input3)) {
+                return {
+                    success: false,
+                    result: undefined,
+                    error: new Error('All inputs must be valid numbers')
+                };
+            }
+
+            // Default to addition if operation not specified
+            const operation = params.operation || 'add';
+            let result: number;
+
+            switch (operation) {
+                case 'add':
+                    result = input1 + input2 + input3;
+                    break;
+                case 'subtract':
+                    result = input1 - input2 - input3;
+                    break;
+                case 'multiply':
+                    result = input1 * input2 * input3;
+                    break;
+                case 'divide':
+                    if (input2 === 0 || input3 === 0) {
+                        throw new Error('Division by zero');
+                    }
+                    result = input1 / input2 / input3;
+                    break;
+                default:
+                    result = input1 + input2 + input3;
+            }
+
+            return {
+                success: true,
+                result: { result },
+                error: undefined
+            };
+        } catch (error) {
+            return {
+                success: false,
+                result: undefined,
+                error: error instanceof Error ? error : new Error(String(error))
+            };
+        }
+    },
+    inputMap: {
+        'input1': 'a',
+        'input2': 'b',
+        'input3': 'c'
+    },
+    outputMap: {
+        'result': 'sum'
     }
 }); 

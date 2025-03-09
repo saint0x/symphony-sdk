@@ -1,58 +1,41 @@
 import { Symphony } from './symphony';
-import type { SymphonyConfig } from './symphony/interfaces/types';
 import { LogLevel } from './types/sdk';
 
-class SymphonySDK {
-    private static instance: Symphony | null = null;
-    private static isInitializing = false;
-
-    static getInstance(config?: Partial<SymphonyConfig>): Symphony {
-        if (SymphonySDK.isInitializing) {
-            throw new Error('Symphony is already initializing. Avoid concurrent initialization.');
-        }
-
-        if (!SymphonySDK.instance) {
-            SymphonySDK.isInitializing = true;
-            try {
-                SymphonySDK.instance = Symphony.getInstance();
-                if (config) {
-                    SymphonySDK.instance.updateConfig(config);
-                }
-            } finally {
-                SymphonySDK.isInitializing = false;
-            }
-        } else if (config) {
-            SymphonySDK.instance.updateConfig(config);
-        }
-
-        if (!SymphonySDK.instance) {
-            throw new Error('Failed to initialize Symphony instance');
-        }
-
-        return SymphonySDK.instance;
-    }
-}
-
-// Create and export the default instance
-export const symphony = SymphonySDK.getInstance({
-    serviceRegistry: {
-        enabled: false,
-        maxRetries: 3,
-        retryDelay: 1000
-    },
-    logging: {
-        level: LogLevel.INFO,
-        format: 'json'
-    },
-    metrics: {
-        enabled: true,
-        detailed: false
-    }
-});
+// Export core functionality
+export { Symphony, LogLevel };
 
 // Export types and utilities
-export * from './symphony';
-export type { SymphonyConfig, ISymphony } from './symphony/interfaces/types';
-export type * from './types/metadata';
-export type * from './types/components';
-export * from './types/capabilities'; 
+export type { 
+    ISymphony, SymphonyConfig, IComponentManager,
+    SymphonyUtils, GlobalMetrics 
+} from './symphony/interfaces/types';
+export type { 
+    Agent, Pipeline, Team, Tool,
+    ServiceBaseConfig, ToolConfig, AgentConfig, TeamConfig,
+    PipelineConfig, PipelineStep, LLMConfig, ValidationConfig,
+    RetryConfig, ToolResult, AgentResult, TeamResult, PipelineResult,
+    ErrorStrategy
+} from './types/sdk';
+export type { 
+    Component, ComponentConfig, ComponentType
+} from './types/components';
+export type { 
+    ComponentMetadata, ComponentCapability, ComponentRequirement,
+    ComponentInstance, ComponentPath
+} from './types/metadata';
+export type * from './types/capabilities';
+export type { 
+    IToolService, IAgentService, ITeamService, 
+    IPipelineService 
+} from './services/interfaces';
+export type { IValidationManager } from './managers/validation';
+export { ComponentManager } from './managers/component';
+
+// Add detailed initialization logging
+console.log('[Symphony Core] Starting Symphony core initialization...');
+const initStartTime = Date.now();
+
+// Create and export the default instance
+export const symphony = Symphony.getInstance();
+
+console.log(`[Symphony Core] Symphony core setup completed in ${Date.now() - initStartTime}ms`); 

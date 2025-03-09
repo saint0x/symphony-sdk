@@ -300,6 +300,7 @@ export class Symphony extends BaseManager implements ISymphony {
     }
 }
 
+// Export the default instance
 export const symphony = Symphony.getInstance();
 
 // Export types and utilities

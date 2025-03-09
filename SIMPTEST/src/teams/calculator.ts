@@ -1,121 +1,126 @@
-import { symphony } from '../sdk';
-import type { Team, TeamResult } from '../sdk';
-import { calculatorAgent } from '../agents/calculator';
+import sdkInstance from '../sdk';
+import CalculatorAgent from '../agents/calculator';
 
-class CalculatorTeam implements Team {
-    private initialized: boolean = false;
-    private agents: string[] = [];
+interface TaskResult {
+    success: boolean;
+    result?: number | number[];
+    error?: Error;
+    metrics?: {
+        duration: number;
+        startTime: number;
+        endTime: number;
+        toolCalls?: number;
+        agentCalls?: number;
+    };
+}
 
+interface ProgressUpdate {
+    status: string;
+    result?: TaskResult;
+}
+
+class CalculatorTeam {
+    private calculatorAgent = new CalculatorAgent();
+    private team: Promise<any>;
+    
     constructor() {
-        // Don't register in constructor
-    }
+        this.team = sdkInstance.then(sdk =>
+            sdk.team.create({
+                name: 'Calculator Team',
+                description: 'A team of calculator agents that work together on complex calculations',
+                agents: ['calculator'],
+                executeStream: async function*(this: CalculatorTeam, { task }: { task: string }): AsyncGenerator<TaskResult | ProgressUpdate> {
+                    const startTime = Date.now();
 
-    async initialize() {
-        if (this.initialized) {
-            return;
-        }
+                    // Parse task to get number groups
+                    const numberGroups = task.match(/\(\d+,\s*\d+,\s*\d+\)/g)?.map(group => {
+                        const numbers = group.match(/\d+/g)?.map(Number) || [];
+                        return numbers;
+                    }) || [];
 
-        // Register the component
-        await symphony.componentManager.register({
-            id: 'calculatorTeam',
-            name: 'Calculator Team',
-            type: 'team',
-            description: 'A team of calculator agents that work together on complex calculations',
-            version: '1.0.0',
-            capabilities: [
-                {
-                    name: symphony.types.CapabilityBuilder.team('COORDINATION'),
-                    parameters: {
-                        task: { type: 'string', required: true }
-                    },
-                    returns: {
-                        type: 'object',
-                        description: 'The results of parallel calculations'
+                    if (numberGroups.length === 0) {
+                        const endTime = Date.now();
+                        yield {
+                            success: false,
+                            error: new Error('Task must contain at least one group of three numbers in format (x, y, z)'),
+                            result: [],
+                            metrics: {
+                                duration: endTime - startTime,
+                                startTime,
+                                endTime,
+                                agentCalls: 0,
+                                toolCalls: 0
+                            }
+                        };
+                        return;
+                    }
+
+                    // Create subtasks for each number group
+                    const subtasks = numberGroups.map(numbers => ({
+                        task: `Add the numbers ${numbers[0]}, ${numbers[1]}, and ${numbers[2]}`,
+                        numbers
+                    }));
+
+                    try {
+                        // Execute subtasks with calculator agent
+                        const results: TaskResult[] = [];
+                        for (const { task } of subtasks) {
+                            const result = await this.calculatorAgent.run(task);
+                            const taskResult: TaskResult = {
+                                success: result.success,
+                                result: result.result,
+                                error: result.error,
+                                metrics: {
+                                    duration: result.metrics?.duration || 0,
+                                    startTime: result.metrics?.startTime || Date.now(),
+                                    endTime: result.metrics?.endTime || Date.now(),
+                                    agentCalls: 1,
+                                    toolCalls: result.metrics?.toolCalls || 0
+                                }
+                            };
+                            yield { status: `Completed ${task}`, result: taskResult };
+                            results.push(taskResult);
+                        }
+
+                        const endTime = Date.now();
+
+                        // Combine results
+                        const successfulResults = results.filter(r => r.success);
+                        yield {
+                            success: successfulResults.length > 0,
+                            result: successfulResults.map(r => r.result).filter((r): r is number => typeof r === 'number'),
+                            metrics: {
+                                duration: endTime - startTime,
+                                startTime,
+                                endTime,
+                                agentCalls: results.length,
+                                toolCalls: results.reduce((sum, r) => sum + (r.metrics?.toolCalls || 0), 0)
+                            }
+                        };
+                    } catch (error) {
+                        const endTime = Date.now();
+                        yield {
+                            success: false,
+                            error: error instanceof Error ? error : new Error(String(error)),
+                            result: [],
+                            metrics: {
+                                duration: endTime - startTime,
+                                startTime,
+                                endTime,
+                                agentCalls: 0,
+                                toolCalls: 0
+                            }
+                        };
                     }
                 }
-            ],
-            requirements: [
-                {
-                    capability: symphony.types.CapabilityBuilder.agent('TOOL_USE'),
-                    required: true
-                }
-            ],
-            provides: ['team.arithmetic', 'team.parallel_processing'],
-            tags: ['math', 'team', 'parallel', 'calculator']
-        }, this);
-
-        // Ensure team service and agent are initialized
-        await Promise.all([
-            symphony.team.initialize(),
-            calculatorAgent.initialize()
-        ]);
-
-        // Add the calculator agent to the team
-        this.agents.push('calculator');
-
-        this.initialized = true;
+            })
+        );
     }
 
-    async run(task: string, options?: { onProgress?: (update: { status: string }) => void }): Promise<TeamResult> {
-        if (!this.initialized) {
-            await this.initialize();
-        }
-
-        if (options?.onProgress) {
-            options.onProgress({ status: 'Starting parallel calculations...' });
-        }
-
-        // Parse task to get number groups
-        const numberGroups = task.match(/\(\d+,\s*\d+,\s*\d+\)/g)?.map(group => {
-            const numbers = group.match(/\d+/g)?.map(Number) || [];
-            return numbers;
-        }) || [];
-
-        if (numberGroups.length === 0) {
-            throw new Error('Task must contain at least one group of three numbers in format (x, y, z)');
-        }
-
-        // Create subtasks for each number group
-        const subtasks = numberGroups.map(numbers => ({
-            task: `Add the numbers ${numbers[0]}, ${numbers[1]}, and ${numbers[2]}`,
-            numbers
-        }));
-
-        try {
-            // Execute subtasks with calculator agent
-            const results = await Promise.all(subtasks.map(async ({ task }) => {
-                if (options?.onProgress) {
-                    options.onProgress({ status: `Processing ${task}...` });
-                }
-                return calculatorAgent.run(task);
-            }));
-
-            // Combine results
-            const successfulResults = results.filter(r => r.success);
-            const finalResult = {
-                success: successfulResults.length > 0,
-                result: successfulResults.map(r => r.result),
-                metrics: {
-                    totalCalculations: results.length,
-                    successfulCalculations: successfulResults.length
-                }
-            };
-
-            if (options?.onProgress) {
-                options.onProgress({ 
-                    status: `Completed with ${successfulResults.length} successful calculations` 
-                });
-            }
-
-            return finalResult;
-        } catch (error) {
-            return {
-                success: false,
-                result: [],
-                error: error instanceof Error ? error.message : String(error)
-            };
-        }
+    async run(task: string): Promise<TaskResult> {
+        const team = await this.team;
+        return team.run({ task });
     }
 }
 
-export const calculatorTeam = new CalculatorTeam(); 
+export default CalculatorTeam; 
