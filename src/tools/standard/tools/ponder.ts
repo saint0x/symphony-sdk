@@ -1,5 +1,6 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
 import { LLMHandler } from '../../../llm/handler';
+import { LLMRequestConfig } from '../../../llm/types';
 
 // Define types for our thought structures
 interface Thought {
@@ -80,7 +81,7 @@ export const ponderTool: ToolConfig = {
                     query, 
                     context = {}, 
                     depth = 2,
-                    llmConfig = {}
+                    llmConfig = {} as LLMRequestConfig
                 } = params;
 
                 if (!query) {
@@ -180,8 +181,7 @@ ${THOUGHT_TAGS.END}
                         ],
                         temperature: llmConfig.temperature,
                         maxTokens: llmConfig.maxTokens,
-                        provider: llmConfig.provider,
-                        apiKey: llmConfig.apiKey
+                        provider: llmConfig.provider
                     });
 
                     const responseText = response.toString();

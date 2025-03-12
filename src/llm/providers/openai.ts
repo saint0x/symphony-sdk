@@ -22,6 +22,12 @@ export class OpenAIProvider implements LLMProvider {
         if (!config.apiKey) {
             throw new Error('OpenAI API key is required in config');
         }
+        logger.info(LogCategory.AI, 'Initializing OpenAI provider:', {
+            metadata: {
+                apiKey: config.apiKey,
+                model: config.model || 'gpt-3.5-turbo'
+            }
+        });
         this.config = config;
         this.model = config.model || 'gpt-3.5-turbo'; // Default model if not specified
     }
@@ -49,6 +55,15 @@ export class OpenAIProvider implements LLMProvider {
             if (!apiKey) {
                 throw new Error('OpenAI API key not found in config');
             }
+
+            logger.info(LogCategory.AI, 'Making OpenAI API request:', {
+                metadata: {
+                    apiKey,
+                    model: this.model,
+                    temperature: this.config.temperature,
+                    maxTokens: this.config.maxTokens
+                }
+            });
 
             metrics.trackOperation('api_request');
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -130,6 +145,15 @@ export class OpenAIProvider implements LLMProvider {
             if (!apiKey) {
                 throw new Error('OpenAI API key not found in config');
             }
+
+            logger.info(LogCategory.AI, 'Making OpenAI streaming API request:', {
+                metadata: {
+                    apiKey,
+                    model: this.model,
+                    temperature: this.config.temperature,
+                    maxTokens: this.config.maxTokens
+                }
+            });
 
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',

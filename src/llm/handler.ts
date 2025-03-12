@@ -34,10 +34,18 @@ export class LLMHandler {
     private async initializeDefaultProviders(): Promise<void> {
         // Initialize OpenAI if API key is provided
         if (envConfig.openaiApiKey) {
+            logger.info(LogCategory.AI, 'Initializing OpenAI provider with API key:', {
+                metadata: {
+                    apiKey: envConfig.openaiApiKey,
+                    source: 'envConfig',
+                    file: require.resolve('../utils/env')
+                }
+            });
+            
             await this.registerProvider({
                 provider: 'openai',
                 model: envConfig.defaultModel,
-                apiKey: envConfig.openaiApiKey,
+                apiKey: envConfig.openaiApiKey,  // Always use env API key
                 temperature: envConfig.defaultTemperature,
                 maxTokens: envConfig.defaultMaxTokens,
                 timeout: envConfig.requestTimeoutMs
@@ -48,11 +56,12 @@ export class LLMHandler {
             logger.info(LogCategory.AI, 'Provider registered successfully', {
                 metadata: {
                     name: 'openai',
-                    type: 'OpenAIProvider'
+                    type: 'OpenAIProvider',
+                    apiKey: envConfig.openaiApiKey
                 }
             });
         } else {
-            throw new Error('OpenAI API key is required');
+            throw new Error('OpenAI API key is required in environment configuration');
         }
     }
 
@@ -63,19 +72,37 @@ export class LLMHandler {
         }
 
         try {
-            const provider = new OpenAIProvider(config);
+            // Always use API key from environment config
+            logger.info(LogCategory.AI, 'Registering provider with API key:', {
+                metadata: {
+                    providedKey: config.apiKey,
+                    envKey: envConfig.openaiApiKey,
+                    source: 'envConfig',
+                    file: require.resolve('../utils/env')
+                }
+            });
+            
+            const providerConfig = {
+                ...config,
+                apiKey: envConfig.openaiApiKey
+            };
+            
+            const provider = new OpenAIProvider(providerConfig);
             this.providers.set('openai', provider);
             logger.info(LogCategory.AI, 'Provider registered successfully', {
                 metadata: {
                     name: provider.name,
-                    type: provider.constructor.name
+                    type: provider.constructor.name,
+                    apiKey: providerConfig.apiKey
                 }
             });
         } catch (error: any) {
             logger.error(LogCategory.AI, 'Failed to register provider', {
                 metadata: {
                     provider: 'openai',
-                    error: error.message
+                    error: error.message,
+                    providedKey: config.apiKey,
+                    envKey: envConfig.openaiApiKey
                 }
             });
             throw error;
@@ -98,6 +125,17 @@ export class LLMHandler {
 
     async complete(request: LLMRequest): Promise<LLMResponse> {
         const provider = this.getProvider(request.provider);
+        
+        // If request includes config, update non-sensitive settings only
+        if (request.llmConfig) {
+            await this.registerProvider({
+                provider: 'openai',
+                apiKey: envConfig.openaiApiKey,  // Always use env API key
+                ...request.llmConfig,  // Safe to spread as LLMRequestConfig doesn't include apiKey
+                timeout: envConfig.requestTimeoutMs
+            });
+        }
+        
         return provider.complete(request);
     }
 
@@ -106,6 +144,16 @@ export class LLMHandler {
         providerName?: string
     ): AsyncGenerator<LLMResponse> {
         const provider = this.getProvider(providerName);
+        
+        // If request includes config, update non-sensitive settings only
+        if (request.llmConfig) {
+            await this.registerProvider({
+                provider: 'openai',
+                apiKey: envConfig.openaiApiKey,  // Always use env API key
+                ...request.llmConfig,  // Safe to spread as LLMRequestConfig doesn't include apiKey
+                timeout: envConfig.requestTimeoutMs
+            });
+        }
         
         if (!provider.supportsStreaming) {
             // Fallback to non-streaming

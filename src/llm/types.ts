@@ -1,8 +1,17 @@
 import { ExecutionMetrics } from '../types/sdk';
 
+// Base configuration that requires API key
 export interface LLMConfig {
     provider: 'openai' | 'anthropic' | 'google';
-    apiKey: string;
+    apiKey: string;  // Required but always sourced from environment
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    timeout?: number;
+}
+
+// Configuration that can be passed in requests (no API key)
+export interface LLMRequestConfig {
     model?: string;
     temperature?: number;
     maxTokens?: number;
@@ -36,6 +45,7 @@ export interface LLMRequest {
     maxTokens?: number;
     stream?: boolean;
     provider?: string;
+    llmConfig?: LLMRequestConfig;  // Only non-sensitive configuration
 }
 
 export interface LLMResponse {

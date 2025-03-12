@@ -1,6 +1,7 @@
 import { symphony } from 'symphonic';
 import type { AgentConfig, AgentResult } from 'symphonic';
 import transformerTool from '../tools/transformer';
+import { envConfig } from 'symphonic/utils/env';
 
 class TransformerAgent {
     private agent: Promise<any>;
@@ -16,7 +17,7 @@ class TransformerAgent {
                 model: 'gpt-4',
                 temperature: 0.7,
                 maxTokens: 2000,
-                apiKey: process.env.OPENAI_API_KEY || ''
+                apiKey: envConfig.openaiApiKey
             },
             capabilities: ['data.transformation']
         };

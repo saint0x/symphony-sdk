@@ -1,6 +1,6 @@
 import { BaseService } from './base';
 import { ISymphony } from '../types/symphony';
-import { SystemPromptParser } from '../utils/xmlParser';
+import { SystemPromptParser } from '../utils/xml';
 import { PATHS } from '../config/paths';
 
 export class SystemPromptService extends BaseService {

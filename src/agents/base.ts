@@ -5,6 +5,7 @@ import { OpenAIProvider } from '../llm/providers/openai';
 import { LLMConfig } from '../llm/types';
 import { standardTools } from '../tools/standard';
 import { Memory, createMemory } from '../memory';
+import { envConfig } from '../utils/env';
 
 export class BaseAgent {
     protected name: string;
@@ -38,11 +39,11 @@ export class BaseAgent {
         // Initialize LLM
         const llmConfig: LLMConfig = typeof config.llm === 'string' ? {
             provider: 'openai' as const,
-            apiKey: process.env.OPENAI_API_KEY || '',
+            apiKey: envConfig.openaiApiKey,
             model: config.llm
         } : {
             provider: (config.llm.provider || 'openai') as 'openai' | 'anthropic' | 'google',
-            apiKey: config.llm.apiKey || process.env.OPENAI_API_KEY || '',
+            apiKey: envConfig.openaiApiKey,
             model: config.llm.model
         };
         this.llm = new OpenAIProvider(llmConfig);

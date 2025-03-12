@@ -9,6 +9,7 @@ import { symphony } from '../sdk';
 import { Agent, AgentResult } from '../types/sdk';
 import { ToolMetadata } from '../types/tool';
 import { ComponentService } from '../proto/symphonic/core/types';
+import { envConfig } from '../utils/env';
 
 // Combined Tool interface that includes both SDK and Core tool properties
 interface ExecutableTool extends Tool {
@@ -55,7 +56,7 @@ export class ExecutorAgent implements Agent {
             llm: {
                 model: 'gpt-4',
                 provider: 'openai',
-                apiKey: process.env.OPENAI_API_KEY
+                apiKey: envConfig.openaiApiKey
             } as LLMConfig,
             thresholds: {
                 fastPath: 0.9,

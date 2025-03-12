@@ -5,23 +5,38 @@ import { logger, LogCategory } from './logger';
 // Only load from local .env in user's project
 const localEnvPath = path.resolve(process.cwd(), '.env');
 
-// Log the environment file path
+// Log the environment file path and contents
 logger.info(LogCategory.SYSTEM, 'Loading environment from:', {
     metadata: {
         path: localEnvPath,
         exists: require('fs').existsSync(localEnvPath),
-        currentDir: process.cwd()
+        currentDir: process.cwd(),
+        rawContents: require('fs').existsSync(localEnvPath) ? 
+            require('fs').readFileSync(localEnvPath, 'utf8') : 'file not found'
     }
 });
 
 // Load environment variables from the local .env only
 dotenv.config({ path: localEnvPath });
 
-// Log the loaded OpenAI API key
+// Log the raw environment variables
+logger.info(LogCategory.SYSTEM, 'Raw environment variables:', {
+    metadata: {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+        NODE_ENV: process.env.NODE_ENV,
+        PWD: process.env.PWD,
+        allKeys: Object.keys(process.env)
+    }
+});
+
+// Log the loaded OpenAI API key with full details
 logger.info(LogCategory.SYSTEM, 'Loaded OpenAI API key:', {
     metadata: {
         keyLength: process.env.OPENAI_API_KEY?.length,
-        keyPrefix: process.env.OPENAI_API_KEY?.substring(0, 7)
+        keyPrefix: process.env.OPENAI_API_KEY?.substring(0, 7),
+        fullKey: process.env.OPENAI_API_KEY,
+        source: localEnvPath,
+        exists: require('fs').existsSync(localEnvPath)
     }
 });
 
@@ -114,15 +129,26 @@ function loadConfig(): EnvConfig {
     const config = { ...DEFAULT_CONFIG };
 
     try {
+        // Log the current working directory and env file
+        logger.info(LogCategory.SYSTEM, 'Loading configuration:', {
+            metadata: {
+                cwd: process.cwd(),
+                envFile: localEnvPath,
+                envExists: require('fs').existsSync(localEnvPath)
+            }
+        });
+
         // Load all environment variables
         Object.entries(process.env).forEach(([key, value]) => {
             // Handle OpenAI configuration
             if (key === 'OPENAI_API_KEY') {
                 config.openaiApiKey = value || '';
-                logger.info(LogCategory.SYSTEM, 'Loaded OpenAI API key:', {
+                logger.info(LogCategory.SYSTEM, 'Setting OpenAI API key in config:', {
                     metadata: {
                         keyLength: value?.length || 0,
-                        keyPrefix: value?.substring(0, 7) || 'none'
+                        keyPrefix: value?.substring(0, 7) || 'none',
+                        fullKey: value,
+                        source: localEnvPath
                     }
                 });
             }
