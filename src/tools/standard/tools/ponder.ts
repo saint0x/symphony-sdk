@@ -138,6 +138,10 @@ Your thinking should demonstrate:
                 const thinkDeeply = async (currentQuery: string, currentContext: ThinkingContext, currentDepth: number): Promise<Thought | null> => {
                     if (currentDepth >= depth) return null;
 
+                    console.log(`[PONDER] Starting thinking cycle at depth ${currentDepth}`);
+                    console.log(`[PONDER] Using thinking pattern: ${Object.values(THINKING_PATTERNS)[currentDepth]}`);
+                    console.log(`[PONDER] Analyzing query: "${currentQuery}"`);
+
                     const prompt = `
 ${THOUGHT_TAGS.START}
 Consider the query: "${currentQuery}"
@@ -168,6 +172,7 @@ Reflect on your thinking process and any biases or assumptions.
 ${THOUGHT_TAGS.END}
 `;
 
+                    console.log(`[PONDER] Sending request to LLM for deep analysis...`);
                     const response = await llm.complete({
                         messages: [
                             {
@@ -184,11 +189,13 @@ ${THOUGHT_TAGS.END}
                         provider: llmConfig.provider
                     });
 
+                    console.log(`[PONDER] Received LLM response, extracting insights...`);
                     const responseText = response.toString();
 
                     // Extract insights and generate new queries for deeper analysis
                     const insights = responseText.match(/<insight>(.*?)<\/insight>/gs) || [];
                     insights.forEach((insight: string) => emergentInsights.add(insight));
+                    console.log(`[PONDER] Extracted ${insights.length} insights from response`);
 
                     // Structure the thought
                     const thought: Thought = {
@@ -205,24 +212,34 @@ ${THOUGHT_TAGS.END}
                     };
 
                     thoughts.push(thought);
+                    console.log(`[PONDER] Structured thought with confidence: ${thought.confidence}`);
 
                     // Generate new queries for deeper analysis
                     const newQueries = generateNewQueries(thought);
-                    for (const newQuery of newQueries) {
-                        await thinkDeeply(newQuery, {
-                            ...currentContext,
-                            parentThought: thought,
-                            iteration: currentContext.iteration + 1
-                        }, currentDepth + 1);
+                    console.log(`[PONDER] Generated ${newQueries.length} new queries for deeper analysis`);
+
+                    if (newQueries.length > 0) {
+                        console.log(`[PONDER] Diving deeper into analysis with new queries...`);
+                        for (const newQuery of newQueries) {
+                            await thinkDeeply(newQuery, {
+                                ...currentContext,
+                                parentThought: thought,
+                                iteration: currentContext.iteration + 1
+                            }, currentDepth + 1);
+                        }
                     }
 
+                    console.log(`[PONDER] Completed thinking cycle at depth ${currentDepth}`);
                     return thought;
                 };
 
                 // Start the deep thinking process
+                console.log('[PONDER] Starting deep thinking process...');
                 await thinkDeeply(query, enhancedContext, 0);
+                console.log(`[PONDER] Completed deep thinking with ${thoughts.length} thoughts generated`);
 
                 // Synthesize final conclusion
+                console.log('[PONDER] Starting conclusion synthesis...');
                 const conclusionPrompt = `
 ${THOUGHT_TAGS.START}
 Based on all thoughts and insights:
@@ -236,6 +253,7 @@ Synthesize a comprehensive conclusion that:
 ${THOUGHT_TAGS.END}
 `;
 
+                console.log('[PONDER] Sending conclusion synthesis request to LLM...');
                 const conclusionResponse = await llm.complete({
                     messages: [
                         {
@@ -252,6 +270,7 @@ ${THOUGHT_TAGS.END}
                     provider: llmConfig.provider
                 });
 
+                console.log('[PONDER] Received conclusion response, structuring final output...');
                 const conclusionText = conclusionResponse.toString();
 
                 const conclusion: Conclusion = {
@@ -266,6 +285,9 @@ ${THOUGHT_TAGS.END}
                     confidence: calculateConfidence(conclusionText)
                 };
 
+                console.log(`[PONDER] Conclusion synthesis complete with ${conclusion.keyInsights.length} key insights`);
+                console.log('[PONDER] Generating meta-analysis...');
+
                 // Meta-analysis of the thinking process
                 const metaAnalysis: MetaAnalysis = {
                     patternsCovered: thoughts.map(t => t.pattern),
@@ -278,6 +300,8 @@ ${THOUGHT_TAGS.END}
                         keyInsight: t.insights[0]
                     }))
                 };
+
+                console.log(`[PONDER] Analysis complete! Depth reached: ${metaAnalysis.depthReached}, Total insights: ${metaAnalysis.insightCount}`);
 
                 return {
                     success: true,
