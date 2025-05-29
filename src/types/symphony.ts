@@ -1,16 +1,26 @@
-import { ToolLifecycleState, LogLevel } from './sdk';
+import { ToolLifecycleState } from './sdk';
 import { LLMHandler } from '../llm/handler';
 import { Logger } from '../utils/logger';
+import { IDatabaseService, DatabaseConfig } from '../db/types';
 
 export interface SymphonyConfig {
+    name?: string;
+    version?: string;
+    environment?: 'development' | 'staging' | 'production';
+    logging?: {
+        level?: 'debug' | 'info' | 'warn' | 'error';
+        format?: 'json' | 'simple';
+    };
+    llm?: {
+        apiKey?: string;
+        model?: string;
+        baseURL?: string;
+    };
+    db?: DatabaseConfig;
     serviceRegistry: {
         enabled: boolean;
         maxRetries: number;
         retryDelay: number;
-    };
-    logging: {
-        level: LogLevel;
-        format: 'json' | 'text';
     };
     metrics: {
         enabled: boolean;
@@ -33,6 +43,13 @@ export interface ISymphony {
     readonly initialized: boolean;
     readonly isInitialized: boolean;
     readonly state: ToolLifecycleState;
+    readonly tool: any;
+    readonly agent: any;
+    readonly team: any;
+    readonly pipeline: any;
+    readonly db: IDatabaseService;
+    readonly validation: any;
+    readonly validationManager: any;
     readonly llm: LLMHandler;
     readonly logger: Logger;
     readonly metrics: IMetricsAPI;

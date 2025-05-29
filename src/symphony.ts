@@ -5,6 +5,8 @@ import { LLMHandler } from './llm/handler';
 import { AgentExecutor } from './agents/executor';
 import { TeamCoordinator } from './teams/coordinator';
 import { PipelineExecutor, PipelineDefinition } from './pipelines/pipeline-executor';
+import { DatabaseService } from './db/service';
+import { IDatabaseService } from './db/types';
 
 // Simple service interfaces
 interface IToolService {
@@ -23,6 +25,11 @@ interface ITeamService {
 }
 
 interface IPipelineService {
+    create(config: any): Promise<any>;
+    initialize(): Promise<void>;
+}
+
+interface IDatabaseServiceWrapper {
     create(config: any): Promise<any>;
     initialize(): Promise<void>;
 }
@@ -240,12 +247,47 @@ class SimpleMetricsAPI implements IMetricsAPI {
     }
 }
 
+class DatabaseServiceWrapper implements IDatabaseServiceWrapper {
+    private databaseService: DatabaseService;
+    private logger: Logger;
+
+    constructor(config?: any) {
+        this.databaseService = new DatabaseService(config?.db);
+        this.logger = Logger.getInstance('DatabaseServiceWrapper');
+    }
+
+    async create(config: any): Promise<any> {
+        this.logger.info('DatabaseServiceWrapper', 'Database create operation called', {
+            operation: config.operation || 'unknown',
+            table: config.table
+        });
+
+        // For compatibility with existing API pattern, return the database service itself
+        // Users can access full functionality via symphony.db
+        return {
+            name: config.name || 'database',
+            service: this.databaseService
+        };
+    }
+
+    async initialize(): Promise<void> {
+        this.logger.info('DatabaseServiceWrapper', 'Initializing database service');
+        // Database initialization happens in the main Symphony class
+    }
+
+    // Expose the full database service
+    getService(): IDatabaseService {
+        return this.databaseService;
+    }
+}
+
 export class Symphony implements Partial<ISymphony> {
     private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
     private _logger: Logger;
     private _llm: LLMHandler;
     private _config: SymphonyConfig;
     private _metrics: IMetricsAPI;
+    private _databaseService: DatabaseServiceWrapper;
     
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -279,6 +321,7 @@ export class Symphony implements Partial<ISymphony> {
         this._logger = Logger.getInstance('Symphony');
         this._llm = LLMHandler.getInstance();
         this._metrics = new SimpleMetricsAPI();
+        this._databaseService = new DatabaseServiceWrapper(config);
         
         // Initialize services
         this.tool = new SimpleToolService();
@@ -303,6 +346,14 @@ export class Symphony implements Partial<ISymphony> {
     
     get metrics(): IMetricsAPI {
         return this._metrics;
+    }
+    
+    get db(): IDatabaseService {
+        return this._databaseService.getService();
+    }
+    
+    get databaseService(): DatabaseServiceWrapper {
+        return this._databaseService;
     }
     
     getState(): ToolLifecycleState {
@@ -347,7 +398,8 @@ export class Symphony implements Partial<ISymphony> {
                 this.agent.initialize(),
                 this.team.initialize(),
                 this.pipeline.initialize(),
-                this.validation.initialize()
+                this.validation.initialize(),
+                this.db.initialize(this._config.db)
             ]);
             
             this._state = ToolLifecycleState.READY;
@@ -366,7 +418,8 @@ export class Symphony implements Partial<ISymphony> {
             team: this.team,
             pipeline: this.pipeline,
             validation: this.validation,
-            metrics: this._metrics
+            metrics: this._metrics,
+            database: this._databaseService
         };
         return services[name];
     }
