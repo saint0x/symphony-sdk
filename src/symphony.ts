@@ -127,17 +127,17 @@ interface IStreamingService {
 }
 
 // Simple implementations
-class SimpleToolService implements IToolService {
+class ToolService implements IToolService {
     private toolRegistry: ToolRegistry;
     private logger: Logger;
 
     constructor(toolRegistry: ToolRegistry) {
         this.toolRegistry = toolRegistry;
-        this.logger = Logger.getInstance('SimpleToolService');
+        this.logger = Logger.getInstance('ToolService');
     }
 
     async create(config: any): Promise<any> {
-        this.logger.info('SimpleToolService', `Creating tool: ${config.name}`);
+        this.logger.info('ToolService', `Creating tool: ${config.name}`);
         
         // Create the tool
         const toolHandler = config.handler || (() => Promise.resolve({ success: true, result: null }));
@@ -161,7 +161,7 @@ class SimpleToolService implements IToolService {
         const toolObject = {
             name: config.name,
             run: async (params: any) => {
-                this.logger.info('SimpleToolService', `Tool ${config.name} executing with params`, {
+                this.logger.info('ToolService', `Tool ${config.name} executing with params`, {
                     hasParams: !!params,
                     paramKeys: params ? Object.keys(params) : []
                 });
@@ -171,12 +171,12 @@ class SimpleToolService implements IToolService {
             config: config
         };
 
-        this.logger.info('SimpleToolService', `Tool created and registered: ${config.name}`);
+        this.logger.info('ToolService', `Tool created and registered: ${config.name}`);
         return toolObject;
     }
 
     async execute(toolName: string, params: any): Promise<any> {
-        this.logger.info('SimpleToolService', `Executing tool: ${toolName}`, { params });
+        this.logger.info('ToolService', `Executing tool: ${toolName}`, { params });
         return await this.toolRegistry.executeTool(toolName, params);
     }
 
@@ -189,12 +189,12 @@ class SimpleToolService implements IToolService {
     }
 
     register(name: string, tool: any): void {
-        this.logger.info('SimpleToolService', `Registering tool: ${name}`);
+        this.logger.info('ToolService', `Registering tool: ${name}`);
         this.toolRegistry.registerTool(name, tool);
     }
     
     async initialize(): Promise<void> {
-        this.logger.info('SimpleToolService', 'Tool service initialized');
+        this.logger.info('ToolService', 'Tool service initialized');
     }
 
     get registry(): ToolRegistry {
@@ -202,10 +202,16 @@ class SimpleToolService implements IToolService {
     }
 }
 
-class SimpleAgentService implements IAgentService {
+class AgentService implements IAgentService {
+    private toolRegistry: ToolRegistry;
+
+    constructor(toolRegistry: ToolRegistry) {
+        this.toolRegistry = toolRegistry;
+    }
+
     async create(config: any): Promise<any> {
-        // Create an actual AgentExecutor instance with LLM capabilities
-        const agentExecutor = new AgentExecutor(config);
+        // Create an actual AgentExecutor instance with LLM capabilities and the correct ToolRegistry
+        const agentExecutor = new AgentExecutor(config, this.toolRegistry);
         
         return {
             name: config.name,
@@ -228,16 +234,16 @@ class SimpleAgentService implements IAgentService {
     }
 }
 
-class EnhancedTeamService implements ITeamService {
+class TeamService implements ITeamService {
     private teams: Map<string, TeamCoordinator> = new Map();
     private logger: Logger;
 
     constructor() {
-        this.logger = Logger.getInstance('EnhancedTeamService');
+        this.logger = Logger.getInstance('TeamService');
     }
 
     async create(config: any): Promise<any> {
-        this.logger.info('EnhancedTeamService', `Creating team: ${config.name}`, {
+        this.logger.info('TeamService', `Creating team: ${config.name}`, {
             agentCount: config.agents?.length || 0,
             strategy: config.strategy?.name || 'default'
         });
@@ -255,7 +261,7 @@ class EnhancedTeamService implements ITeamService {
         return {
             name: config.name,
             run: async (task: string, options?: any) => {
-                this.logger.info('EnhancedTeamService', `Team ${config.name} executing task: ${task}`);
+                this.logger.info('TeamService', `Team ${config.name} executing task: ${task}`);
                 return await teamCoordinator.executeTask(task, options);
             },
             getStatus: () => teamCoordinator.getTeamStatus(),
@@ -265,17 +271,17 @@ class EnhancedTeamService implements ITeamService {
     }
     
     async initialize(): Promise<void> {
-        this.logger.info('EnhancedTeamService', 'Enhanced team service initialized');
+        this.logger.info('TeamService', 'Team service initialized');
     }
 
     async shutdown(): Promise<void> {
-        this.logger.info('EnhancedTeamService', `Shutting down ${this.teams.size} teams`);
+        this.logger.info('TeamService', `Shutting down ${this.teams.size} teams`);
         
         const shutdownPromises = Array.from(this.teams.values()).map(team => team.shutdown());
         await Promise.all(shutdownPromises);
         
         this.teams.clear();
-        this.logger.info('EnhancedTeamService', 'All teams shut down successfully');
+        this.logger.info('TeamService', 'All teams shut down successfully');
     }
 
     getTeams(): string[] {
@@ -287,16 +293,16 @@ class EnhancedTeamService implements ITeamService {
     }
 }
 
-class EnhancedPipelineService implements IPipelineService {
+class PipelineService implements IPipelineService {
     private pipelines: Map<string, PipelineExecutor> = new Map();
     private logger: Logger;
 
     constructor() {
-        this.logger = Logger.getInstance('EnhancedPipelineService');
+        this.logger = Logger.getInstance('PipelineService');
     }
 
     async create(config: any): Promise<any> {
-        this.logger.info('EnhancedPipelineService', `Creating pipeline: ${config.name}`, {
+        this.logger.info('PipelineService', `Creating pipeline: ${config.name}`, {
             stepCount: config.steps?.length || 0,
             version: config.version || '1.0.0'
         });
@@ -323,7 +329,7 @@ class EnhancedPipelineService implements IPipelineService {
         return {
             name: config.name,
             run: async (input?: any) => {
-                this.logger.info('EnhancedPipelineService', `Pipeline ${config.name} executing with input`, {
+                this.logger.info('PipelineService', `Pipeline ${config.name} executing with input`, {
                     hasInput: !!input,
                     inputKeys: input ? Object.keys(input) : []
                 });
@@ -335,14 +341,14 @@ class EnhancedPipelineService implements IPipelineService {
     }
     
     async initialize(): Promise<void> {
-        this.logger.info('EnhancedPipelineService', 'Enhanced pipeline service initialized');
+        this.logger.info('PipelineService', 'Pipeline service initialized');
     }
 
     async shutdown(): Promise<void> {
-        this.logger.info('EnhancedPipelineService', `Shutting down ${this.pipelines.size} pipelines`);
+        this.logger.info('PipelineService', `Shutting down ${this.pipelines.size} pipelines`);
         // Pipelines don't need special shutdown logic currently
         this.pipelines.clear();
-        this.logger.info('EnhancedPipelineService', 'All pipelines shut down successfully');
+        this.logger.info('PipelineService', 'All pipelines shut down successfully');
     }
 
     getPipelines(): string[] {
@@ -354,7 +360,7 @@ class EnhancedPipelineService implements IPipelineService {
     }
 }
 
-class SimpleValidationManager implements IValidationManager {
+class ValidationService implements IValidationManager {
     async validate(config: any, _type: string): Promise<{ isValid: boolean; errors: string[] }> {
         // Simple validation - just check if config has a name
         if (!config || !config.name) {
@@ -368,7 +374,7 @@ class SimpleValidationManager implements IValidationManager {
     }
 }
 
-class SimpleMetricsAPI implements IMetricsAPI {
+class MetricsService implements IMetricsAPI {
     readonly startTime = Date.now();
     private metrics = new Map<string, any>();
     
@@ -1063,18 +1069,19 @@ export class Symphony implements Partial<ISymphony> {
         this._config = config;
         this._logger = Logger.getInstance('Symphony');
         this._llm = LLMHandler.getInstance();
-        this._metrics = new SimpleMetricsAPI();
+        this._metrics = new MetricsService();
         this._databaseService = new DatabaseServiceWrapper(config);
         this._cacheService = new CacheServiceWrapper(this._databaseService.getService());
         this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
         this._streamingService = new StreamingServiceWrapper();
         
         // Initialize services
-        this.tool = new SimpleToolService(new ToolRegistry());
-        this.agent = new SimpleAgentService();
-        this.team = new EnhancedTeamService();
-        this.pipeline = new EnhancedPipelineService();
-        this.validation = new SimpleValidationManager();
+        const sharedToolRegistry = new ToolRegistry();
+        this.tool = new ToolService(sharedToolRegistry);
+        this.agent = new AgentService(sharedToolRegistry);
+        this.team = new TeamService();
+        this.pipeline = new PipelineService();
+        this.validation = new ValidationService();
         this.validationManager = this.validation;
     }
     

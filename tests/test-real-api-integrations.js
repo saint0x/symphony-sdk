@@ -12,7 +12,7 @@
  * Uses native fetch API for real network calls (no external dependencies)
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 const https = require('https');
 const fs = require('fs');
 

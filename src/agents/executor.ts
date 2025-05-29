@@ -10,10 +10,10 @@ export class AgentExecutor extends BaseAgent {
     private toolRegistry: ToolRegistry;
     private chainExecutor: ChainExecutor;
 
-    constructor(config: AgentConfig) {
+    constructor(config: AgentConfig, toolRegistry?: ToolRegistry) {
         super(config);
         this.systemPromptService = SystemPromptService.getInstance();
-        this.toolRegistry = ToolRegistry.getInstance();
+        this.toolRegistry = toolRegistry || ToolRegistry.getInstance();
         this.chainExecutor = ChainExecutor.getInstance();
     }
 

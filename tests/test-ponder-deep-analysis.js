@@ -1,4 +1,4 @@
-const { symphony } = require('./dist/index.js');
+const { symphony } = require('../dist/index.js');
 const fs = require('fs').promises;
 const path = require('path');
 

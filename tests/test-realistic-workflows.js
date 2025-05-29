@@ -9,7 +9,7 @@
  * 5. Business intelligence and reporting workflow
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 const fs = require('fs');
 const path = require('path');
 

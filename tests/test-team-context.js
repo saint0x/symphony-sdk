@@ -11,7 +11,7 @@
  * 7. Performance and efficiency tracking
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 
 // === CONTEXT VALIDATION UTILITIES ===
 

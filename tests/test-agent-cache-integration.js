@@ -9,7 +9,7 @@
  * 5. Comprehensive metadata logging
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 const path = require('path');
 
 async function runAgentCacheIntegrationTests() {

@@ -9,7 +9,7 @@
  * 5. Team performance optimization and analytics
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 const fs = require('fs');
 const path = require('path');
 
@@ -870,8 +870,8 @@ When collaborating with cross-functional teams, focus on removing obstacles, mai
             const systemHealth = await symphony.db.healthCheck();
             console.log('\n🏥 System Health During Collaboration:');
             console.log(`   Database Status: ${systemHealth.status === 'healthy' ? '✅ Healthy' : '⚠️ ' + systemHealth.status}`);
-            console.log(`   Connection Stability: ${systemHealth.connection ? '✅ Stable' : '❌ Unstable'}`);
-            console.log(`   Data Integrity: ${systemHealth.tables > 0 ? '✅ Maintained' : '⚠️ Degraded'}`);
+            console.log(`   Connection Stability: ${systemHealth.database?.connected ? '✅ Stable' : '❌ Unstable'}`);
+            console.log(`   Data Integrity: ${systemHealth.database?.storage?.tableCount > 0 ? '✅ Maintained' : '⚠️ Degraded'}`);
         } catch (error) {
             console.log(`   ⚠️ System health check failed: ${error.message}`);
         }

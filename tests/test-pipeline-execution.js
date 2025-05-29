@@ -1,4 +1,4 @@
-const { symphony } = require('./dist/index.js');
+const { symphony } = require('../dist/index.js');
 
 async function testPipelineExecution() {
   console.log('\n=== Pipeline Execution System Test ===');

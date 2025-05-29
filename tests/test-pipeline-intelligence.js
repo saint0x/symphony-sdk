@@ -8,7 +8,7 @@
  * 4. Failure pattern analysis with intelligent retry strategies
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 
 async function runPipelineIntelligenceTest() {
     console.log('🧠 Starting Symphony Pipeline Intelligence Test...\n');

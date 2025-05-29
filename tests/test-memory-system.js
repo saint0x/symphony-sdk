@@ -9,7 +9,7 @@
  * 5. Legacy compatibility
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 
 async function runMemorySystemTest() {
     console.log('🧠 Starting Symphony Memory System Test...\n');

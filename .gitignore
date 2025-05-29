@@ -32,3 +32,10 @@ build/
 *.swo
 .tmp/
 temp/
+
+
+CURRENT.md
+FINDINGS2.md
+HOUSEKEEPING.md
+ISSUES.md
+symphony.db

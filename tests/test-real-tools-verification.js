@@ -2,7 +2,7 @@
  * Test Real Tools Verification - Verify Stub Tools Are Now Real
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 
 async function testRealTools() {
     console.log('🔧 Testing Real Tools Verification...\n');

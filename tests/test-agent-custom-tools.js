@@ -9,8 +9,8 @@
  * 5. Real-world scenario simulation
  */
 
-const { Symphony } = require('./src/symphony');
-const { ToolRegistry } = require('./src/tools/standard/registry');
+const { Symphony } = require('../src/symphony');
+const { ToolRegistry } = require('../src/tools/standard/registry');
 const fs = require('fs');
 const path = require('path');
 

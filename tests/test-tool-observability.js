@@ -1,4 +1,4 @@
-const { symphony } = require('./dist/index.js');
+const { symphony } = require('../dist/index.js');
 
 async function testToolObservability() {
   console.log('\n=== Tool Observability & Analytics Test ===');

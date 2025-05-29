@@ -1,4 +1,4 @@
-const { Symphony } = require('./dist/index.js');
+const { Symphony } = require('../dist/index.js');
 
 async function testDatabaseService() {
     console.log('🗄️  Symphony Database Service Test Suite\n');

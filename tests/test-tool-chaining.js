@@ -1,4 +1,4 @@
-const { symphony } = require('./dist/index.js');
+const { symphony } = require('../dist/index.js');
 
 async function testComplexChaining() {
   console.log('\n=== Complex Tool Chaining Performance Test ===');

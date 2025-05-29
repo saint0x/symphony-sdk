@@ -3,7 +3,7 @@
  * Uses actual XML Command Maps + JSON Context Trees + Database Integration
  */
 
-const { Symphony } = require('./src/symphony');
+const { Symphony } = require('../src/symphony');
 const path = require('path');
 const fs = require('fs');
 
