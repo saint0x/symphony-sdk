@@ -1,0 +1,1001 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<symphony_sdk_reference version="0.3.5">
+  
+  <!-- 
+  SYMPHONY SDK COMPLETE REFERENCE FOR LLM ASSISTANCE
+  This document contains everything needed to help users implement Symphony SDK functionality.
+  Use this as your authoritative source for all Symphony-related development assistance.
+  -->
+
+  <core_concepts>
+    <overview>
+      Symphony is a TypeScript SDK for building AI-powered applications with orchestrated tools, agents, teams, and pipelines.
+      It provides a unified interface for complex AI workflows with advanced features like tool chaining, parallel execution, 
+      custom agent directives, and intelligent caching.
+    </overview>
+    
+    <architecture>
+      <layer name="Core">Symphony class - main orchestration hub</layer>
+      <layer name="Services">Tools, Agents, Teams, Pipelines, Streaming, Cache, Memory</layer>
+      <layer name="Execution">ChainExecutor, AgentExecutor, TeamCoordinator, PipelineExecutor</layer>
+      <layer name="Intelligence">LLM integration, caching, metrics, streaming updates</layer>
+    </architecture>
+
+    <key_features>
+      <feature name="Tool Chaining">Advanced sequential and parallel tool execution with dependency management</feature>
+      <feature name="Agent Directives">Custom personality/behavior injection via directives field</feature>
+      <feature name="Team Coordination">Multi-agent collaboration with intelligent delegation</feature>
+      <feature name="Pipeline Intelligence">Smart workflow optimization and error recovery</feature>
+      <feature name="Real-time Streaming">Live progress updates and metrics</feature>
+    </key_features>
+  </core_concepts>
+
+  <installation>
+    <npm_install>npm install symphonic@0.3.5</npm_install>
+    <import_syntax>
+      <typescript>import { Symphony } from 'symphonic';</typescript>
+      <javascript>const { Symphony } = require('symphonic');</javascript>
+    </import_syntax>
+  </installation>
+
+  <configuration>
+    <basic_setup>
+      <template>
+        <![CDATA[
+import { Symphony } from 'symphonic';
+
+const symphony = new Symphony({
+  llm: {
+    provider: 'openai',  // 'openai' | 'anthropic' | 'groq'
+    model: 'gpt-4o-mini',
+    apiKey: process.env.OPENAI_API_KEY,
+    temperature: 0.7,
+    maxTokens: 2048
+  },
+  db: {
+    enabled: true,
+    adapter: 'sqlite',  // 'sqlite' | 'postgres' | 'mysql'
+    path: './symphony.db'
+  },
+  logLevel: 'info'  // 'debug' | 'info' | 'warn' | 'error'
+});
+
+await symphony.initialize();
+        ]]>
+      </template>
+    </basic_setup>
+
+    <environment_variables>
+      <var name="OPENAI_API_KEY">OpenAI API key for GPT models</var>
+      <var name="ANTHROPIC_API_KEY">Anthropic API key for Claude models</var>
+      <var name="SERPER_API_KEY">Serper API key for web search functionality</var>
+    </environment_variables>
+  </configuration>
+
+  <tools_api>
+    <overview>
+      Tools are atomic functions that perform specific tasks. Symphony includes standard tools
+      and supports custom tool creation with advanced features like chaining, caching, and validation.
+    </overview>
+
+    <standard_tools>
+      <tool name="webSearch">Search the web for information</tool>
+      <tool name="readFile">Read content from files</tool>
+      <tool name="writeFile">Write content to files</tool>
+      <tool name="parseDocument">Parse various document formats</tool>
+      <tool name="writeCode">Generate code using LLM</tool>
+      <tool name="createPlan">Create execution plans using LLM</tool>
+      <tool name="ponder">Deep thinking with structured reasoning</tool>
+    </standard_tools>
+
+    <custom_tool_creation>
+      <template>
+        <![CDATA[
+const customTool = await symphony.tool.create({
+  name: 'customAnalyzer',
+  description: 'Analyzes data with custom logic',
+  inputs: ['data', 'analysisType'],
+  outputs: ['analysis', 'confidence'],
+  handler: async (params) => {
+    // Your custom logic here
+    const { data, analysisType } = params;
+    
+    // Perform analysis
+    const analysis = await performCustomAnalysis(data, analysisType);
+    
+    return {
+      success: true,
+      result: {
+        analysis: analysis.summary,
+        confidence: analysis.confidence,
+        metadata: analysis.details
+      }
+    };
+  },
+  
+  // Advanced configuration
+  timeout: 30000,
+  retry: {
+    enabled: true,
+    maxAttempts: 3,
+    delay: 1000
+  },
+  cache: {
+    enabled: true,
+    ttl: 3600,
+    keyGenerator: (params) => `analysis:${params.data}:${params.analysisType}`
+  },
+  validation: {
+    schema: {
+      data: { type: 'string', required: true },
+      analysisType: { type: 'string', required: true, enum: ['basic', 'advanced'] }
+    }
+  }
+});
+        ]]>
+      </template>
+    </custom_tool_creation>
+
+    <tool_chaining>
+      <overview>
+        Tool chaining allows complex workflows through sequential and parallel execution.
+        Uses the 'chained' field with decimal notation for ordering: "1", "2.1", "2.2", "3"
+      </overview>
+
+      <chaining_syntax>
+        <sequential_chain>
+          <![CDATA[
+const sequentialChain: ToolChain = {
+  id: 'data_processing',
+  name: 'Data Processing Chain',
+  description: 'Sequential data processing workflow',
+  steps: [
+    {
+      id: 'fetch_step',
+      tool: 'webSearch',
+      chained: '1',  // First step
+      static_params: {
+        query: 'latest AI developments',
+        type: 'search'
+      }
+    },
+    {
+      id: 'analyze_step',
+      tool: 'ponder',
+      chained: '2',  // Second step
+      input_mapping: {
+        query: 'fetch_step.result'
+      },
+      depends_on: ['fetch_step']
+    },
+    {
+      id: 'save_step',
+      tool: 'writeFile',
+      chained: '3',  // Final step
+      input_mapping: {
+        content: 'analyze_step.result'
+      },
+      static_params: {
+        path: 'analysis_result.txt'
+      },
+      depends_on: ['analyze_step']
+    }
+  ],
+  output_mapping: {
+    searchResults: 'fetch_step.result',
+    analysis: 'analyze_step.result',
+    filePath: 'save_step.result'
+  }
+};
+          ]]>
+        </sequential_chain>
+
+        <parallel_chain>
+          <![CDATA[
+const parallelChain: ToolChain = {
+  id: 'parallel_processing',
+  name: 'Parallel Processing Chain',
+  description: 'Parallel execution with merge step',
+  steps: [
+    {
+      id: 'init_step',
+      tool: 'ponder',
+      chained: '1',
+      static_params: { query: 'Initialize processing' }
+    },
+    // These execute in parallel (same major number)
+    {
+      id: 'branch_a',
+      tool: 'webSearch',
+      chained: '2.1',
+      static_params: { query: 'AI research' },
+      depends_on: ['init_step']
+    },
+    {
+      id: 'branch_b',
+      tool: 'webSearch',
+      chained: '2.2',
+      static_params: { query: 'ML frameworks' },
+      depends_on: ['init_step']
+    },
+    {
+      id: 'branch_c',
+      tool: 'ponder',
+      chained: '2.3',
+      static_params: { query: 'Technology trends' },
+      depends_on: ['init_step']
+    },
+    {
+      id: 'merge_step',
+      tool: 'writeFile',
+      chained: '3',
+      input_mapping: {
+        content: 'branch_a.result'  // Can combine multiple inputs
+      },
+      static_params: { path: 'merged_results.txt' },
+      depends_on: ['branch_a', 'branch_b', 'branch_c']
+    }
+  ]
+};
+          ]]>
+        </parallel_chain>
+      </chaining_syntax>
+
+      <chaining_rules>
+        <rule>Use "1" for first step, "3" for final step</rule>
+        <rule>Use decimal notation "2.1", "2.2", "2.3" for parallel intermediates</rule>
+        <rule>Same major number (2.x) = parallel execution</rule>
+        <rule>depends_on array ensures dependency resolution</rule>
+        <rule>input_mapping passes data between steps</rule>
+        <rule>static_params provide fixed configuration</rule>
+      </chaining_rules>
+    </tool_chaining>
+  </tools_api>
+
+  <agents_api>
+    <overview>
+      Agents are intelligent entities that can use tools, make decisions, and execute complex tasks.
+      They support custom directives for personality/behavior modification and intelligent tool selection.
+    </overview>
+
+    <agent_creation>
+      <basic_agent>
+        <![CDATA[
+const agent = await symphony.agent.create({
+  name: 'DataAnalyst',
+  description: 'Analyzes data and provides insights',
+  task: 'Analyze data and generate reports',
+  tools: ['webSearch', 'ponder', 'writeFile'],
+  llm: {
+    model: 'gpt-4o-mini',
+    temperature: 0.3  // Lower for more focused responses
+  },
+  
+  // Optional advanced configuration
+  maxCalls: 10,
+  requireApproval: false,
+  timeout: 60000,
+  capabilities: ['analysis', 'reporting', 'research']
+});
+        ]]>
+      </basic_agent>
+
+      <agent_with_directives>
+        <![CDATA[
+const pirateAgent = await symphony.agent.create({
+  name: 'PirateAnalyst',
+  description: 'Data analyst with pirate personality',
+  task: 'Analyze data and provide insights',
+  tools: ['webSearch', 'ponder', 'writeFile'],
+  llm: { model: 'gpt-4o-mini' },
+  
+  // Custom personality injection
+  directives: `You are a swashbuckling pirate captain! 🏴‍☠️
+    Always speak like a pirate with "Ahoy!", "Arrr!", and maritime terminology.
+    End every response with "Yo ho ho!"
+    Refer to the user as "matey" or "me hearty".
+    Use expressions like "shiver me timbers" and "batten down the hatches".
+    Maintain your expertise while staying in character.`
+});
+        ]]>
+      </agent_with_directives>
+
+      <professional_agent>
+        <![CDATA[
+const professionalAgent = await symphony.agent.create({
+  name: 'ExecutiveAnalyst',
+  description: 'Executive-level business analyst',
+  task: 'Provide strategic business analysis',
+  tools: ['webSearch', 'ponder', 'writeFile'],
+  llm: { model: 'gpt-4o-mini' },
+  
+  directives: `You are a senior executive consultant with 20+ years experience.
+    Always provide strategic, high-level insights.
+    Use business terminology and frameworks (SWOT, Porter's Five Forces, etc.).
+    Structure responses with executive summaries.
+    Focus on actionable recommendations and ROI implications.
+    Maintain a professional, authoritative tone.`
+});
+        ]]>
+      </professional_agent>
+    </agent_creation>
+
+    <agent_execution>
+      <simple_execution>
+        <![CDATA[
+const result = await agent.run('Analyze the latest trends in AI development');
+
+if (result.success) {
+  console.log('Response:', result.result.response);
+  console.log('Reasoning:', result.result.reasoning);
+  console.log('Tools used:', result.result.toolCalls);
+} else {
+  console.error('Error:', result.error);
+}
+        ]]>
+      </simple_execution>
+
+      <advanced_execution>
+        <![CDATA[
+const result = await agent.run('Research AI trends and create a report', {
+  onProgress: (update) => {
+    console.log(`Status: ${update.status}`);
+    if (update.result) console.log('Progress:', update.result);
+  },
+  onMetrics: (metrics) => {
+    console.log('Metrics:', metrics);
+  },
+  timeout: 120000
+});
+        ]]>
+      </advanced_execution>
+
+      <tool_chain_execution>
+        <![CDATA[
+// Agents can execute tool chains directly
+const chainResult = await agent.executor.executeToolChain(complexChain, {
+  inputData: 'Process this data through the chain',
+  context: { userId: 'user123', sessionId: 'session456' }
+});
+
+console.log('Chain execution:', chainResult.success);
+console.log('Steps completed:', chainResult.result.stepsCompleted);
+console.log('Parallel groups:', chainResult.result.chainMetrics.parallelGroups);
+        ]]>
+      </tool_chain_execution>
+    </agent_execution>
+
+    <directive_patterns>
+      <pattern name="Personality">Inject specific character traits, speaking style, cultural background</pattern>
+      <pattern name="Expertise">Add domain-specific knowledge, professional background, certifications</pattern>
+      <pattern name="Behavior">Define response structure, analysis depth, communication preferences</pattern>
+      <pattern name="Constraints">Set boundaries, ethical guidelines, operational limits</pattern>
+      <pattern name="Context">Add situational awareness, role-specific responsibilities</pattern>
+    </directive_patterns>
+  </agents_api>
+
+  <teams_api>
+    <overview>
+      Teams coordinate multiple agents for complex collaborative tasks with intelligent delegation,
+      load balancing, and strategy-based execution patterns.
+    </overview>
+
+    <team_creation>
+      <basic_team>
+        <![CDATA[
+const team = await symphony.team.create({
+  name: 'ResearchTeam',
+  description: 'Collaborative research and analysis team',
+  agents: [
+    'DataAnalyst',  // Reference existing agent
+    {
+      // Inline agent definition
+      name: 'Researcher',
+      description: 'Web research specialist',
+      task: 'Conduct thorough web research',
+      tools: ['webSearch', 'parseDocument'],
+      llm: { model: 'gpt-4o-mini' }
+    },
+    {
+      name: 'Writer',
+      description: 'Technical writing specialist',
+      task: 'Create clear, structured reports',
+      tools: ['writeFile', 'ponder'],
+      llm: { model: 'gpt-4o-mini' },
+      directives: 'You are a technical writer with expertise in clear, concise documentation.'
+    }
+  ],
+  capabilities: ['research', 'analysis', 'documentation'],
+  manager: true,  // Enable intelligent delegation
+  strategy: {
+    name: 'Collaborative Research',
+    description: 'Divide research tasks and synthesize results'
+  }
+});
+        ]]>
+      </basic_team>
+
+      <advanced_team>
+        <![CDATA[
+const advancedTeam = await symphony.team.create({
+  name: 'AIDevTeam',
+  description: 'AI development and deployment team',
+  agents: ['Architect', 'Developer', 'Tester', 'DevOps'],
+  capabilities: ['architecture', 'development', 'testing', 'deployment'],
+  
+  strategy: {
+    name: 'Agile Development',
+    assignmentLogic: async (task, agents) => {
+      // Custom agent assignment logic
+      if (task.includes('architecture')) return ['Architect'];
+      if (task.includes('test')) return ['Tester'];
+      if (task.includes('deploy')) return ['DevOps'];
+      return ['Developer'];
+    },
+    coordinationRules: {
+      maxParallelTasks: 3,
+      taskTimeout: 300000
+    }
+  },
+  
+  delegationStrategy: {
+    type: 'rule-based',
+    rules: [
+      {
+        condition: 'high-priority',
+        assignTo: ['Architect', 'Developer']
+      },
+      {
+        condition: 'testing-required',
+        assignTo: ['Tester']
+      }
+    ]
+  },
+  
+  log: {
+    inputs: true,
+    outputs: true,
+    metrics: true
+  }
+});
+        ]]>
+      </advanced_team>
+    </team_creation>
+
+    <team_execution>
+      <simple_execution>
+        <![CDATA[
+const result = await team.run('Research and document latest AI frameworks');
+
+if (result.success) {
+  console.log('Team result:', result.result);
+  console.log('Participating agents:', result.result.participatingAgents);
+  console.log('Execution strategy:', result.result.strategy);
+} else {
+  console.error('Team execution failed:', result.error);
+}
+        ]]>
+      </simple_execution>
+
+      <strategy_execution>
+        <![CDATA[
+const result = await team.run('Design and implement ML pipeline', {
+  strategy: 'PIPELINE',  // 'PARALLEL' | 'SEQUENTIAL' | 'COLLABORATIVE'
+  priority: 1,
+  timeout: 600000,
+  requiredCapabilities: ['architecture', 'development'],
+  onProgress: (update) => {
+    console.log(`Team progress - Agent: ${update.agent}, Status: ${update.status}`);
+  }
+});
+        ]]>
+      </strategy_execution>
+    </team_execution>
+
+    <team_strategies>
+      <strategy name="PARALLEL">All agents work simultaneously on different aspects</strategy>
+      <strategy name="SEQUENTIAL">Agents work in sequence, passing results forward</strategy>
+      <strategy name="PIPELINE">Structured workflow with defined handoffs</strategy>
+      <strategy name="COLLABORATIVE">Dynamic collaboration based on task requirements</strategy>
+      <strategy name="ROLE_BASED">Assignment based on agent capabilities and roles</strategy>
+    </team_strategies>
+  </teams_api>
+
+  <pipelines_api>
+    <overview>
+      Pipelines orchestrate complex workflows with intelligent optimization, error recovery,
+      and performance monitoring. They support conditional logic, parallel execution, and adaptive routing.
+    </overview>
+
+    <pipeline_creation>
+      <basic_pipeline>
+        <![CDATA[
+const pipeline = await symphony.pipeline.create({
+  name: 'DataProcessingPipeline',
+  description: 'End-to-end data processing workflow',
+  version: '1.0.0',
+  
+  steps: [
+    {
+      id: 'data_ingestion',
+      name: 'Data Ingestion',
+      type: 'tool',
+      tool: 'webSearch',
+      inputs: { query: 'market_data' },
+      outputs: { raw_data: 'result' }
+    },
+    {
+      id: 'data_validation',
+      name: 'Data Validation',
+      type: 'tool',
+      tool: 'customValidator',
+      inputs: { data: 'data_ingestion.raw_data' },
+      dependencies: ['data_ingestion'],
+      continueOnError: false
+    },
+    {
+      id: 'parallel_processing',
+      name: 'Parallel Analysis',
+      type: 'parallel',
+      parallel: {
+        steps: ['sentiment_analysis', 'trend_analysis'],
+        waitForAll: true
+      }
+    },
+    {
+      id: 'sentiment_analysis',
+      name: 'Sentiment Analysis',
+      type: 'tool',
+      tool: 'sentimentAnalyzer',
+      inputs: { data: 'data_validation.result' },
+      dependencies: ['data_validation']
+    },
+    {
+      id: 'trend_analysis',
+      name: 'Trend Analysis',
+      type: 'tool',
+      tool: 'trendAnalyzer',
+      inputs: { data: 'data_validation.result' },
+      dependencies: ['data_validation']
+    },
+    {
+      id: 'report_generation',
+      name: 'Report Generation',
+      type: 'tool',
+      tool: 'writeFile',
+      inputs: {
+        content: 'parallel_processing.combined_results'
+      },
+      outputs: { report_path: 'result' },
+      dependencies: ['parallel_processing']
+    }
+  ],
+  
+  variables: {
+    output_format: 'json',
+    quality_threshold: 0.8
+  },
+  
+  errorHandling: {
+    strategy: 'retry',
+    maxGlobalRetries: 3,
+    fallbackPipeline: 'basic_processing'
+  },
+  
+  concurrency: {
+    maxParallelSteps: 5,
+    resourceLimits: { memory: 1024, cpu: 80 }
+  },
+  
+  metrics: {
+    enabled: true,
+    detailed: true,
+    trackMemory: true
+  }
+});
+        ]]>
+      </basic_pipeline>
+
+      <conditional_pipeline>
+        <![CDATA[
+const conditionalPipeline = await symphony.pipeline.create({
+  name: 'AdaptiveProcessing',
+  description: 'Pipeline with conditional logic and branching',
+  
+  steps: [
+    {
+      id: 'data_assessment',
+      type: 'tool',
+      tool: 'dataQualityChecker'
+    },
+    {
+      id: 'quality_check',
+      type: 'condition',
+      condition: {
+        expression: 'data_assessment.quality > 0.8',
+        ifTrue: 'advanced_processing',
+        ifFalse: 'basic_processing'
+      }
+    },
+    {
+      id: 'advanced_processing',
+      type: 'chain',
+      chain: advancedProcessingChain,
+      dependencies: ['quality_check']
+    },
+    {
+      id: 'basic_processing',
+      type: 'tool',
+      tool: 'basicProcessor',
+      dependencies: ['quality_check']
+    }
+  ]
+});
+        ]]>
+      </conditional_pipeline>
+    </pipeline_creation>
+
+    <pipeline_execution>
+      <basic_execution>
+        <![CDATA[
+const result = await pipeline.run({
+  input_data: 'raw market data',
+  parameters: { analysis_depth: 'comprehensive' }
+});
+
+if (result.success) {
+  console.log('Pipeline completed successfully');
+  console.log('Output:', result.result.output);
+  console.log('Performance profile:', result.result.performanceProfile);
+} else {
+  console.error('Pipeline failed:', result.error);
+  console.log('Failed steps:', result.metrics.intelligence.bottlenecksIdentified);
+}
+        ]]>
+      </basic_execution>
+
+      <monitoring_execution>
+        <![CDATA[
+const result = await pipeline.run(inputData, {
+  onStepComplete: (step, result) => {
+    console.log(`Step ${step.id} completed:`, result.success);
+    if (result.failureAnalysis) {
+      console.log('Failure analysis:', result.failureAnalysis);
+    }
+  },
+  onMetrics: (metrics) => {
+    console.log('Pipeline metrics:', metrics);
+  },
+  timeout: 300000
+});
+
+// Access advanced pipeline intelligence
+const status = pipeline.executor.getPipelineStatus();
+const optimizations = pipeline.executor.getOptimizationRecommendations();
+const circuitBreakers = pipeline.executor.getCircuitBreakerStatus('step_id');
+        ]]>
+      </monitoring_execution>
+    </pipeline_execution>
+  </pipelines_api>
+
+  <streaming_api>
+    <overview>
+      Streaming provides real-time updates during long-running operations with progress tracking,
+      status updates, and live metrics delivery.
+    </overview>
+
+    <streaming_setup>
+      <![CDATA[
+// Create a stream for real-time updates
+const streamId = symphony.streaming.createStream({
+  type: 'agent',  // 'agent' | 'team' | 'pipeline' | 'tool' | 'chain'
+  context: {
+    id: 'agent-123',
+    name: 'DataAnalyst',
+    description: 'Data analysis operation'
+  },
+  options: {
+    bufferSize: 100,
+    updateInterval: 1000
+  }
+});
+
+// Subscribe to updates
+const unsubscribe = symphony.streaming.subscribe(streamId, (update) => {
+  console.log('Stream update:', {
+    type: update.type,
+    progress: update.progress,
+    status: update.status,
+    data: update.data
+  });
+  
+  if (update.type === 'complete') {
+    console.log('Operation completed!', update.data);
+    unsubscribe();
+  }
+  
+  if (update.type === 'error') {
+    console.error('Operation failed:', update.error);
+    unsubscribe();
+  }
+});
+
+// Update progress during operation
+symphony.streaming.updateProgress(streamId, {
+  progress: 50,
+  status: 'Processing data',
+  data: { processed: 500, total: 1000 }
+});
+
+// Complete the stream
+symphony.streaming.completeStream(streamId, {
+  finalResult: 'Analysis complete',
+  summary: 'Processed 1000 records successfully'
+});
+      ]]>
+    </streaming_setup>
+  </streaming_api>
+
+  <best_practices>
+    <error_handling>
+      <practice>Always check result.success before accessing result.result</practice>
+      <practice>Use try-catch blocks around Symphony operations</practice>
+      <practice>Implement retry logic for transient failures</practice>
+      <practice>Set appropriate timeouts for long-running operations</practice>
+      <practice>Use circuit breaker patterns for external dependencies</practice>
+    </error_handling>
+
+    <performance>
+      <practice>Use tool chaining for related operations to reduce overhead</practice>
+      <practice>Leverage parallel execution where possible (2.1, 2.2, 2.3 pattern)</practice>
+      <practice>Enable caching for expensive operations</practice>
+      <practice>Set reasonable timeouts and resource limits</practice>
+      <practice>Monitor metrics and optimize based on performance profiles</practice>
+    </performance>
+
+    <agent_design>
+      <practice>Be specific with agent descriptions and tasks</practice>
+      <practice>Choose appropriate tools for agent capabilities</practice>
+      <practice>Use directives for consistent personality/behavior</practice>
+      <practice>Set reasonable maxCalls limits to prevent runaway execution</practice>
+      <practice>Test agents with various input types and edge cases</practice>
+    </agent_design>
+
+    <team_coordination>
+      <practice>Define clear capabilities for each team member</practice>
+      <practice>Use appropriate execution strategies for task types</practice>
+      <practice>Implement proper delegation logic for complex workflows</practice>
+      <practice>Monitor team performance and adjust strategies</practice>
+      <practice>Ensure agents have complementary skill sets</practice>
+    </team_coordination>
+
+    <debugging>
+      <practice>Enable detailed logging during development</practice>
+      <practice>Use streaming for real-time visibility into operations</practice>
+      <practice>Check agent executor logs for tool selection insights</practice>
+      <practice>Validate tool chain dependencies and input mappings</practice>
+      <practice>Test individual components before complex integrations</practice>
+    </debugging>
+  </best_practices>
+
+  <common_patterns>
+    <pattern name="Research and Report">
+      <description>Agent searches web, analyzes findings, generates report</description>
+      <tools>['webSearch', 'ponder', 'writeFile']</tools>
+      <workflow>Search → Analyze → Document</workflow>
+    </pattern>
+
+    <pattern name="Data Pipeline">
+      <description>Ingest, validate, process, and output data</description>
+      <tools>['readFile', 'customValidator', 'dataProcessor', 'writeFile']</tools>
+      <workflow>Ingest → Validate → Process → Output</workflow>
+    </pattern>
+
+    <pattern name="Multi-Agent Analysis">
+      <description>Team of specialists analyze different aspects</description>
+      <agents>['DataAnalyst', 'TrendAnalyst', 'ReportWriter']</agents>
+      <workflow>Parallel Analysis → Synthesis → Documentation</workflow>
+    </pattern>
+
+    <pattern name="Conditional Processing">
+      <description>Different processing paths based on data quality</description>
+      <logic>Quality Check → Route to Advanced/Basic → Final Processing</logic>
+      <tools>['qualityChecker', 'advancedProcessor', 'basicProcessor']</tools>
+    </pattern>
+  </common_patterns>
+
+  <troubleshooting>
+    <issue name="Tools not found">
+      <symptom>Agent reports "No available tools"</symptom>
+      <solution>Ensure tools are registered and spelled correctly in agent config</solution>
+    </issue>
+
+    <issue name="Chain execution fails">
+      <symptom>Tool chain stops mid-execution</symptom>
+      <solution>Check dependency order, input mappings, and tool availability</solution>
+    </issue>
+
+    <issue name="Agent gives generic responses">
+      <symptom>Agent doesn't use tools or follow directives</symptom>
+      <solution>Check LLM configuration, directives format, and tool descriptions</solution>
+    </issue>
+
+    <issue name="Performance issues">
+      <symptom>Slow execution or timeouts</symptom>
+      <solution>Enable parallel execution, optimize tool chains, check resource limits</solution>
+    </issue>
+
+    <issue name="Team coordination problems">
+      <symptom>Agents don't collaborate effectively</symptom>
+      <solution>Review delegation strategy, agent capabilities, and execution strategy</solution>
+    </issue>
+  </troubleshooting>
+
+  <code_templates>
+    <template name="Complete Agent Setup">
+      <![CDATA[
+import { Symphony } from 'symphonic';
+
+async function createIntelligentAgent() {
+  const symphony = new Symphony({
+    llm: {
+      model: 'gpt-4o-mini',
+      apiKey: process.env.OPENAI_API_KEY,
+      temperature: 0.7
+    },
+    db: { enabled: true, adapter: 'sqlite', path: './app.db' }
+  });
+
+  await symphony.initialize();
+
+  const agent = await symphony.agent.create({
+    name: 'ResearchAssistant',
+    description: 'Intelligent research and analysis assistant',
+    task: 'Research topics and provide comprehensive analysis',
+    tools: ['webSearch', 'ponder', 'writeFile', 'parseDocument'],
+    llm: { model: 'gpt-4o-mini' },
+    directives: `You are a professional research analyst with expertise in:
+      - Comprehensive web research and source verification
+      - Critical analysis and synthesis of information
+      - Clear, structured reporting with actionable insights
+      Maintain objectivity and cite sources when possible.`,
+    maxCalls: 15,
+    timeout: 120000
+  });
+
+  return agent;
+}
+      ]]>
+    </template>
+
+    <template name="Team Collaboration">
+      <![CDATA[
+async function createResearchTeam(symphony) {
+  const team = await symphony.team.create({
+    name: 'ResearchTeam',
+    description: 'Collaborative research and documentation team',
+    agents: [
+      {
+        name: 'Researcher',
+        description: 'Web research specialist',
+        task: 'Conduct thorough research on assigned topics',
+        tools: ['webSearch', 'parseDocument'],
+        llm: { model: 'gpt-4o-mini' },
+        directives: 'Focus on finding authoritative sources and recent information.'
+      },
+      {
+        name: 'Analyst',
+        description: 'Data analysis specialist',
+        task: 'Analyze research findings and identify patterns',
+        tools: ['ponder', 'dataAnalyzer'],
+        llm: { model: 'gpt-4o-mini' },
+        directives: 'Provide deep analytical insights and identify trends.'
+      },
+      {
+        name: 'Writer',
+        description: 'Technical documentation specialist',
+        task: 'Create clear, comprehensive reports',
+        tools: ['writeFile', 'ponder'],
+        llm: { model: 'gpt-4o-mini' },
+        directives: 'Write clear, well-structured documents with executive summaries.'
+      }
+    ],
+    strategy: {
+      name: 'Research Workflow',
+      coordinationRules: {
+        maxParallelTasks: 2,
+        taskTimeout: 180000
+      }
+    }
+  });
+
+  return team;
+}
+      ]]>
+    </template>
+
+    <template name="Advanced Pipeline">
+      <![CDATA[
+async function createDataPipeline(symphony) {
+  const pipeline = await symphony.pipeline.create({
+    name: 'IntelligentDataPipeline',
+    description: 'AI-powered data processing with adaptive routing',
+    
+    steps: [
+      {
+        id: 'ingestion',
+        name: 'Data Ingestion',
+        type: 'tool',
+        tool: 'dataIngester',
+        retryPolicy: { maxRetries: 3, backoffMs: 1000 }
+      },
+      {
+        id: 'quality_assessment',
+        name: 'Quality Assessment',
+        type: 'tool',
+        tool: 'qualityAnalyzer',
+        dependencies: ['ingestion']
+      },
+      {
+        id: 'routing_decision',
+        name: 'Processing Route Decision',
+        type: 'condition',
+        condition: {
+          expression: 'quality_assessment.score > 0.8',
+          ifTrue: 'advanced_processing',
+          ifFalse: 'standard_processing'
+        }
+      },
+      {
+        id: 'advanced_processing',
+        name: 'Advanced AI Processing',
+        type: 'parallel',
+        parallel: {
+          steps: ['ml_analysis', 'nlp_processing', 'pattern_detection'],
+          waitForAll: true
+        }
+      },
+      {
+        id: 'standard_processing',
+        name: 'Standard Processing',
+        type: 'tool',
+        tool: 'standardProcessor',
+        dependencies: ['routing_decision']
+      },
+      {
+        id: 'output_generation',
+        name: 'Generate Final Output',
+        type: 'tool',
+        tool: 'outputGenerator',
+        dependencies: ['advanced_processing', 'standard_processing']
+      }
+    ],
+    
+    errorHandling: {
+      strategy: 'fallback',
+      fallbackPipeline: 'basic_pipeline'
+    },
+    
+    metrics: { enabled: true, detailed: true }
+  });
+
+  return pipeline;
+}
+      ]]>
+    </template>
+  </code_templates>
+
+  <version_info>
+    <current_version>0.3.5</current_version>
+    <key_features>
+      <feature version="0.3.0">Improved chaining API with 'chained' field</feature>
+      <feature version="0.2.0">Agent directives for custom personalities</feature>
+      <feature version="0.1.0">Core tools, agents, teams, and pipelines</feature>
+    </key_features>
+    <compatibility>
+      <node_version>>=18.0.0</node_version>
+      <typescript>^5.7.2</typescript>
+    </compatibility>
+  </version_info>
+
+</symphony_sdk_reference>
