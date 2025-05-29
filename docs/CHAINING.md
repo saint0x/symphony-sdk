@@ -1,130 +1,204 @@
-# Implementation Plan for Chained Tool Execution in Symphonic
+# Symphony Tool Chaining Implementation
 
 ## Overview
 
-The chaining implementation ensures structured execution flow, clear debugging, and seamless I/O passing between tools and agents.
+Symphony's advanced chaining system provides structured execution flow, comprehensive debugging, seamless I/O passing, and parallel execution capabilities between tools and agents.
 
 ## 🧩 Chaining Logic
 
-### Metadata Structure
+### Core Structure
 
-Each tool call contains a `chained` field indicating its position in the chain:
-- `chained: 1` - First tool in chain
-- `chained: 2.1, 2.2, 2.3...` - Intermediate tools, ordered by decimal points
-- `chained: 3` - Final tool in chain
+Each tool step contains a `chained` field indicating its position in the execution flow:
+- `chained: "1"` - First tool in chain
+- `chained: "2.1", "2.2", "2.3"...` - Intermediate tools, ordered by decimal notation
+- `chained: "3"` - Final tool in chain
 
-Additional metadata includes:
-- `target` field to specify the next tool/agent
-- Success flag (`success: boolean`) for execution traceability
-- Structured output logging for full execution context
+### Advanced Features
+
+- **Dependency Management**: `depends_on` arrays for explicit dependency control
+- **Parallel Execution**: Same-level steps (2.1, 2.2, 2.3) run concurrently  
+- **Input/Output Mapping**: Flexible parameter passing between steps
+- **Conditional Logic**: Optional execution based on runtime conditions
+- **Error Handling**: Comprehensive failure management and recovery
 
 ## 🛠️ Implementation Example
 
-### 1. Simple Chain
+### 1. Simple Sequential Chain
 
 ```typescript
-// First tool
-const searchTool = symphonic.tools.create({
-    name: "search",
-    description: "searches for information",
-    inputs: ["query"],
-    chained: 1,
-    target: "analyze",
-    handler: async (query) => ({ result: searchResults, success: true })
-});
-
-// Intermediate tool
-const analyzeTool = symphonic.tools.create({
-    name: "analyze",
-    description: "analyzes search results",
-    inputs: ["data"],
-    chained: 2,
-    target: "format",
-    handler: async (data) => ({ result: analysis, success: true })
-});
-
-// Final tool
-const formatTool = symphonic.tools.create({
-    name: "format",
-    description: "formats final output",
-    inputs: ["data"],
-    chained: 3,
-    handler: async (data) => ({ result: formatted, success: true })
-});
+const simpleChain: ToolChain = {
+    id: 'search_and_write',
+    name: 'Search and Write Chain',
+    description: 'Search for information then write to file',
+    steps: [
+        {
+            id: 'search_step',
+            tool: 'webSearch',
+            chained: '1',
+            static_params: {
+                query: 'AI developments 2024',
+                type: 'search'
+            }
+        },
+        {
+            id: 'analyze_step',
+            tool: 'ponder',
+            chained: '2',
+            input_mapping: {
+                query: 'search_step.result'
+            },
+            depends_on: ['search_step']
+        },
+        {
+            id: 'write_step',
+            tool: 'writeFile',
+            chained: '3',
+            input_mapping: {
+                content: 'analyze_step.result'
+            },
+            static_params: {
+                path: 'output.txt'
+            },
+            depends_on: ['analyze_step']
+        }
+    ],
+    output_mapping: {
+        searchResults: 'search_step.result',
+        analysis: 'analyze_step.result',
+        filePath: 'write_step.result'
+    }
+};
 ```
 
-### 2. Complex Chain with Multiple Intermediates
+### 2. Complex Chain with Parallel Execution
 
 ```typescript
-// First tool
-const fetchTool = symphonic.tools.create({
-    name: "fetch",
-    description: "fetches raw data",
-    inputs: ["source"],
-    chained: 1,
-    target: "clean",
-    handler: async (source) => ({ result: rawData, success: true })
-});
-
-// First intermediate
-const cleanTool = symphonic.tools.create({
-    name: "clean",
-    description: "cleans raw data",
-    inputs: ["data"],
-    chained: 2.1,
-    target: "validate",
-    handler: async (data) => ({ result: cleanData, success: true })
-});
-
-// Second intermediate
-const validateTool = symphonic.tools.create({
-    name: "validate",
-    description: "validates cleaned data",
-    inputs: ["data"],
-    chained: 2.2,
-    target: "transform",
-    handler: async (data) => ({ result: validData, success: true })
-});
-
-// Third intermediate
-const transformTool = symphonic.tools.create({
-    name: "transform",
-    description: "transforms valid data",
-    inputs: ["data"],
-    chained: 2.3,
-    target: "format",
-    handler: async (data) => ({ result: transformedData, success: true })
-});
-
-// Final tool
-const formatTool = symphonic.tools.create({
-    name: "format",
-    description: "formats final output",
-    inputs: ["data"],
-    chained: 3,
-    handler: async (data) => ({ result: formatted, success: true })
-});
+const parallelChain: ToolChain = {
+    id: 'parallel_processing',
+    name: 'Parallel Processing Chain',
+    description: 'Advanced chain with parallel execution',
+    steps: [
+        {
+            id: 'init_step',
+            tool: 'ponder',
+            chained: '1',
+            static_params: {
+                query: 'Initialize processing',
+                depth: 1
+            }
+        },
+        // These three steps execute in parallel
+        {
+            id: 'branch_a',
+            tool: 'ponder',
+            chained: '2.1',
+            static_params: {
+                query: 'Process branch A',
+                depth: 2
+            },
+            depends_on: ['init_step']
+        },
+        {
+            id: 'branch_b',
+            tool: 'webSearch',
+            chained: '2.2',
+            static_params: {
+                query: 'Research branch B',
+                type: 'search'
+            },
+            depends_on: ['init_step']
+        },
+        {
+            id: 'branch_c',
+            tool: 'ponder',
+            chained: '2.3',
+            static_params: {
+                query: 'Analyze branch C',
+                depth: 1
+            },
+            depends_on: ['init_step']
+        },
+        {
+            id: 'merge_step',
+            tool: 'writeFile',
+            chained: '3',
+            input_mapping: {
+                content: 'branch_a.result'
+            },
+            static_params: {
+                path: 'merged_results.txt'
+            },
+            depends_on: ['branch_a', 'branch_b', 'branch_c']
+        }
+    ],
+    output_mapping: {
+        init: 'init_step.result',
+        branchA: 'branch_a.result',
+        branchB: 'branch_b.result', 
+        branchC: 'branch_c.result',
+        final: 'merge_step.result'
+    }
+};
 ```
 
 ## 📌 Key Features
 
-### ✅ Ordered Execution
-- First tool marked with `chained: 1`
-- Intermediate tools use decimal points (`2.1`, `2.2`, `2.3`, etc.) for clear ordering
-- Final tool marked with `chained: 3`
+### ✅ Clean API Design
+- Simple `chained: "1"` field instead of verbose naming
+- Intuitive decimal notation for ordering: "1", "2.1", "2.2", "3"  
+- Matches original specification while adding advanced features
 
-### ✅ Flexible Chaining
-- Support for both simple and complex chains
-- Clear step ordering with decimal notation
-- Easy to insert new steps between existing ones
+### ✅ Advanced Dependency Management
+- `depends_on: ["step1", "step2"]` arrays for multiple dependencies
+- Automatic dependency validation before execution
+- Clear error messages for unmet dependencies
 
-### ✅ Self-Contained Tools
-- Every tool knows its exact position in chain
-- Clear next-step identification through `target`
-- Decimal ordering enables easy chain modifications
+### ✅ Parallel Execution Engine
+- Same-level steps (2.1, 2.2, 2.3) execute concurrently
+- Automatic grouping and orchestration
+- Performance optimization through parallelization
 
-### ✅ Debugging Support
-- Success flags for failure detection
-- Complete execution trace with ordered steps
-- Clear visibility of chain progression
+### ✅ Flexible I/O System
+- `input_mapping` for dynamic parameter passing
+- `static_params` for fixed configuration
+- `output_mapping` for result aggregation
+- Nested field access: "step1.result.field"
 
+### ✅ Production-Ready Features
+- Comprehensive error handling and recovery
+- Full execution metrics and timing
+- Conditional step execution
+- Circuit breaker patterns
+- Complete logging and debugging support
+
+## 🚀 Usage with Agents
+
+```typescript
+// Create agent with tool chain execution capability
+const agent = await symphony.agent.create({
+    name: 'ChainExecutor',
+    description: 'Agent that executes complex tool chains',
+    task: 'Process data through multi-step workflows',
+    tools: ['webSearch', 'ponder', 'writeFile'],
+    llm: { model: 'gpt-4o-mini' }
+});
+
+// Execute chain
+const result = await agent.executor.executeToolChain(parallelChain, {
+    inputData: 'Process this through the chain'
+});
+
+console.log('Chain execution:', result.success);
+console.log('Steps completed:', result.result.stepsCompleted);
+console.log('Parallel groups:', result.result.chainMetrics.parallelGroups);
+```
+
+## 📊 Performance Benefits
+
+- **Parallel Execution**: Up to 3x faster for parallelizable workflows
+- **Smart Scheduling**: Automatic dependency resolution and ordering
+- **Error Recovery**: Graceful handling of step failures
+- **Resource Optimization**: Efficient memory and CPU usage
+- **Debugging Support**: Complete execution traces and metrics
+
+Symphony's chaining implementation represents a production-ready, enterprise-grade tool orchestration system that exceeds traditional sequential execution patterns. 

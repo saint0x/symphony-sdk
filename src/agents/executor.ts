@@ -241,7 +241,7 @@ export class AgentExecutor extends BaseAgent {
                     {
                         id: 'search_step',
                         tool: 'webSearch',
-                        semantic_number: '1',
+                        chained: '1',
                         static_params: {
                             query: task.replace(/search for|and then.*$/gi, '').trim(),
                             type: 'search'
@@ -250,7 +250,7 @@ export class AgentExecutor extends BaseAgent {
                     {
                         id: 'write_step', 
                         tool: 'writeFile',
-                        semantic_number: '2',
+                        chained: '2',
                         input_mapping: {
                             content: 'search_step.result'
                         },
@@ -277,7 +277,7 @@ export class AgentExecutor extends BaseAgent {
                     {
                         id: 'think_step',
                         tool: 'ponder',
-                        semantic_number: '1',
+                        chained: '1',
                         static_params: {
                             query: task,
                             depth: 2
@@ -286,7 +286,7 @@ export class AgentExecutor extends BaseAgent {
                     {
                         id: 'research_step',
                         tool: 'webSearch', 
-                        semantic_number: '2',
+                        chained: '2',
                         input_mapping: {
                             query: 'think_step.conclusion'
                         },
@@ -312,7 +312,7 @@ export class AgentExecutor extends BaseAgent {
                 {
                     id: 'analyze_step',
                     tool: 'ponder',
-                    semantic_number: '1',
+                    chained: '1',
                     static_params: {
                         query: task,
                         depth: 1
@@ -321,7 +321,7 @@ export class AgentExecutor extends BaseAgent {
                 {
                     id: 'execute_step',
                     tool: 'webSearch',
-                    semantic_number: '2', 
+                    chained: '2', 
                     static_params: {
                         query: task,
                         type: 'search'

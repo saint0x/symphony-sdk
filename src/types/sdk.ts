@@ -433,7 +433,7 @@ export interface ToolEventHandler {
 export interface ToolChainStep {
     id: string;
     tool: string;
-    semantic_number: string; // e.g., "1", "2.1", "2.2", "3"
+    chained: string; // e.g., "1", "2.1", "2.2", "3"
     input_mapping?: Record<string, string>; // Maps input params to previous step outputs
     static_params?: Record<string, any>; // Static parameters for this step
     condition?: (context: ChainContext) => boolean; // Optional conditional execution

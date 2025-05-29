@@ -139,13 +139,13 @@ export class ChainExecutor {
 
     private sortStepsBySemanticNumber(steps: ToolChainStep[]): ToolChainStep[] {
         return steps.sort((a, b) => {
-            // Parse semantic numbers (e.g., "1", "2.1", "2.2", "3")
-            const parseSemanticNumber = (num: string): number[] => {
+            // Parse chained numbers (e.g., "1", "2.1", "2.2", "3")
+            const parseChainedNumber = (num: string): number[] => {
                 return num.split('.').map(n => parseInt(n, 10));
             };
 
-            const aNumbers = parseSemanticNumber(a.semantic_number);
-            const bNumbers = parseSemanticNumber(b.semantic_number);
+            const aNumbers = parseChainedNumber(a.chained);
+            const bNumbers = parseChainedNumber(b.chained);
 
             // Compare each level
             for (let i = 0; i < Math.max(aNumbers.length, bNumbers.length); i++) {
@@ -165,7 +165,7 @@ export class ChainExecutor {
         let currentLevel = '';
 
         for (const step of steps) {
-            const level = step.semantic_number.split('.')[0];
+            const level = step.chained.split('.')[0];
             
             if (level !== currentLevel) {
                 if (currentGroup.length > 0) {
@@ -198,7 +198,7 @@ export class ChainExecutor {
             // Parallel execution
             this.logger.info('ChainExecutor', `Executing ${group.length} steps in parallel`, {
                 stepIds: group.map(s => s.id),
-                semanticNumbers: group.map(s => s.semantic_number)
+                chainedNumbers: group.map(s => s.chained)
             });
 
             const promises = group.map(async (step) => {
@@ -231,7 +231,7 @@ export class ChainExecutor {
         
         this.logger.info('ChainExecutor', `Executing step: ${step.id}`, {
             tool: step.tool,
-            semanticNumber: step.semantic_number,
+            chainedNumber: step.chained,
             executionId: context.executionId
         });
 

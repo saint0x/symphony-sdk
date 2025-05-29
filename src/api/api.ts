@@ -686,7 +686,7 @@ export interface ToolChain {
 export interface ToolChainStep {
   id: string;
   tool: string;
-  semantic_number: string; // e.g., "1", "2.1", "2.2", "3"
+  chained: string; // e.g., "1", "2.1", "2.2", "3"
   input_mapping?: Record<string, string>;
   static_params?: Record<string, any>;
   condition?: (context: ChainContext) => boolean;
