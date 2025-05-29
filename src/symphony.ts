@@ -4,7 +4,7 @@ import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
 import { AgentExecutor } from './agents/executor';
 import { TeamCoordinator } from './teams/coordinator';
-import { PipelineExecutor, PipelineDefinition } from './pipelines/pipeline-executor';
+import { PipelineExecutor, PipelineDefinition } from './pipelines/executor';
 import { DatabaseService } from './db/service';
 import { IDatabaseService } from './db/types';
 import { 

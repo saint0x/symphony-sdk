@@ -443,7 +443,7 @@ export class MemoryService {
             // Get unique sessions and namespaces
             const allEntries = [...shortTermEntries, ...longTermEntries];
             const sessions = new Set(allEntries.map(e => e.sessionId).filter(Boolean)).size;
-            const namespaces = Array.from(new Set(allEntries.map(e => e.namespace).filter(Boolean)));
+            const namespaces = Array.from(new Set(allEntries.map(e => e.namespace).filter((ns): ns is string => ns !== undefined && ns !== null)));
 
             return {
                 shortTerm: {

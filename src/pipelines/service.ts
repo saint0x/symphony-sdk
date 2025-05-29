@@ -6,7 +6,7 @@
  */
 
 import { Logger } from '../utils/logger';
-import { PipelineStepDefinition, PipelineContext, PipelineStepResult } from './pipeline-executor';
+import { PipelineStepDefinition, PipelineContext, PipelineStepResult } from './executor';
 
 // === ERROR RECOVERY INTERFACES ===
 
@@ -457,7 +457,7 @@ export class PipelineIntelligence {
     });
   }
 
-  async generatePerformanceProfile(pipelineId: string, context: PipelineContext): Promise<PipelinePerformanceProfile> {
+  async generatePerformanceProfile(pipelineId: string, _context: PipelineContext): Promise<PipelinePerformanceProfile> {
     const stepMetrics = this.performanceHistory.get(pipelineId) || [];
     const totalDuration = stepMetrics.reduce((sum, m) => sum + m.duration, 0);
 
@@ -615,7 +615,7 @@ export class PipelineIntelligence {
     };
   }
 
-  private async identifyBottleneckFactors(stepId: string, duration: number): Promise<string[]> {
+  private async identifyBottleneckFactors(_stepId: string, duration: number): Promise<string[]> {
     const factors: string[] = [];
     
     if (duration > 10000) factors.push('long_duration');

@@ -2,7 +2,10 @@ import { PipelineResult, PipelineStepResult } from '../types/sdk';
 import { Logger } from '../utils/logger';
 import { ChainExecutor, ToolChain } from '../tools/executor';
 import { ToolRegistry } from '../tools/standard/registry';
-import { PipelineIntelligence, PipelinePerformanceProfile, OptimizationRecommendation } from './pipeline-intelligence';
+import { PipelineIntelligence, PipelinePerformanceProfile, OptimizationRecommendation } from './service';
+
+// Re-export PipelineStepResult for use by other pipeline modules
+export type { PipelineStepResult };
 
 export interface PipelineContext {
   pipelineId: string;

@@ -264,7 +264,7 @@ All insights discovered: ${Array.from(emergentInsights).join('; ')}
 
 Synthesize a comprehensive conclusion that:
 1. Identifies key patterns and insights
-2. Explores systemic implications  
+2. Explores systemic implications
 3. Acknowledges uncertainties
 4. Suggests next steps
 ${THOUGHT_TAGS.END}

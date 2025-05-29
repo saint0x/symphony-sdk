@@ -954,7 +954,6 @@ export class TeamCoordinator {
     riskFactors: string[];
   } {
     const idleMembers = members.filter(m => m.status === 'idle').length;
-    const totalMembers = members.length;
     const averageEfficiency = members.reduce((sum, m) => sum + m.efficiency, 0) / members.length;
 
     // Recommend strategy based on team state
