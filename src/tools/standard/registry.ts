@@ -7,7 +7,7 @@ export class ToolRegistry {
     private tools: Map<string, ToolConfig> = new Map();
     private logger: Logger;
 
-    private constructor() {
+    constructor() {
         this.logger = Logger.getInstance('ToolRegistry');
         this.initializeStandardTools();
     }

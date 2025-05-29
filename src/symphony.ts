@@ -16,10 +16,16 @@ import {
 import { MemoryService, MemoryConfig, MemoryEntry, MemoryQuery, MemoryStats, AggregationResult } from './memory/service';
 import { LegacyMemory, Memory } from './memory/index';
 import { StreamingService, StreamingConfig, ProgressUpdate, StreamOptions, StreamingStats } from './streaming/service';
+import { ToolRegistry } from './tools/standard/registry';
 
 // Simple service interfaces
 interface IToolService {
     create(config: any): Promise<any>;
+    execute(toolName: string, params: any): Promise<any>;
+    getAvailable(): string[];
+    getInfo(toolName: string): any;
+    register(name: string, tool: any): void;
+    get registry(): ToolRegistry;
     initialize(): Promise<void>;
 }
 
@@ -122,15 +128,67 @@ interface IStreamingService {
 
 // Simple implementations
 class SimpleToolService implements IToolService {
+    private toolRegistry: ToolRegistry;
+    private logger: Logger;
+
+    constructor(toolRegistry: ToolRegistry) {
+        this.toolRegistry = toolRegistry;
+        this.logger = Logger.getInstance('SimpleToolService');
+    }
+
     async create(config: any): Promise<any> {
-        return {
+        this.logger.info('SimpleToolService', `Creating tool: ${config.name}`);
+        
+        // Create the tool
+        const tool = {
             name: config.name,
-            run: config.handler || (() => Promise.resolve({ success: true, result: null }))
+            run: config.handler || (() => Promise.resolve({ success: true, result: null })),
+            config: config
         };
+
+        // Auto-register the tool in the registry
+        this.toolRegistry.registerTool(config.name, {
+            name: config.name,
+            description: config.description || '',
+            type: config.type || 'custom',
+            config: {
+                handler: config.handler,
+                inputs: config.inputs || [],
+                outputs: config.outputs || [],
+                timeout: config.timeout,
+                retry: config.retry,
+                cache: config.cache
+            }
+        });
+
+        this.logger.info('SimpleToolService', `Tool created and registered: ${config.name}`);
+        return tool;
+    }
+
+    async execute(toolName: string, params: any): Promise<any> {
+        this.logger.info('SimpleToolService', `Executing tool: ${toolName}`, { params });
+        return await this.toolRegistry.executeTool(toolName, params);
+    }
+
+    getAvailable(): string[] {
+        return this.toolRegistry.getAvailableTools();
+    }
+
+    getInfo(toolName: string): any {
+        return this.toolRegistry.getToolInfo(toolName);
+    }
+
+    register(name: string, tool: any): void {
+        this.logger.info('SimpleToolService', `Registering tool: ${name}`);
+        this.toolRegistry.registerTool(name, tool);
     }
     
     async initialize(): Promise<void> {
-        // Simple initialization
+        this.logger.info('SimpleToolService', 'Tool service initialized');
+    }
+
+    get registry(): ToolRegistry {
+        return this.toolRegistry;
     }
 }
 
@@ -141,6 +199,8 @@ class SimpleAgentService implements IAgentService {
         
         return {
             name: config.name,
+            capabilities: config.capabilities,
+            tools: config.tools,
             run: async (task: string) => {
                 // Use the AgentExecutor's executeTask method which includes LLM integration
                 return await agentExecutor.executeTask(task);
@@ -1000,7 +1060,7 @@ export class Symphony implements Partial<ISymphony> {
         this._streamingService = new StreamingServiceWrapper();
         
         // Initialize services
-        this.tool = new SimpleToolService();
+        this.tool = new SimpleToolService(new ToolRegistry());
         this.agent = new SimpleAgentService();
         this.team = new EnhancedTeamService();
         this.pipeline = new EnhancedPipelineService();
