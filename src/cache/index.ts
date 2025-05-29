@@ -1,128 +1,204 @@
-interface CacheEntry {
+import { Logger } from '../utils/logger';
+import { IDatabaseService, SetOptions } from '../db/types';
+
+// Legacy cache interface for backward compatibility
+export interface CacheEntry {
+    key: string;
     value: any;
-    expiry: number;
+    timestamp: number;
+    ttl?: number;
+    namespace?: string;
 }
 
-interface CacheConfig {
-    maxSize?: number;
+export interface CacheOptions {
     defaultTTL?: number;
+    maxSize?: number;
+    cleanupInterval?: number;
 }
 
-class Cache {
-    private static instance: Cache;
-    private store: Map<string, CacheEntry>;
-    private maxSize: number;
-    private defaultTTL: number;
+// Legacy cache implementation - now delegates to database service
+export class Cache {
+    private logger: Logger;
+    private database?: IDatabaseService;
+    private options: CacheOptions;
 
-    private constructor(config: CacheConfig = {}) {
-        this.store = new Map();
-        this.maxSize = config.maxSize || 1000;
-        this.defaultTTL = config.defaultTTL || 3600; // 1 hour default
-        this.startCleanupInterval();
+    constructor(options: CacheOptions = {}) {
+        this.logger = Logger.getInstance('Cache');
+        this.options = {
+            defaultTTL: options.defaultTTL || 300000, // 5 minutes
+            maxSize: options.maxSize || 1000,
+            cleanupInterval: options.cleanupInterval || 60000, // 1 minute
+            ...options
+        };
     }
 
-    static getInstance(config?: CacheConfig): Cache {
-        if (!Cache.instance) {
-            Cache.instance = new Cache(config);
-        }
-        return Cache.instance;
+    setDatabase(database: IDatabaseService): void {
+        this.database = database;
     }
 
-    private startCleanupInterval() {
-        setInterval(() => {
-            this.cleanup();
-        }, 60000); // Clean up every minute
-    }
-
-    private cleanup() {
-        const now = Date.now();
-        for (const [key, entry] of this.store.entries()) {
-            if (entry.expiry <= now) {
-                this.store.delete(key);
-            }
-        }
-    }
-
-    private enforceMaxSize() {
-        if (this.store.size > this.maxSize) {
-            // Remove oldest entries
-            const entriesToRemove = this.store.size - this.maxSize;
-            const entries = Array.from(this.store.entries());
-            entries
-                .sort((a, b) => a[1].expiry - b[1].expiry)
-                .slice(0, entriesToRemove)
-                .forEach(([key]) => this.store.delete(key));
-        }
-    }
-
-    async get(key: string): Promise<any | null> {
-        const entry = this.store.get(key);
-        if (!entry) return null;
-
-        if (entry.expiry <= Date.now()) {
-            this.store.delete(key);
+    async get(key: string, namespace?: string): Promise<any> {
+        if (!this.database) {
+            this.logger.warn('Cache', 'Database service not available, cache get failed', { key });
             return null;
         }
 
-        return entry.value;
+        try {
+            return await this.database.get(key, namespace);
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to get cache entry', { error, key, namespace });
+            return null;
+        }
     }
 
-    async set(key: string, value: any, ttl?: number): Promise<void> {
-        const expiry = Date.now() + (ttl || this.defaultTTL) * 1000;
-        this.store.set(key, { value, expiry });
-        this.enforceMaxSize();
+    async set(key: string, value: any, ttl?: number, namespace?: string): Promise<void> {
+        if (!this.database) {
+            this.logger.warn('Cache', 'Database service not available, cache set failed', { key });
+            return;
+        }
+
+        try {
+            const options: SetOptions = {
+                ttl: ttl ? Math.floor(ttl / 1000) : Math.floor((this.options.defaultTTL || 300000) / 1000), // Convert ms to seconds
+                namespace
+            };
+            await this.database.set(key, value, options);
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to set cache entry', { error, key, namespace });
+        }
     }
 
-    async delete(key: string): Promise<boolean> {
-        return this.store.delete(key);
+    async delete(key: string, namespace?: string): Promise<void> {
+        if (!this.database) {
+            this.logger.warn('Cache', 'Database service not available, cache delete failed', { key });
+            return;
+        }
+
+        try {
+            await this.database.delete(key, namespace);
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to delete cache entry', { error, key, namespace });
+        }
     }
 
-    async clear(): Promise<void> {
-        this.store.clear();
-    }
-
-    async has(key: string): Promise<boolean> {
-        const entry = this.store.get(key);
-        if (!entry) return false;
-        if (entry.expiry <= Date.now()) {
-            this.store.delete(key);
+    async has(key: string, namespace?: string): Promise<boolean> {
+        if (!this.database) {
             return false;
         }
-        return true;
+
+        try {
+            const value = await this.database.get(key, namespace);
+            return value !== null;
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to check cache entry', { error, key, namespace });
+            return false;
+        }
     }
 
-    async size(): Promise<number> {
-        return this.store.size;
+    async clear(namespace?: string): Promise<void> {
+        if (!this.database) {
+            this.logger.warn('Cache', 'Database service not available, cache clear failed');
+            return;
+        }
+
+        try {
+            // Since IDatabaseService doesn't have a clear method, we'll use find + delete
+            const pattern = namespace ? `${namespace}:*` : '*';
+            const entries = await this.database.find(pattern, {}, namespace);
+            
+            for (const entry of entries) {
+                if (entry.key) {
+                    await this.database.delete(entry.key, namespace);
+                }
+            }
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to clear cache', { error, namespace });
+        }
     }
 
-    async keys(): Promise<string[]> {
-        return Array.from(this.store.keys());
+    async size(namespace?: string): Promise<number> {
+        if (!this.database) {
+            return 0;
+        }
+
+        try {
+            // Since IDatabaseService doesn't have a size method, we'll use find to count
+            const pattern = namespace ? `${namespace}:*` : '*';
+            const entries = await this.database.find(pattern, {}, namespace);
+            return entries.length;
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to get cache size', { error, namespace });
+            return 0;
+        }
     }
 
-    async ttl(key: string): Promise<number | null> {
-        const entry = this.store.get(key);
-        if (!entry) return null;
-        const ttl = entry.expiry - Date.now();
-        return ttl > 0 ? Math.floor(ttl / 1000) : null;
+    async keys(namespace?: string): Promise<string[]> {
+        if (!this.database) {
+            return [];
+        }
+
+        try {
+            // Since IDatabaseService doesn't have a keys method, we'll use find to get keys
+            const pattern = namespace ? `${namespace}:*` : '*';
+            const entries = await this.database.find(pattern, {}, namespace);
+            return entries.map(entry => entry.key).filter(Boolean);
+        } catch (error) {
+            this.logger.error('Cache', 'Failed to get cache keys', { error, namespace });
+            return [];
+        }
+    }
+
+    getStats() {
+        return {
+            options: this.options,
+            databaseConnected: !!this.database
+        };
     }
 }
 
-let cacheInstance: Cache | null = null;
+// Export new cache intelligence services
+export { CommandMapProcessor } from './command-map-processor';
+export { ContextTreeBuilder } from './context-tree-builder';
+export { CacheIntelligenceService } from './cache-intelligence-service';
 
-export function getCache(config?: CacheConfig): Cache {
-    if (!cacheInstance) {
-        cacheInstance = Cache.getInstance(config);
+// Export types
+export type {
+    Variable,
+    Pattern,
+    PatternMatch,
+    CacheResult
+} from './command-map-processor';
+
+export type {
+    ContextNode,
+    ContextTree,
+    ContextQuery
+} from './context-tree-builder';
+
+export type {
+    IntelligenceOptions,
+    IntelligenceResult,
+    SessionIntelligence
+} from './cache-intelligence-service';
+
+// Backward compatibility function
+let globalCache: Cache | null = null;
+
+export function getCache(options?: CacheOptions): Cache {
+    if (!globalCache) {
+        globalCache = new Cache(options);
     }
-    return cacheInstance;
+    return globalCache;
 }
 
 export function clearCache(): void {
-    if (cacheInstance) {
-        cacheInstance.clear();
+    if (globalCache) {
+        globalCache.clear();
     }
 }
 
+// Export default object for backward compatibility
 export default {
     getCache,
-    clearCache
+    clearCache,
+    Cache
 }; 

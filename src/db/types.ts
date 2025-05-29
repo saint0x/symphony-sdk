@@ -188,6 +188,21 @@ export interface IDatabaseService {
   
   // Raw access (escape hatch)
   raw?(sql: string, params?: any[]): Promise<any[]>;
+  
+  // Cache Intelligence Methods
+  getXMLPatterns(activeOnly?: boolean): Promise<XMLPattern[]>;
+  saveXMLPattern(pattern: Omit<XMLPattern, 'id'>): Promise<void>;
+  updatePatternConfidence(patternId: string, newConfidence: number): Promise<void>;
+  recordPatternExecution(execution: PatternExecution): Promise<void>;
+  
+  // Session and Context Methods
+  getSessionContext(sessionId: string): Promise<SessionContext | null>;
+  getToolExecutions(sessionId: string, limit?: number): Promise<ToolExecution[]>;
+  getWorkflowExecutions(sessionId: string): Promise<any[]>;
+  recordToolExecution(execution: Omit<ToolExecution, 'id'>): Promise<void>;
+  
+  // Health check for cache intelligence
+  healthCheck(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; [key: string]: any }>;
 }
 
 export interface DatabaseHealth {
@@ -220,6 +235,7 @@ export interface DatabaseStats {
 
 // XML Pattern specific types (for cache intelligence)
 export interface XMLPattern {
+  id?: number; // Database auto-increment ID
   pattern_id: string;
   group_id: number;
   pattern_name: string;
@@ -232,11 +248,13 @@ export interface XMLPattern {
   success_count: number;
   failure_count: number;
   last_used?: Date;
+  updated_at?: Date;
   average_latency_ms: number;
   active: boolean;
 }
 
 export interface PatternExecution {
+  id?: number; // Database auto-increment ID
   pattern_id: number;
   execution_id: string;
   input_text: string;
@@ -248,6 +266,7 @@ export interface PatternExecution {
   confidence_after?: number;
   session_id?: string;
   user_context?: any;
+  created_at?: Date;
 }
 
 export interface ContextSession {
@@ -265,22 +284,31 @@ export interface ContextSession {
   success_rate: number;
 }
 
+// Add alias for backward compatibility
+export type SessionContext = ContextSession;
+
 export interface ToolExecution {
+  id?: number; // Database auto-increment ID
   execution_id: string;
   tool_name: string;
   tool_version?: string;
   session_id?: string;
   pattern_id?: number;
   agent_id?: string;
-  input_parameters: any;
-  output_result: any;
+  input_parameters?: any; // Made optional for compatibility
+  parameters?: string; // JSON string version for database storage
+  output_result?: any; // Made optional for compatibility  
+  result?: string; // JSON string version for database storage
   error_details?: string;
+  error_message?: string; // Alternative field name for compatibility
   success: boolean;
   execution_time_ms: number;
-  memory_used_mb: number;
-  cpu_time_ms: number;
+  memory_used_mb?: number; // Made optional
+  cpu_time_ms?: number; // Made optional
   confidence_score?: number;
   user_feedback?: number;
+  retry_count?: number;
+  created_at?: Date;
 }
 
 // Error types

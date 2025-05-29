@@ -13,249 +13,447 @@
   - Usage statistics for optimization
   - Grouped by tool domains
 -->
-<CommandMap version="1.0">
-    <PatternGroup type="file_operations">
-        <Pattern id="FILE_SEARCH" confidence="0.95">
-            <Linguistic>
-                <Trigger>search for * in *</Trigger>
-                <Variables>
-                    <Variable name="query" position="1">
-                        <Type>string</Type>
-                        <Description>The search term or pattern</Description>
-                    </Variable>
-                    <Variable name="target" position="2">
-                        <Type>string</Type>
-                        <Description>File or directory to search in</Description>
-                    </Variable>
-                </Variables>
-                <Examples>
-                    <Example>search for TODO in src/</Example>
-                    <Example>search for interface in types.ts</Example>
-                </Examples>
-            </Linguistic>
+<CommandMap version="2.0">
+  
+  <!-- File and Code Search Patterns -->
+  <PatternGroup type="search">
+    
+    <Pattern id="FILE_SEARCH" confidence="0.95">
+      <Linguistic>
+        <Trigger>search for * in *</Trigger>
+        <Variables>
+          <Variable name="query" position="1" type="string">
+            <Type>string</Type>
+            <Description>Search query or term</Description>
+          </Variable>
+          <Variable name="target" position="2" type="string">
+            <Type>string</Type>
+            <Description>Search target (files, directory, codebase)</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>search for authentication in codebase</Example>
+          <Example>search for React components in src</Example>
+          <Example>search for API endpoints in backend</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>codebase_search</Tool>
+        <Parameters>
+          <Parameter name="query" value="${query}"/>
+          <Parameter name="target_directories" value="[${target}]"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>43</SuccessCount>
+        <FailureCount>2</FailureCount>
+        <LastUsed>2024-01-15T10:30:00Z</LastUsed>
+        <AverageLatency>1200ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <ToolMapping>
-                <Tool>codebase_search</Tool>
-                <Parameters>
-                    <Parameter name="query" value="${query}"/>
-                    <Parameter name="target_directories" value="[${target}]"/>
-                </Parameters>
-            </ToolMapping>
+    <Pattern id="FIND_FILES" confidence="0.92">
+      <Linguistic>
+        <Trigger>find * files *</Trigger>
+        <Variables>
+          <Variable name="filetype" position="1" type="string">
+            <Type>string</Type>
+            <Description>File type or extension</Description>
+          </Variable>
+          <Variable name="location" position="2" type="string">
+            <Type>string</Type>
+            <Description>Location to search</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>find TypeScript files in src</Example>
+          <Example>find config files in project</Example>
+          <Example>find test files containing database</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>file_search</Tool>
+        <Parameters>
+          <Parameter name="query" value="${filetype}"/>
+          <Parameter name="path" value="${location}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>89</SuccessCount>
+        <FailureCount>7</FailureCount>
+        <LastUsed>2024-01-15T11:45:00Z</LastUsed>
+        <AverageLatency>800ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <UsageStats>
-                <SuccessCount>42</SuccessCount>
-                <FailureCount>3</FailureCount>
-                <LastUsed>2024-03-14T16:30:00Z</LastUsed>
-                <AverageLatency>150ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
+    <Pattern id="GREP_PATTERN" confidence="0.94">
+      <Linguistic>
+        <Trigger>grep * in *</Trigger>
+        <Variables>
+          <Variable name="pattern" position="1" type="string">
+            <Type>string</Type>
+            <Description>Search pattern or regex</Description>
+          </Variable>
+          <Variable name="scope" position="2" type="string">
+            <Type>string</Type>
+            <Description>Files or directories to search</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>grep TODO in src directory</Example>
+          <Example>grep console.log in JavaScript files</Example>
+          <Example>grep error patterns in logs</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>grep_search</Tool>
+        <Parameters>
+          <Parameter name="query" value="${pattern}"/>
+          <Parameter name="include_pattern" value="${scope}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>156</SuccessCount>
+        <FailureCount>12</FailureCount>
+        <LastUsed>2024-01-15T14:20:00Z</LastUsed>
+        <AverageLatency>650ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
+    
+  </PatternGroup>
 
-        <Pattern id="FILE_READ" confidence="0.92">
-            <Linguistic>
-                <Trigger>read lines * to * from *</Trigger>
-                <Variables>
-                    <Variable name="start" position="1">
-                        <Type>number</Type>
-                        <Description>Starting line number</Description>
-                    </Variable>
-                    <Variable name="end" position="2">
-                        <Type>number</Type>
-                        <Description>Ending line number</Description>
-                    </Variable>
-                    <Variable name="file" position="3">
-                        <Type>string</Type>
-                        <Description>File path to read</Description>
-                    </Variable>
-                </Variables>
-                <Examples>
-                    <Example>read lines 10 to 20 from src/main.ts</Example>
-                </Examples>
-            </Linguistic>
+  <!-- File Operations Patterns -->
+  <PatternGroup type="file_operations">
+    
+    <Pattern id="EDIT_FILE" confidence="0.90">
+      <Linguistic>
+        <Trigger>edit * file</Trigger>
+        <Variables>
+          <Variable name="filename" position="1" type="string">
+            <Type>string</Type>
+            <Description>File to edit</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>edit config.json file</Example>
+          <Example>edit package.json file</Example>
+          <Example>edit the main component file</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>edit_file</Tool>
+        <Parameters>
+          <Parameter name="target_file" value="${filename}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>89</SuccessCount>
+        <FailureCount>8</FailureCount>
+        <LastUsed>2024-01-15T16:10:00Z</LastUsed>
+        <AverageLatency>450ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <ToolMapping>
-                <Tool>read_file</Tool>
-                <Parameters>
-                    <Parameter name="relative_workspace_path" value="${file}"/>
-                    <Parameter name="start_line_one_indexed" value="${start}"/>
-                    <Parameter name="end_line_one_indexed_inclusive" value="${end}"/>
-                    <Parameter name="should_read_entire_file" value="false"/>
-                </Parameters>
-            </ToolMapping>
+    <Pattern id="READ_FILE" confidence="0.92">
+      <Linguistic>
+        <Trigger>read * file</Trigger>
+        <Variables>
+          <Variable name="filename" position="1" type="string">
+            <Type>string</Type>
+            <Description>File to read</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>read package.json file</Example>
+          <Example>read the README file</Example>
+          <Example>read configuration file</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>read_file</Tool>
+        <Parameters>
+          <Parameter name="target_file" value="${filename}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>134</SuccessCount>
+        <FailureCount>6</FailureCount>
+        <LastUsed>2024-01-15T15:45:00Z</LastUsed>
+        <AverageLatency>320ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <UsageStats>
-                <SuccessCount>67</SuccessCount>
-                <FailureCount>5</FailureCount>
-                <LastUsed>2024-03-14T16:45:00Z</LastUsed>
-                <AverageLatency>85ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
-    </PatternGroup>
+    <Pattern id="LIST_DIRECTORY" confidence="0.89">
+      <Linguistic>
+        <Trigger>list * directory</Trigger>
+        <Variables>
+          <Variable name="path" position="1" type="string">
+            <Type>string</Type>
+            <Description>Directory path to list</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>list src directory</Example>
+          <Example>list project directory</Example>
+          <Example>list components directory</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>list_dir</Tool>
+        <Parameters>
+          <Parameter name="relative_workspace_path" value="${path}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>98</SuccessCount>
+        <FailureCount>4</FailureCount>
+        <LastUsed>2024-01-15T11:20:00Z</LastUsed>
+        <AverageLatency>180ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-    <PatternGroup type="code_editing">
-        <Pattern id="EDIT_FILE" confidence="0.90">
-            <Linguistic>
-                <Trigger>edit * to add *</Trigger>
-                <Variables>
-                    <Variable name="file" position="1">
-                        <Type>string</Type>
-                        <Description>File to edit</Description>
-                    </Variable>
-                    <Variable name="content" position="2">
-                        <Type>string</Type>
-                        <Description>Content to add</Description>
-                    </Variable>
-                </Variables>
-                <Examples>
-                    <Example>edit src/types.ts to add interface User</Example>
-                </Examples>
-            </Linguistic>
+    <Pattern id="PROJECT_STRUCTURE" confidence="0.86">
+      <Linguistic>
+        <Trigger>show project structure</Trigger>
+        <Variables />
+        <Examples>
+          <Example>show project structure</Example>
+          <Example>display project structure</Example>
+          <Example>list project structure</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>list_dir</Tool>
+        <Parameters>
+          <Parameter name="relative_workspace_path" value="."/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>45</SuccessCount>
+        <FailureCount>2</FailureCount>
+        <LastUsed>2024-01-15T08:30:00Z</LastUsed>
+        <AverageLatency>250ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
+    
+  </PatternGroup>
 
-            <ToolMapping>
-                <Tool>edit_file</Tool>
-                <Parameters>
-                    <Parameter name="target_file" value="${file}"/>
-                    <Parameter name="code_edit" value="${content}"/>
-                </Parameters>
-            </ToolMapping>
+  <!-- Command Execution Patterns -->
+  <PatternGroup type="commands">
+    
+    <Pattern id="RUN_COMMAND" confidence="0.88">
+      <Linguistic>
+        <Trigger>run * command</Trigger>
+        <Variables>
+          <Variable name="command" position="1" type="string">
+            <Type>string</Type>
+            <Description>Command to execute</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>run npm install command</Example>
+          <Example>run build command</Example>
+          <Example>run test command</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>run_terminal_cmd</Tool>
+        <Parameters>
+          <Parameter name="command" value="${command}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>78</SuccessCount>
+        <FailureCount>6</FailureCount>
+        <LastUsed>2024-01-15T12:15:00Z</LastUsed>
+        <AverageLatency>2100ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <UsageStats>
-                <SuccessCount>89</SuccessCount>
-                <FailureCount>8</FailureCount>
-                <LastUsed>2024-03-14T17:00:00Z</LastUsed>
-                <AverageLatency>200ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
+    <Pattern id="INSTALL_PACKAGE" confidence="0.91">
+      <Linguistic>
+        <Trigger>install * package</Trigger>
+        <Variables>
+          <Variable name="package" position="1" type="string">
+            <Type>string</Type>
+            <Description>Package name to install</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>install react package</Example>
+          <Example>install typescript package</Example>
+          <Example>install lodash package</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>run_terminal_cmd</Tool>
+        <Parameters>
+          <Parameter name="command" value="npm install ${package}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>45</SuccessCount>
+        <FailureCount>3</FailureCount>
+        <LastUsed>2024-01-15T09:30:00Z</LastUsed>
+        <AverageLatency>15000ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-        <Pattern id="DELETE_FILE" confidence="0.97">
-            <Linguistic>
-                <Trigger>delete file *</Trigger>
-                <Variables>
-                    <Variable name="file" position="1">
-                        <Type>string</Type>
-                        <Description>File to delete</Description>
-                    </Variable>
-                </Variables>
-            </Linguistic>
+    <Pattern id="CHECK_DEPENDENCIES" confidence="0.84">
+      <Linguistic>
+        <Trigger>check * dependencies</Trigger>
+        <Variables>
+          <Variable name="type" position="1" type="string">
+            <Type>string</Type>
+            <Description>Type of dependencies (project, package, etc.)</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>check project dependencies</Example>
+          <Example>check package dependencies</Example>
+          <Example>check outdated dependencies</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>read_file</Tool>
+        <Parameters>
+          <Parameter name="target_file" value="package.json"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>67</SuccessCount>
+        <FailureCount>3</FailureCount>
+        <LastUsed>2024-01-15T13:15:00Z</LastUsed>
+        <AverageLatency>400ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
+    
+  </PatternGroup>
 
-            <ToolMapping>
-                <Tool>delete_file</Tool>
-                <Parameters>
-                    <Parameter name="target_file" value="${file}"/>
-                </Parameters>
-            </ToolMapping>
+  <!-- Analysis and Debugging Patterns -->
+  <PatternGroup type="analysis">
+    
+    <Pattern id="ANALYZE_CODE" confidence="0.85">
+      <Linguistic>
+        <Trigger>analyze * code</Trigger>
+        <Variables>
+          <Variable name="target" position="1" type="string">
+            <Type>string</Type>
+            <Description>Code target to analyze</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>analyze performance code</Example>
+          <Example>analyze authentication code</Example>
+          <Example>analyze error handling code</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>codebase_search</Tool>
+        <Parameters>
+          <Parameter name="query" value="${target}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>34</SuccessCount>
+        <FailureCount>8</FailureCount>
+        <LastUsed>2024-01-15T14:50:00Z</LastUsed>
+        <AverageLatency>2500ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <UsageStats>
-                <SuccessCount>34</SuccessCount>
-                <FailureCount>1</FailureCount>
-                <LastUsed>2024-03-14T15:20:00Z</LastUsed>
-                <AverageLatency>50ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
-    </PatternGroup>
+    <Pattern id="DEBUG_ISSUE" confidence="0.82">
+      <Linguistic>
+        <Trigger>debug * issue</Trigger>
+        <Variables>
+          <Variable name="problem" position="1" type="string">
+            <Type>string</Type>
+            <Description>Issue or problem to debug</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>debug authentication issue</Example>
+          <Example>debug performance issue</Example>
+          <Example>debug build issue</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>grep_search</Tool>
+        <Parameters>
+          <Parameter name="query" value="error|Error|ERROR|exception|Exception|fail|Fail"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>56</SuccessCount>
+        <FailureCount>12</FailureCount>
+        <LastUsed>2024-01-15T16:30:00Z</LastUsed>
+        <AverageLatency>1800ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
+    
+  </PatternGroup>
 
-    <PatternGroup type="search_operations">
-        <Pattern id="GREP_SEARCH" confidence="0.94">
-            <Linguistic>
-                <Trigger>find exact * in * files</Trigger>
-                <Variables>
-                    <Variable name="pattern" position="1">
-                        <Type>string</Type>
-                        <Description>Exact text or regex to find</Description>
-                    </Variable>
-                    <Variable name="file_type" position="2">
-                        <Type>string</Type>
-                        <Description>File type or pattern</Description>
-                    </Variable>
-                </Variables>
-                <Examples>
-                    <Example>find exact TODO in typescript files</Example>
-                </Examples>
-            </Linguistic>
+  <!-- Web and API Patterns -->
+  <PatternGroup type="web_api">
+    
+    <Pattern id="SEARCH_WEB" confidence="0.93">
+      <Linguistic>
+        <Trigger>search * on web</Trigger>
+        <Variables>
+          <Variable name="query" position="1" type="string">
+            <Type>string</Type>
+            <Description>Web search query</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>search React best practices on web</Example>
+          <Example>search TypeScript tutorials on web</Example>
+          <Example>search Node.js performance on web</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>web_search</Tool>
+        <Parameters>
+          <Parameter name="search_term" value="${query}"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>203</SuccessCount>
+        <FailureCount>7</FailureCount>
+        <LastUsed>2024-01-15T17:10:00Z</LastUsed>
+        <AverageLatency>3200ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
 
-            <ToolMapping>
-                <Tool>grep_search</Tool>
-                <Parameters>
-                    <Parameter name="query" value="${pattern}"/>
-                    <Parameter name="include_pattern" value="*.${file_type}"/>
-                    <Parameter name="case_sensitive" value="true"/>
-                </Parameters>
-            </ToolMapping>
-
-            <UsageStats>
-                <SuccessCount>156</SuccessCount>
-                <FailureCount>12</FailureCount>
-                <LastUsed>2024-03-14T17:15:00Z</LastUsed>
-                <AverageLatency>180ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
-
-        <Pattern id="FUZZY_FILE_SEARCH" confidence="0.96">
-            <Linguistic>
-                <Trigger>find files named *</Trigger>
-                <Variables>
-                    <Variable name="name" position="1">
-                        <Type>string</Type>
-                        <Description>Partial or full filename</Description>
-                    </Variable>
-                </Variables>
-            </Linguistic>
-
-            <ToolMapping>
-                <Tool>file_search</Tool>
-                <Parameters>
-                    <Parameter name="query" value="${name}"/>
-                </Parameters>
-            </ToolMapping>
-
-            <UsageStats>
-                <SuccessCount>203</SuccessCount>
-                <FailureCount>7</FailureCount>
-                <LastUsed>2024-03-14T17:30:00Z</LastUsed>
-                <AverageLatency>65ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
-    </PatternGroup>
-
-    <PatternGroup type="terminal_operations">
-        <Pattern id="RUN_COMMAND" confidence="0.88">
-            <Linguistic>
-                <Trigger>run command * in *</Trigger>
-                <Variables>
-                    <Variable name="command" position="1">
-                        <Type>string</Type>
-                        <Description>Command to execute</Description>
-                    </Variable>
-                    <Variable name="background" position="2">
-                        <Type>string</Type>
-                        <Description>Background or foreground</Description>
-                        <Validation>
-                            <AllowedValues>
-                                <Value>background</Value>
-                                <Value>foreground</Value>
-                            </AllowedValues>
-                        </Validation>
-                    </Variable>
-                </Variables>
-                <Examples>
-                    <Example>run command npm install in foreground</Example>
-                </Examples>
-            </Linguistic>
-
-            <ToolMapping>
-                <Tool>run_terminal_cmd</Tool>
-                <Parameters>
-                    <Parameter name="command" value="${command}"/>
-                    <Parameter name="is_background" value="${background == 'background'}"/>
-                    <Parameter name="require_user_approval" value="true"/>
-                </Parameters>
-            </ToolMapping>
-
-            <UsageStats>
-                <SuccessCount>78</SuccessCount>
-                <FailureCount>6</FailureCount>
-                <LastUsed>2024-03-14T17:45:00Z</LastUsed>
-                <AverageLatency>120ms</AverageLatency>
-            </UsageStats>
-        </Pattern>
-    </PatternGroup>
+    <Pattern id="API_DOCUMENTATION" confidence="0.87">
+      <Linguistic>
+        <Trigger>find * API documentation</Trigger>
+        <Variables>
+          <Variable name="api" position="1" type="string">
+            <Type>string</Type>
+            <Description>API or library name</Description>
+          </Variable>
+        </Variables>
+        <Examples>
+          <Example>find React API documentation</Example>
+          <Example>find Express API documentation</Example>
+          <Example>find MongoDB API documentation</Example>
+        </Examples>
+      </Linguistic>
+      <ToolMapping>
+        <Tool>web_search</Tool>
+        <Parameters>
+          <Parameter name="search_term" value="${api} API documentation official"/>
+        </Parameters>
+      </ToolMapping>
+      <UsageStats>
+        <SuccessCount>78</SuccessCount>
+        <FailureCount>5</FailureCount>
+        <LastUsed>2024-01-15T10:45:00Z</LastUsed>
+        <AverageLatency>2800ms</AverageLatency>
+      </UsageStats>
+    </Pattern>
+    
+  </PatternGroup>
+  
 </CommandMap> 

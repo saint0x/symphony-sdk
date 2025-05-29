@@ -7,6 +7,12 @@ import { TeamCoordinator } from './teams/coordinator';
 import { PipelineExecutor, PipelineDefinition } from './pipelines/pipeline-executor';
 import { DatabaseService } from './db/service';
 import { IDatabaseService } from './db/types';
+import { 
+    CacheIntelligenceService, 
+    IntelligenceOptions, 
+    IntelligenceResult,
+    Cache
+} from './cache';
 
 // Simple service interfaces
 interface IToolService {
@@ -32,6 +38,39 @@ interface IPipelineService {
 interface IDatabaseServiceWrapper {
     create(config: any): Promise<any>;
     initialize(): Promise<void>;
+}
+
+interface ICacheService {
+    // Legacy cache interface for backward compatibility
+    get(key: string, namespace?: string): Promise<any>;
+    set(key: string, value: any, ttl?: number, namespace?: string): Promise<void>;
+    delete(key: string, namespace?: string): Promise<void>;
+    has(key: string, namespace?: string): Promise<boolean>;
+    clear(namespace?: string): Promise<void>;
+    
+    // Cache intelligence interface
+    getIntelligence(userInput: string, options?: IntelligenceOptions): Promise<IntelligenceResult>;
+    recordToolExecution(
+        sessionId: string,
+        toolName: string,
+        parameters: Record<string, any>,
+        result: any,
+        success: boolean,
+        executionTime: number,
+        patternId?: string
+    ): Promise<void>;
+    
+    // Analytics and monitoring
+    getPatternAnalytics(): Promise<any>;
+    getContextAnalytics(): Promise<any>;
+    getGlobalStats(): any;
+    getSessionIntelligence(sessionId: string): any;
+    
+    // Utility methods
+    clearCaches(): void;
+    healthCheck(): Promise<any>;
+    
+    initialize(options?: IntelligenceOptions): Promise<void>;
 }
 
 interface IValidationManager {
@@ -281,6 +320,177 @@ class DatabaseServiceWrapper implements IDatabaseServiceWrapper {
     }
 }
 
+class CacheServiceWrapper implements ICacheService {
+    private cacheIntelligence: CacheIntelligenceService;
+    private legacyCache: Cache;
+    private logger: Logger;
+    private initialized: boolean = false;
+
+    constructor(database: IDatabaseService) {
+        this.logger = Logger.getInstance('CacheServiceWrapper');
+        this.cacheIntelligence = CacheIntelligenceService.getInstance(database);
+        this.legacyCache = new Cache();
+        this.legacyCache.setDatabase(database);
+    }
+
+    // Legacy cache methods for backward compatibility
+    async get(key: string, namespace?: string): Promise<any> {
+        return await this.legacyCache.get(key, namespace);
+    }
+
+    async set(key: string, value: any, ttl?: number, namespace?: string): Promise<void> {
+        return await this.legacyCache.set(key, value, ttl, namespace);
+    }
+
+    async delete(key: string, namespace?: string): Promise<void> {
+        return await this.legacyCache.delete(key, namespace);
+    }
+
+    async has(key: string, namespace?: string): Promise<boolean> {
+        return await this.legacyCache.has(key, namespace);
+    }
+
+    async clear(namespace?: string): Promise<void> {
+        return await this.legacyCache.clear(namespace);
+    }
+
+    // Cache intelligence methods
+    async getIntelligence(userInput: string, options?: IntelligenceOptions): Promise<IntelligenceResult> {
+        if (!this.initialized) {
+            this.logger.warn('CacheServiceWrapper', 'Cache intelligence not initialized, using fallback');
+            return this.createFallbackIntelligence(userInput);
+        }
+
+        try {
+            return await this.cacheIntelligence.getIntelligence(userInput, options);
+        } catch (error) {
+            this.logger.error('CacheServiceWrapper', 'Failed to get intelligence', { error, userInput });
+            return this.createFallbackIntelligence(userInput);
+        }
+    }
+
+    async recordToolExecution(
+        sessionId: string,
+        toolName: string,
+        parameters: Record<string, any>,
+        result: any,
+        success: boolean,
+        executionTime: number,
+        patternId?: string
+    ): Promise<void> {
+        if (!this.initialized) {
+            this.logger.warn('CacheServiceWrapper', 'Cache intelligence not initialized, skipping tool execution recording');
+            return;
+        }
+
+        try {
+            await this.cacheIntelligence.recordToolExecution(
+                sessionId, toolName, parameters, result, success, executionTime, patternId
+            );
+        } catch (error) {
+            this.logger.error('CacheServiceWrapper', 'Failed to record tool execution', { error, toolName });
+        }
+    }
+
+    async getPatternAnalytics(): Promise<any> {
+        if (!this.initialized) return { totalPatterns: 0, averageConfidence: 0, topPatterns: [] };
+        return await this.cacheIntelligence.getPatternAnalytics();
+    }
+
+    async getContextAnalytics(): Promise<any> {
+        if (!this.initialized) return { cacheStats: { size: 0, maxSize: 0 } };
+        return await this.cacheIntelligence.getContextAnalytics();
+    }
+
+    getGlobalStats(): any {
+        if (!this.initialized) return { totalQueries: 0, fastPathQueries: 0, sessions: 0 };
+        return this.cacheIntelligence.getGlobalStats();
+    }
+
+    getSessionIntelligence(sessionId: string): any {
+        if (!this.initialized) return undefined;
+        return this.cacheIntelligence.getSessionIntelligence(sessionId);
+    }
+
+    clearCaches(): void {
+        if (this.initialized) {
+            this.cacheIntelligence.clearCaches();
+        }
+        this.logger.info('CacheServiceWrapper', 'Cleared all caches');
+    }
+
+    async healthCheck(): Promise<any> {
+        if (!this.initialized) {
+            return {
+                status: 'unhealthy',
+                services: { initialized: false },
+                performance: {}
+            };
+        }
+        return await this.cacheIntelligence.healthCheck();
+    }
+
+    async initialize(options?: IntelligenceOptions): Promise<void> {
+        if (this.initialized) return;
+
+        this.logger.info('CacheServiceWrapper', 'Initializing cache intelligence service');
+
+        try {
+            // Default options with paths to XML and JSON files
+            const defaultOptions: IntelligenceOptions = {
+                enablePatternMatching: true,
+                enableContextTrees: true,
+                fastPathThreshold: 0.85,
+                contextMaxNodes: 50,
+                xmlPatternPath: options?.xmlPatternPath || 'src/cache/command-map.xml',
+                contextTemplatePath: options?.contextTemplatePath || 'src/cache/context-tree.json',
+                ...options
+            };
+
+            await this.cacheIntelligence.initialize(defaultOptions);
+            this.initialized = true;
+
+            this.logger.info('CacheServiceWrapper', 'Cache intelligence service initialized successfully');
+        } catch (error) {
+            this.logger.error('CacheServiceWrapper', 'Failed to initialize cache intelligence', { error });
+            // Don't throw - allow Symphony to continue with basic cache functionality
+        }
+    }
+
+    private createFallbackIntelligence(_userInput: string): IntelligenceResult {
+        return {
+            recommendation: {
+                action: 'standard_path',
+                confidence: 0.1,
+                reasoning: 'Cache intelligence not available, using standard path',
+                contextPriority: 'low'
+            },
+            performance: {
+                totalTime: 0,
+                patternMatchTime: 0,
+                contextBuildTime: 0,
+                cacheHits: 0,
+                cacheMisses: 1
+            },
+            metadata: {
+                timestamp: new Date(),
+                serviceVersion: '1.0.0',
+                featuresUsed: ['fallback']
+            }
+        };
+    }
+
+    getStats() {
+        return {
+            legacyCache: this.legacyCache.getStats(),
+            intelligence: {
+                initialized: this.initialized,
+                globalStats: this.getGlobalStats()
+            }
+        };
+    }
+}
+
 export class Symphony implements Partial<ISymphony> {
     private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
     private _logger: Logger;
@@ -288,6 +498,7 @@ export class Symphony implements Partial<ISymphony> {
     private _config: SymphonyConfig;
     private _metrics: IMetricsAPI;
     private _databaseService: DatabaseServiceWrapper;
+    private _cacheService: CacheServiceWrapper;
     
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -322,6 +533,7 @@ export class Symphony implements Partial<ISymphony> {
         this._llm = LLMHandler.getInstance();
         this._metrics = new SimpleMetricsAPI();
         this._databaseService = new DatabaseServiceWrapper(config);
+        this._cacheService = new CacheServiceWrapper(this._databaseService.getService());
         
         // Initialize services
         this.tool = new SimpleToolService();
@@ -354,6 +566,10 @@ export class Symphony implements Partial<ISymphony> {
     
     get databaseService(): DatabaseServiceWrapper {
         return this._databaseService;
+    }
+    
+    get cache(): CacheServiceWrapper {
+        return this._cacheService;
     }
     
     getState(): ToolLifecycleState {
@@ -399,7 +615,8 @@ export class Symphony implements Partial<ISymphony> {
                 this.team.initialize(),
                 this.pipeline.initialize(),
                 this.validation.initialize(),
-                this.db.initialize(this._config.db)
+                this.db.initialize(this._config.db),
+                this._cacheService.initialize()
             ]);
             
             this._state = ToolLifecycleState.READY;
@@ -419,7 +636,8 @@ export class Symphony implements Partial<ISymphony> {
             pipeline: this.pipeline,
             validation: this.validation,
             metrics: this._metrics,
-            database: this._databaseService
+            database: this._databaseService,
+            cache: this._cacheService
         };
         return services[name];
     }

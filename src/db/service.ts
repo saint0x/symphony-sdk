@@ -11,7 +11,11 @@ import {
   DatabaseStats,
   DatabaseConnectionError,
   DatabaseValidationError,
-  DatabaseError
+  DatabaseError,
+  XMLPattern,
+  PatternExecution,
+  ToolExecution,
+  SessionContext
 } from './types';
 
 export class DatabaseService implements IDatabaseService {
@@ -347,68 +351,109 @@ export class DatabaseService implements IDatabaseService {
   }
 
   // XML Pattern helpers (for cache intelligence)
-  async getXMLPatterns(active: boolean = true): Promise<any[]> {
-    return this.table('xml_patterns')
-      .where({ active })
-      .orderBy('confidence_score', 'desc')
-      .find();
+  async getXMLPatterns(activeOnly?: boolean): Promise<XMLPattern[]> {
+    this.logger.info('DatabaseService', 'Getting XML patterns', { activeOnly });
+    
+    try {
+      let query = this.table('xml_patterns');
+      if (activeOnly) {
+        query = query.where({ active: true });
+      }
+      
+      const patterns = await query.find();
+      return patterns.map(p => ({
+        id: p.id,
+        pattern_id: p.pattern_id,
+        group_id: p.group_id,
+        pattern_name: p.pattern_name,
+        confidence_score: p.confidence_score,
+        trigger_text: p.trigger_text,
+        variables: p.variables,
+        examples: p.examples,
+        tool_name: p.tool_name,
+        tool_parameters: p.tool_parameters,
+        success_count: p.success_count,
+        failure_count: p.failure_count,
+        last_used: p.last_used,
+        updated_at: p.updated_at,
+        average_latency_ms: p.average_latency_ms,
+        active: p.active
+      }));
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to get XML patterns', { error });
+      return [];
+    }
   }
 
-  async saveXMLPattern(pattern: any): Promise<void> {
-    await this.table('xml_patterns').insert(pattern);
+  async saveXMLPattern(pattern: Omit<XMLPattern, 'id'>): Promise<void> {
+    this.logger.info('DatabaseService', 'Saving XML pattern', { patternId: pattern.pattern_id });
+    
+    try {
+      await this.table('xml_patterns').insert({
+        pattern_id: pattern.pattern_id,
+        group_id: pattern.group_id,
+        pattern_name: pattern.pattern_name,
+        confidence_score: pattern.confidence_score,
+        trigger_text: pattern.trigger_text,
+        variables: JSON.stringify(pattern.variables),
+        examples: JSON.stringify(pattern.examples),
+        tool_name: pattern.tool_name,
+        tool_parameters: JSON.stringify(pattern.tool_parameters),
+        success_count: pattern.success_count,
+        failure_count: pattern.failure_count,
+        last_used: pattern.last_used,
+        average_latency_ms: pattern.average_latency_ms,
+        active: pattern.active,
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to save XML pattern', { error, patternId: pattern.pattern_id });
+      throw error;
+    }
   }
 
   /**
    * Update pattern confidence score (core self-learning function)
    */
   async updatePatternConfidence(patternId: string, newConfidence: number): Promise<void> {
-    if (!this.adapter) {
-      throw new DatabaseError('Database not initialized', 'CONNECTION_ERROR');
-    }
-
+    this.logger.info('DatabaseService', 'Updating pattern confidence', { patternId, newConfidence });
+    
     try {
-      await this.adapter.table('xml_patterns')
-        .update(
-          { pattern_id: patternId },
-          { 
-            confidence_score: newConfidence,
-            updated_at: new Date().toISOString()
-          }
-        );
-    } catch (error: any) {
-      this.logger.error('DatabaseService', 'Failed to update pattern confidence', { error: error.message });
-      throw new DatabaseError(`Failed to update pattern confidence: ${error.message}`, 'QUERY_ERROR');
+      await this.table('xml_patterns').update(
+        { pattern_id: patternId },
+        { confidence_score: newConfidence, updated_at: new Date() }
+      );
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to update pattern confidence', { error, patternId });
+      throw error;
     }
   }
 
   /**
    * Record pattern execution for learning analytics
    */
-  async recordPatternExecution(execution: {
-    pattern_id: number;
-    execution_id: string;
-    input_text: string;
-    extracted_variables: string;
-    tool_result: string;
-    success: boolean;
-    execution_time_ms: number;
-    confidence_before?: number;
-    confidence_after?: number;
-    session_id?: string;
-    user_context?: string;
-  }): Promise<void> {
-    if (!this.adapter) {
-      throw new DatabaseError('Database not initialized', 'CONNECTION_ERROR');
-    }
-
+  async recordPatternExecution(execution: PatternExecution): Promise<void> {
+    this.logger.info('DatabaseService', 'Recording pattern execution', { executionId: execution.execution_id });
+    
     try {
-      await this.adapter.table('pattern_executions').insert({
-        ...execution,
-        created_at: new Date().toISOString()
+      await this.table('pattern_executions').insert({
+        pattern_id: execution.pattern_id,
+        execution_id: execution.execution_id,
+        input_text: execution.input_text,
+        extracted_variables: JSON.stringify(execution.extracted_variables),
+        tool_result: JSON.stringify(execution.tool_result),
+        success: execution.success,
+        execution_time_ms: execution.execution_time_ms,
+        confidence_before: execution.confidence_before,
+        confidence_after: execution.confidence_after,
+        session_id: execution.session_id,
+        user_context: JSON.stringify(execution.user_context),
+        created_at: new Date()
       });
-    } catch (error: any) {
-      this.logger.error('DatabaseService', 'Failed to record pattern execution', { error: error.message });
-      throw new DatabaseError(`Failed to record pattern execution: ${error.message}`, 'QUERY_ERROR');
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to record pattern execution', { error, executionId: execution.execution_id });
+      throw error;
     }
   }
 
@@ -451,35 +496,32 @@ export class DatabaseService implements IDatabaseService {
   /**
    * Record tool execution for performance tracking
    */
-  async recordToolExecution(execution: {
-    execution_id: string;
-    tool_name: string;
-    tool_version?: string;
-    session_id?: string;
-    pattern_id?: number;
-    agent_id?: string;
-    input_parameters: string;
-    output_result?: string;
-    error_details?: string;
-    success: boolean;
-    execution_time_ms: number;
-    memory_used_mb?: number;
-    cpu_time_ms?: number;
-    confidence_score?: number;
-    user_feedback?: number;
-  }): Promise<void> {
-    if (!this.adapter) {
-      throw new DatabaseError('Database not initialized', 'CONNECTION_ERROR');
-    }
-
+  async recordToolExecution(execution: Omit<ToolExecution, 'id'>): Promise<void> {
+    this.logger.info('DatabaseService', 'Recording tool execution', { executionId: execution.execution_id });
+    
     try {
-      await this.adapter.table('tool_executions').insert({
-        ...execution,
-        created_at: new Date().toISOString()
+      await this.table('tool_executions').insert({
+        execution_id: execution.execution_id,
+        tool_name: execution.tool_name,
+        tool_version: execution.tool_version,
+        session_id: execution.session_id,
+        pattern_id: execution.pattern_id,
+        agent_id: execution.agent_id,
+        parameters: execution.parameters || JSON.stringify(execution.input_parameters || {}),
+        result: execution.result || JSON.stringify(execution.output_result || {}),
+        error_message: execution.error_message || execution.error_details,
+        success: execution.success,
+        execution_time_ms: execution.execution_time_ms,
+        memory_used_mb: execution.memory_used_mb,
+        cpu_time_ms: execution.cpu_time_ms,
+        confidence_score: execution.confidence_score,
+        user_feedback: execution.user_feedback,
+        retry_count: execution.retry_count,
+        created_at: new Date()
       });
-    } catch (error: any) {
-      this.logger.error('DatabaseService', 'Failed to record tool execution', { error: error.message });
-      throw new DatabaseError(`Failed to record tool execution: ${error.message}`, 'QUERY_ERROR');
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to record tool execution', { error, executionId: execution.execution_id });
+      throw error;
     }
   }
 
@@ -524,6 +566,107 @@ export class DatabaseService implements IDatabaseService {
       .orderBy('created_at', 'desc')
       .limit(100)
       .find();
+  }
+
+  // Session and Context Methods
+  async getSessionContext(sessionId: string): Promise<SessionContext | null> {
+    this.logger.info('DatabaseService', 'Getting session context', { sessionId });
+    
+    try {
+      const session = await this.table('context_sessions').where({ session_id: sessionId }).findOne();
+      if (!session) return null;
+      
+      return {
+        session_id: session.session_id,
+        session_type: session.session_type,
+        started_at: session.started_at,
+        last_activity: session.last_activity,
+        ended_at: session.ended_at,
+        active: session.active,
+        context_data: JSON.parse(session.context_data || '{}'),
+        parent_session_id: session.parent_session_id,
+        tool_calls: session.tool_calls || 0,
+        pattern_matches: session.pattern_matches || 0,
+        cache_hits: session.cache_hits || 0,
+        success_rate: session.success_rate || 0
+      };
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to get session context', { error, sessionId });
+      return null;
+    }
+  }
+  
+  async getToolExecutions(sessionId: string, limit?: number): Promise<ToolExecution[]> {
+    this.logger.info('DatabaseService', 'Getting tool executions', { sessionId, limit });
+    
+    try {
+      let query = this.table('tool_executions')
+        .where({ session_id: sessionId })
+        .orderBy('created_at', 'desc');
+        
+      if (limit) {
+        query = query.limit(limit);
+      }
+      
+      const executions = await query.find();
+      return executions.map(e => ({
+        id: e.id,
+        execution_id: e.execution_id,
+        tool_name: e.tool_name,
+        tool_version: e.tool_version,
+        session_id: e.session_id,
+        pattern_id: e.pattern_id,
+        agent_id: e.agent_id,
+        parameters: e.parameters,
+        result: e.result,
+        error_message: e.error_message,
+        success: e.success,
+        execution_time_ms: e.execution_time_ms,
+        memory_used_mb: e.memory_used_mb,
+        cpu_time_ms: e.cpu_time_ms,
+        confidence_score: e.confidence_score,
+        user_feedback: e.user_feedback,
+        retry_count: e.retry_count,
+        created_at: e.created_at
+      }));
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to get tool executions', { error, sessionId });
+      return [];
+    }
+  }
+  
+  async getWorkflowExecutions(sessionId: string): Promise<any[]> {
+    this.logger.info('DatabaseService', 'Getting workflow executions', { sessionId });
+    
+    try {
+      // For now, return empty array as workflow tables might not be set up yet
+      // In future, this would query workflow_executions table
+      return [];
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Failed to get workflow executions', { error, sessionId });
+      return [];
+    }
+  }
+
+  // Health check for cache intelligence
+  async healthCheck(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; [key: string]: any }> {
+    try {
+      const dbHealth = await this.health();
+      
+      return {
+        status: dbHealth.connected ? 'healthy' : 'unhealthy',
+        database: dbHealth,
+        adapter: this.config.adapter || 'none',
+        timestamp: new Date()
+      };
+    } catch (error: any) {
+      this.logger.error('DatabaseService', 'Health check failed', { error });
+      return {
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date()
+      };
+    }
   }
 }
 
