@@ -1,8 +1,8 @@
 import { BaseAgent } from './base';
 import { AgentConfig, ToolResult, ToolChain } from '../types/sdk';
-import { SystemPromptService } from './sysprompt-service';
+import { SystemPromptService } from './sysprompt';
 import { ToolRegistry } from '../tools/standard/registry';
-import { ChainExecutor } from '../tools/chain-executor';
+import { ChainExecutor } from '../tools/executor';
 import { LLMRequest } from '../llm/types';
 
 export class AgentExecutor extends BaseAgent {

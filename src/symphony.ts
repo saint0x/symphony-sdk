@@ -3,6 +3,7 @@ import { ToolLifecycleState } from './types/sdk';
 import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
 import { AgentExecutor } from './agents/executor';
+import { TeamCoordinator } from './teams/coordinator';
 
 // Simple service interfaces
 interface IToolService {
@@ -68,18 +69,61 @@ class SimpleAgentService implements IAgentService {
     }
 }
 
-class SimpleTeamService implements ITeamService {
+class EnhancedTeamService implements ITeamService {
+    private teams: Map<string, TeamCoordinator> = new Map();
+    private logger: Logger;
+
+    constructor() {
+        this.logger = Logger.getInstance('EnhancedTeamService');
+    }
+
     async create(config: any): Promise<any> {
+        this.logger.info('EnhancedTeamService', `Creating team: ${config.name}`, {
+            agentCount: config.agents?.length || 0,
+            strategy: config.strategy?.name || 'default'
+        });
+
+        // Create TeamCoordinator instance
+        const teamCoordinator = new TeamCoordinator(config);
+        
+        // Initialize the team
+        await teamCoordinator.initialize();
+        
+        // Store for management
+        this.teams.set(config.name, teamCoordinator);
+
+        // Return team interface compatible with existing API
         return {
             name: config.name,
-            run: async (_input: any) => {
-                return { success: true, result: `Team ${config.name} completed task` };
-            }
+            run: async (task: string, options?: any) => {
+                this.logger.info('EnhancedTeamService', `Team ${config.name} executing task: ${task}`);
+                return await teamCoordinator.executeTask(task, options);
+            },
+            getStatus: () => teamCoordinator.getTeamStatus(),
+            coordinator: teamCoordinator // Expose coordinator for advanced usage
         };
     }
     
     async initialize(): Promise<void> {
-        // Simple initialization
+        this.logger.info('EnhancedTeamService', 'Enhanced team service initialized');
+    }
+
+    async shutdown(): Promise<void> {
+        this.logger.info('EnhancedTeamService', `Shutting down ${this.teams.size} teams`);
+        
+        const shutdownPromises = Array.from(this.teams.values()).map(team => team.shutdown());
+        await Promise.all(shutdownPromises);
+        
+        this.teams.clear();
+        this.logger.info('EnhancedTeamService', 'All teams shut down successfully');
+    }
+
+    getTeams(): string[] {
+        return Array.from(this.teams.keys());
+    }
+
+    getTeam(name: string): TeamCoordinator | undefined {
+        return this.teams.get(name);
     }
 }
 
@@ -186,7 +230,7 @@ export class Symphony implements Partial<ISymphony> {
         // Initialize services
         this.tool = new SimpleToolService();
         this.agent = new SimpleAgentService();
-        this.team = new SimpleTeamService();
+        this.team = new EnhancedTeamService();
         this.pipeline = new SimplePipelineService();
         this.validation = new SimpleValidationManager();
         this.validationManager = this.validation;

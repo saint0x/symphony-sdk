@@ -1,7 +1,18 @@
 const { symphony } = require('./dist/index.js');
+const fs = require('fs').promises;
+const path = require('path');
 
 async function testPonderDeepAnalysis() {
   console.log('\n=== Ponder Tool Deep Analysis & LLM Forcing Test ===');
+  
+  // Create ponder directory for content analysis
+  const ponderDir = path.join(process.cwd(), 'ponder');
+  try {
+    await fs.mkdir(ponderDir, { recursive: true });
+    console.log(`📁 Created ponder directory: ${ponderDir}`);
+  } catch (error) {
+    console.log(`📁 Ponder directory already exists or error: ${error.message}`);
+  }
   
   // Ponder-specific analytics collector
   const ponderAnalytics = {
@@ -32,6 +43,56 @@ async function testPonderDeepAnalysis() {
     
     console.log('🧠 Ponder Analysis Agent initialized');
     console.log('🎯 Focus: LLM forcing mechanisms and thinking pattern quality');
+
+    // Helper function to save ponder content to files
+    async function savePonderContent(query, depth, result, context, testIndex) {
+      if (result.success && result.result) {
+        const filename = `${String(testIndex).padStart(2, '0')}_${context}_depth${depth}.json`;
+        const filepath = path.join(ponderDir, filename);
+        
+        const contentAnalysis = {
+          metadata: {
+            query,
+            depth,
+            context,
+            timestamp: new Date().toISOString(),
+            testIndex
+          },
+          fullPonderResult: result.result,
+          thoughtsBreakdown: result.result.thoughts?.map(thought => ({
+            depth: thought.depth,
+            pattern: thought.pattern,
+            observation: thought.observation,
+            analysis: thought.analysis,
+            synthesis: thought.synthesis,
+            implication: thought.implication,
+            metacognition: thought.metacognition,
+            insights: thought.insights,
+            confidence: thought.confidence
+          })) || [],
+          conclusionDetails: {
+            summary: result.result.conclusion?.summary || '',
+            keyInsights: result.result.conclusion?.keyInsights || [],
+            implications: result.result.conclusion?.implications || '',
+            uncertainties: result.result.conclusion?.uncertainties || '',
+            nextSteps: result.result.conclusion?.nextSteps || [],
+            confidence: result.result.conclusion?.confidence || 0
+          },
+          metaAnalysisDetails: {
+            patternsCovered: result.result.metaAnalysis?.patternsCovered || [],
+            depthReached: result.result.metaAnalysis?.depthReached || 0,
+            insightCount: result.result.metaAnalysis?.insightCount || 0,
+            confidenceDistribution: result.result.metaAnalysis?.confidenceDistribution || [],
+            thinkingEvolution: result.result.metaAnalysis?.thinkingEvolution || []
+          }
+        };
+        
+        await fs.writeFile(filepath, JSON.stringify(contentAnalysis, null, 2));
+        console.log(`💾 Saved ponder content: ${filename}`);
+        return filepath;
+      }
+      return null;
+    }
 
     // Helper function to capture detailed ponder metrics
     function capturePonderMetrics(query, depth, result, startTime, endTime, context) {
@@ -121,15 +182,16 @@ async function testPonderDeepAnalysis() {
     console.log('\n--- Test 1: Thinking Pattern Analysis Across Depths ---');
     
     const depthTests = [
-      { query: 'What is consciousness?', depth: 1, context: 'philosophical_simple' },
-      { query: 'What is consciousness?', depth: 2, context: 'philosophical_medium' },
-      { query: 'What is consciousness?', depth: 3, context: 'philosophical_deep' },
-      { query: 'How does quantum mechanics relate to computing?', depth: 1, context: 'technical_simple' },
-      { query: 'How does quantum mechanics relate to computing?', depth: 2, context: 'technical_medium' },
-      { query: 'How does quantum mechanics relate to computing?', depth: 3, context: 'technical_deep' }
+      { query: 'What is consciousness?', depth: 1, context: 'consciousness_simple', filename: 'consciousness1' },
+      { query: 'What is consciousness?', depth: 2, context: 'consciousness_medium', filename: 'consciousness2' },
+      { query: 'What is consciousness?', depth: 3, context: 'consciousness_deep', filename: 'consciousness3' },
+      { query: 'How does quantum mechanics relate to computing?', depth: 1, context: 'quantum_simple', filename: 'quantum1' },
+      { query: 'How does quantum mechanics relate to computing?', depth: 2, context: 'quantum_medium', filename: 'quantum2' },
+      { query: 'How does quantum mechanics relate to computing?', depth: 3, context: 'quantum_deep', filename: 'quantum3' }
     ];
 
-    for (const test of depthTests) {
+    for (let i = 0; i < depthTests.length; i++) {
+      const test = depthTests[i];
       console.log(`\n🧠 Testing: "${test.query}" at depth ${test.depth} (${test.context})`);
       
       try {
@@ -139,6 +201,9 @@ async function testPonderDeepAnalysis() {
           depth: test.depth
         });
         const endTime = Date.now();
+        
+        // Save the full ponder content to file
+        await savePonderContent(test.query, test.depth, result, test.context, i + 1);
         
         const execution = capturePonderMetrics(test.query, test.depth, result, startTime, endTime, test.context);
         
@@ -165,15 +230,13 @@ async function testPonderDeepAnalysis() {
     console.log('\n--- Test 2: Context Sensitivity Analysis ---');
     
     const contextTests = [
-      { query: 'Analyze market trends in AI', depth: 2, context: 'business_analysis' },
-      { query: 'Explain the ethical implications of artificial intelligence', depth: 2, context: 'ethical_reasoning' },
-      { query: 'Design a solution for climate change', depth: 2, context: 'problem_solving' },
-      { query: 'Compare different programming paradigms', depth: 2, context: 'technical_comparison' },
-      { query: 'What makes a great leader?', depth: 2, context: 'leadership_philosophy' },
-      { query: 'How can we improve education systems?', depth: 2, context: 'system_design' }
+      { query: 'Analyze market trends in AI', depth: 2, context: 'business', filename: 'business' },
+      { query: 'Explain the ethical implications of artificial intelligence', depth: 2, context: 'ethics', filename: 'ethics' },
+      { query: 'Design a solution for climate change', depth: 2, context: 'climate', filename: 'climate' }
     ];
 
-    for (const test of contextTests) {
+    for (let i = 0; i < contextTests.length; i++) {
+      const test = contextTests[i];
       console.log(`\n🎭 Context Test: "${test.query}" (${test.context})`);
       
       try {
@@ -183,6 +246,9 @@ async function testPonderDeepAnalysis() {
           depth: test.depth
         });
         const endTime = Date.now();
+        
+        // Save the full ponder content to file
+        await savePonderContent(test.query, test.depth, result, test.context, depthTests.length + i + 1);
         
         const execution = capturePonderMetrics(test.query, test.depth, result, startTime, endTime, test.context);
         
@@ -196,197 +262,63 @@ async function testPonderDeepAnalysis() {
       await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    // Test 3: LLM Forcing Mechanism Analysis
-    console.log('\n--- Test 3: LLM Forcing Mechanism Analysis ---');
+    // Create summary index file
+    console.log('\n--- Creating Ponder Content Index ---');
     
-    const forcingTests = [
-      { 
-        query: 'Simple question: What is 2+2?', 
-        depth: 1, 
-        context: 'simple_math',
-        expectation: 'Should force complex thinking even for simple questions'
+    const indexContent = {
+      testSummary: {
+        timestamp: new Date().toISOString(),
+        totalTests: depthTests.length + contextTests.length,
+        testCategories: {
+          depthProgression: depthTests.map((t, i) => ({
+            index: i + 1,
+            filename: `${String(i + 1).padStart(2, '0')}_${t.context}_depth${t.depth}.json`,
+            query: t.query,
+            depth: t.depth,
+            context: t.context
+          })),
+          contextSensitivity: contextTests.map((t, i) => ({
+            index: depthTests.length + i + 1,
+            filename: `${String(depthTests.length + i + 1).padStart(2, '0')}_${t.context}_depth${t.depth}.json`,
+            query: t.query,
+            depth: t.depth,
+            context: t.context
+          }))
+        }
       },
-      { 
-        query: 'Complex question: How might consciousness emerge from neural networks?', 
-        depth: 1, 
-        context: 'complex_philosophical',
-        expectation: 'Should handle complex questions with appropriate depth'
+      quickAccess: {
+        consciousness: [
+          '01_consciousness_simple_depth1.json',
+          '02_consciousness_medium_depth2.json', 
+          '03_consciousness_deep_depth3.json'
+        ],
+        quantum: [
+          '04_quantum_simple_depth1.json',
+          '05_quantum_medium_depth2.json',
+          '06_quantum_deep_depth3.json'
+        ],
+        contexts: [
+          '07_business_depth2.json',
+          '08_ethics_depth2.json',
+          '09_climate_depth2.json'
+        ]
       },
-      { 
-        query: 'Ambiguous question: What is the best way?', 
-        depth: 2, 
-        context: 'ambiguous_query',
-        expectation: 'Should clarify ambiguity through structured thinking'
+      instructions: {
+        howToRead: "Each file contains the complete ponder output including thoughts, insights, conclusions, and meta-analysis",
+        structure: "Files are named: {index}_{context}_{depth}.json for easy browsing",
+        keyContent: [
+          "thoughtsBreakdown: Detailed thinking at each depth level",
+          "conclusionDetails: Final synthesis and key insights",
+          "metaAnalysisDetails: Performance metrics and thinking evolution"
+        ]
       }
-    ];
-
-    for (const test of forcingTests) {
-      console.log(`\n🔧 LLM Forcing Test: "${test.query}"`);
-      console.log(`    🎯 Expectation: ${test.expectation}`);
-      
-      try {
-        const startTime = Date.now();
-        const result = await agent.executor.toolRegistry.executeTool('ponder', {
-          query: test.query,
-          depth: test.depth
-        });
-        const endTime = Date.now();
-        
-        const execution = capturePonderMetrics(test.query, test.depth, result, startTime, endTime, test.context);
-        
-        console.log(`    📊 Analysis:`);
-        console.log(`      - Duration: ${execution.timing.duration}ms (complexity indicator)`);
-        console.log(`      - Structured Output: ${execution.analysis.structuredThinking ? 'YES' : 'NO'}`);
-        console.log(`      - Thinking Patterns: ${execution.analysis.thinkingPatternsUsed.length}`);
-        console.log(`      - LLM Redirections: ${execution.analysis.llmCallCount}`);
-        console.log(`      - Forced Depth: ${execution.analysis.depthReached} (requested: ${test.depth})`);
-        
-        // Check if ponder actually forced complex thinking
-        if (execution.timing.duration < 5000 && test.context === 'simple_math') {
-          console.log(`    ⚠️ WARNING: May not have forced sufficient complexity for simple question`);
-        }
-        
-        if (!execution.analysis.structuredThinking) {
-          console.log(`    ⚠️ WARNING: No structured thinking detected - may indicate poor LLM forcing`);
-        }
-        
-      } catch (error) {
-        console.log(`    ❌ LLM forcing test failed: ${error.message}`);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    // Test 4: Concurrent Ponder Analysis
-    console.log('\n--- Test 4: Concurrent Ponder Execution Analysis ---');
+    };
     
-    const concurrentQueries = [
-      { query: 'What is artificial intelligence?', depth: 1, context: 'concurrent_ai' },
-      { query: 'What is machine learning?', depth: 1, context: 'concurrent_ml' },
-      { query: 'What is deep learning?', depth: 1, context: 'concurrent_dl' }
-    ];
+    const indexPath = path.join(ponderDir, 'index.json');
+    await fs.writeFile(indexPath, JSON.stringify(indexContent, null, 2));
+    console.log(`📋 Created content index: index.json`);
 
-    console.log(`🔄 Executing ${concurrentQueries.length} ponder operations concurrently...`);
-    const concurrentStart = Date.now();
-    
-    const concurrentPromises = concurrentQueries.map(async (test, index) => {
-      const startTime = Date.now();
-      try {
-        const result = await agent.executor.toolRegistry.executeTool('ponder', test);
-        const endTime = Date.now();
-        const execution = capturePonderMetrics(test.query, test.depth, result, startTime, endTime, test.context);
-        execution.concurrencyIndex = index;
-        return execution;
-      } catch (error) {
-        const endTime = Date.now();
-        const execution = capturePonderMetrics(test.query, test.depth, { success: false, error: error.message }, startTime, endTime, test.context);
-        execution.concurrencyIndex = index;
-        return execution;
-      }
-    });
-
-    const concurrentResults = await Promise.allSettled(concurrentPromises);
-    const concurrentEnd = Date.now();
-    const concurrentTotalTime = concurrentEnd - concurrentStart;
-    
-    console.log(`📊 Concurrent ponder analysis completed in ${concurrentTotalTime}ms`);
-    
-    let successfulConcurrent = 0;
-    concurrentResults.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        successfulConcurrent++;
-        const execution = result.value;
-        console.log(`  ✅ Ponder ${index + 1}: ${execution.timing.duration}ms | Patterns: ${execution.analysis.thinkingPatternsUsed.length}`);
-      } else {
-        console.log(`  ❌ Ponder ${index + 1}: Failed - ${result.reason}`);
-      }
-    });
-
-    // Test 5: Output Quality and Structure Analysis
-    console.log('\n--- Test 5: Output Quality and Structure Analysis ---');
-    
-    if (ponderAnalytics.executions.length > 0) {
-      // Analyze all successful executions
-      const successful = ponderAnalytics.executions.filter(e => e.result.success);
-      
-      if (successful.length > 0) {
-        console.log('\n📊 Ponder Tool Quality Analysis:');
-        console.log('=' .repeat(80));
-        
-        // Overall metrics
-        const avgDuration = Math.round(successful.reduce((sum, e) => sum + e.timing.duration, 0) / successful.length);
-        const avgResultSize = Math.round(successful.reduce((sum, e) => sum + e.result.resultSize, 0) / successful.length);
-        const structuredCount = successful.filter(e => e.analysis.structuredThinking).length;
-        const structuredRate = ((structuredCount / successful.length) * 100).toFixed(1);
-        
-        console.log(`\n🎯 Overall Ponder Performance:`);
-        console.log(`  📊 Total Executions: ${ponderAnalytics.executions.length} (${successful.length} successful)`);
-        console.log(`  ⏱️ Average Duration: ${avgDuration}ms`);
-        console.log(`  📄 Average Output Size: ${avgResultSize} characters`);
-        console.log(`  🧩 Structured Thinking Rate: ${structuredRate}%`);
-        
-        // Depth analysis
-        console.log(`\n📈 Depth Performance Analysis:`);
-        [1, 2, 3].forEach(depth => {
-          const depthExecutions = successful.filter(e => e.depth === depth);
-          if (depthExecutions.length > 0) {
-            const avgDepthDuration = Math.round(depthExecutions.reduce((sum, e) => sum + e.timing.duration, 0) / depthExecutions.length);
-            const avgDepthInsights = Math.round(depthExecutions.reduce((sum, e) => sum + e.analysis.insightCount, 0) / depthExecutions.length);
-            console.log(`  🔍 Depth ${depth}: ${avgDepthDuration}ms avg, ${avgDepthInsights} insights avg (${depthExecutions.length} samples)`);
-          }
-        });
-        
-        // Context analysis
-        console.log(`\n🎭 Context Performance Analysis:`);
-        const contextGroups = {};
-        successful.forEach(e => {
-          if (!contextGroups[e.context]) {
-            contextGroups[e.context] = [];
-          }
-          contextGroups[e.context].push(e);
-        });
-        
-        Object.entries(contextGroups).forEach(([context, executions]) => {
-          const avgContextDuration = Math.round(executions.reduce((sum, e) => sum + e.timing.duration, 0) / executions.length);
-          const avgPatterns = Math.round(executions.reduce((sum, e) => sum + e.analysis.thinkingPatternsUsed.length, 0) / executions.length);
-          console.log(`  🎭 ${context}: ${avgContextDuration}ms avg, ${avgPatterns} patterns avg (${executions.length} samples)`);
-        });
-        
-        // Pattern usage analysis
-        console.log(`\n🧠 Thinking Pattern Usage:`);
-        const patternCounts = {};
-        successful.forEach(e => {
-          e.analysis.thinkingPatternsUsed.forEach(pattern => {
-            patternCounts[pattern] = (patternCounts[pattern] || 0) + 1;
-          });
-        });
-        
-        const sortedPatterns = Object.entries(patternCounts).sort(([,a], [,b]) => b - a);
-        sortedPatterns.forEach(([pattern, count]) => {
-          const percentage = ((count / successful.length) * 100).toFixed(1);
-          console.log(`  🎯 ${pattern}: ${count} uses (${percentage}%)`);
-        });
-        
-        // Quality indicators
-        console.log(`\n💡 Quality Indicators:`);
-        const avgConfidence = successful
-          .filter(e => e.analysis.confidenceScores.length > 0)
-          .reduce((sum, e) => {
-            const execAvg = e.analysis.confidenceScores.reduce((a, b) => a + b, 0) / e.analysis.confidenceScores.length;
-            return sum + execAvg;
-          }, 0) / successful.filter(e => e.analysis.confidenceScores.length > 0).length;
-          
-        if (!isNaN(avgConfidence)) {
-          console.log(`  📈 Average Confidence Score: ${avgConfidence.toFixed(3)}`);
-        }
-        
-        const totalInsights = successful.reduce((sum, e) => sum + e.analysis.insightCount, 0);
-        console.log(`  💡 Total Insights Generated: ${totalInsights}`);
-        console.log(`  🎯 Insights per Execution: ${(totalInsights / successful.length).toFixed(1)}`);
-      }
-    }
-
-    // Test 6: Export Ponder Analytics
+    // Export analytics as before
     console.log('\n--- Test 6: Ponder Analytics Export ---');
     
     const ponderReport = {
@@ -427,7 +359,7 @@ async function testPonderDeepAnalysis() {
     }
 
     try {
-      const reportPath = 'ponder_deep_analysis_report.json';
+      const reportPath = 'ponder_deep_analysis_report_new.json';
       await agent.executor.toolRegistry.executeTool('writeFile', {
         path: reportPath,
         content: JSON.stringify(ponderReport, null, 2)
@@ -441,32 +373,13 @@ async function testPonderDeepAnalysis() {
     // Final Assessment
     console.log('\n🎉 Ponder Tool Deep Analysis Complete!');
     console.log('=' .repeat(80));
+    console.log(`📁 All ponder content saved to: ${ponderDir}`);
+    console.log(`📋 View index.json for organized access to all thinking content`);
     console.log(`📈 Analysis Summary:`);
     console.log(`  🧠 Total Ponder Executions: ${ponderAnalytics.executions.length}`);
     console.log(`  ✅ Successful Executions: ${ponderAnalytics.executions.filter(e => e.result.success).length}`);
     console.log(`  🧩 Structured Thinking Rate: ${((ponderAnalytics.executions.filter(e => e.analysis.structuredThinking).length / ponderAnalytics.executions.length) * 100).toFixed(1)}%`);
     console.log(`  ⏱️ Average Processing Time: ${Math.round(ponderAnalytics.executions.reduce((sum, e) => sum + e.timing.duration, 0) / ponderAnalytics.executions.length)}ms`);
-    
-    // Critical assessment
-    console.log('\n🔍 Critical Assessment:');
-    const structuredRate = (ponderAnalytics.executions.filter(e => e.analysis.structuredThinking).length / ponderAnalytics.executions.length) * 100;
-    const avgDuration = ponderAnalytics.executions.reduce((sum, e) => sum + e.timing.duration, 0) / ponderAnalytics.executions.length;
-    
-    if (structuredRate >= 90) {
-      console.log('  ✅ EXCELLENT: High structured thinking rate - LLM forcing working well');
-    } else if (structuredRate >= 70) {
-      console.log('  ⚡ GOOD: Acceptable structured thinking rate - minor improvements needed');
-    } else {
-      console.log('  ⚠️ CRITICAL: Low structured thinking rate - LLM forcing needs significant improvement');
-    }
-    
-    if (avgDuration >= 15000) {
-      console.log('  ✅ EXCELLENT: Deep processing time indicates thorough analysis');
-    } else if (avgDuration >= 8000) {
-      console.log('  ⚡ GOOD: Adequate processing time for complexity');
-    } else {
-      console.log('  ⚠️ CONCERN: Short processing time may indicate shallow analysis');
-    }
     
     clearTimeout(timeout);
     

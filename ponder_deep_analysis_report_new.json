@@ -1,0 +1,458 @@
+{
+  "metadata": {
+    "testTimestamp": "2025-05-29T02:40:06.608Z",
+    "totalExecutions": 9,
+    "successfulExecutions": 7,
+    "testDuration": 760705
+  },
+  "executionDetails": [
+    {
+      "query": "What is consciousness?",
+      "depth": 1,
+      "context": "consciousness_simple",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 8669,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748485645903,
+        "endTime": 1748485683223,
+        "duration": 37320,
+        "timestamp": "2025-05-29T02:28:03.232Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths"
+        ],
+        "depthReached": 0,
+        "insightCount": 6,
+        "confidenceScores": [
+          0.6
+        ],
+        "llmCallCount": 3,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "The concept of consciousness as an emergent property suggests that rather than seeking a 'magic ingredient' unique to humans, research should focus on the conditions under which complex information processing systems give rise to subjective experiences."
+          }
+        ]
+      }
+    },
+    {
+      "query": "What is consciousness?",
+      "depth": 2,
+      "context": "consciousness_medium",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 28268,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748485683734,
+        "endTime": 1748485775801,
+        "duration": 92067,
+        "timestamp": "2025-05-29T02:29:35.803Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "depthReached": 1,
+        "insightCount": 18,
+        "confidenceScores": [
+          0.6,
+          0.65,
+          0.65
+        ],
+        "llmCallCount": 5,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "The perspective of consciousness as an emergent property emphasizes the interconnectedness of simple neural processes leading to complex experiences, aligning with systems thinking."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The possibility of consciousness emerging from any sufficiently complex system suggests a form of panpsychism, broadening the scope of entities that might possess consciousness."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The concept of consciousness as an emergent property of complex systems might extend beyond the biological realm, suggesting the potential for consciousness in non-biological systems."
+          }
+        ]
+      }
+    },
+    {
+      "query": "What is consciousness?",
+      "depth": 3,
+      "context": "consciousness_deep",
+      "result": {
+        "success": false,
+        "hasResult": false,
+        "resultSize": 0,
+        "error": "Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+      },
+      "timing": {
+        "startTime": 1748485776303,
+        "endTime": 1748485805228,
+        "duration": 28925,
+        "timestamp": "2025-05-29T02:30:05.229Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [],
+        "depthReached": 0,
+        "insightCount": 0,
+        "confidenceScores": [],
+        "llmCallCount": 0,
+        "structuredThinking": false
+      }
+    },
+    {
+      "query": "How does quantum mechanics relate to computing?",
+      "depth": 1,
+      "context": "quantum_simple",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 9014,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748485805730,
+        "endTime": 1748485848506,
+        "duration": 42776,
+        "timestamp": "2025-05-29T02:30:48.507Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths"
+        ],
+        "depthReached": 0,
+        "insightCount": 6,
+        "confidenceScores": [
+          0.6
+        ],
+        "llmCallCount": 3,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "The principle of superposition not only enables a new computing paradigm but also suggests that information processing could be fundamentally more efficient at a quantum level—this could redefine what is computationally possible."
+          }
+        ]
+      }
+    },
+    {
+      "query": "How does quantum mechanics relate to computing?",
+      "depth": 2,
+      "context": "quantum_medium",
+      "result": {
+        "success": false,
+        "hasResult": false,
+        "resultSize": 0,
+        "error": "Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+      },
+      "timing": {
+        "startTime": 1748485849009,
+        "endTime": 1748485943684,
+        "duration": 94675,
+        "timestamp": "2025-05-29T02:32:23.684Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [],
+        "depthReached": 0,
+        "insightCount": 0,
+        "confidenceScores": [],
+        "llmCallCount": 0,
+        "structuredThinking": false
+      }
+    },
+    {
+      "query": "How does quantum mechanics relate to computing?",
+      "depth": 3,
+      "context": "quantum_deep",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 94433,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748485944184,
+        "endTime": 1748486133578,
+        "duration": 189394,
+        "timestamp": "2025-05-29T02:35:33.580Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "analyze interconnections and emergent properties",
+          "analyze interconnections and emergent properties",
+          "explore unconventional connections and possibilities",
+          "analyze interconnections and emergent properties",
+          "analyze interconnections and emergent properties"
+        ],
+        "depthReached": 2,
+        "insightCount": 39,
+        "confidenceScores": [
+          0.6,
+          0.65,
+          0.7,
+          0.7,
+          0.65,
+          0.7,
+          0.7
+        ],
+        "llmCallCount": 7,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "analyze interconnections and emergent properties",
+          "analyze interconnections and emergent properties",
+          "explore unconventional connections and possibilities",
+          "analyze interconnections and emergent properties",
+          "analyze interconnections and emergent properties"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "The transition from classical to quantum computing represents not just an evolution in technology but a fundamental shift in our understanding of information processing, akin to the shift from analog to digital."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The potential for quantum computing principles to inspire new models across disciplines suggests a future where problem-solving is more holistic and interconnected, challenging traditional silos in science and technology."
+          },
+          {
+            "depth": 2,
+            "pattern": "analyze interconnections and emergent properties",
+            "keyInsight": "The potential for a \"quantum-inspired\" paradigm across various disciplines suggests a future where problem-solving and theoretical models are deeply influenced by principles of complexity and interdependence, challenging traditional silos in science and technology."
+          },
+          {
+            "depth": 2,
+            "pattern": "analyze interconnections and emergent properties",
+            "keyInsight": "The potential for quantum computing principles to inspire new models across disciplines suggests a future where problem-solving is more holistic and interconnected, challenging traditional silos in science and technology."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The transition from classical to quantum computing could catalyze a broader cultural shift towards embracing complexity, uncertainty, and multiplicity, challenging binary oppositions in technology, society, and even individual identity."
+          },
+          {
+            "depth": 2,
+            "pattern": "analyze interconnections and emergent properties",
+            "keyInsight": "The transition to quantum computing represents a paradigm shift not just in technology but in our conceptual framework, challenging binary oppositions and inviting a more nuanced understanding of reality."
+          },
+          {
+            "depth": 2,
+            "pattern": "analyze interconnections and emergent properties",
+            "keyInsight": "The transition from classical to quantum computing could represent a significant leap in human understanding and capability, akin to previous paradigm shifts in science and technology, with the potential to reshape not only computing but also societal structures, ethical norms, and our fundamental understanding of reality."
+          }
+        ]
+      }
+    },
+    {
+      "query": "Analyze market trends in AI",
+      "depth": 2,
+      "context": "business",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 31192,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748486134081,
+        "endTime": 1748486236516,
+        "duration": 102435,
+        "timestamp": "2025-05-29T02:37:16.517Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "depthReached": 1,
+        "insightCount": 18,
+        "confidenceScores": [
+          0.6,
+          0.65,
+          0.65
+        ],
+        "llmCallCount": 5,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "One key realization is the critical role of the regulatory environment as both a facilitator and a barrier to AI advancement and adoption. This suggests that stakeholders must engage proactively with policymakers to shape regulations that encourage innovation while protecting public interests."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "One key realization is that fostering a participatory governance model for AI can create a more adaptive regulatory environment, which in turn encourages innovation that aligns with societal values and ethical standards."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "One key realization is that regulations and societal demands can act as catalysts for innovation in AI, pushing the field towards technologies that are not only advanced but also ethical, transparent, and socially responsible."
+          }
+        ]
+      }
+    },
+    {
+      "query": "Explain the ethical implications of artificial intelligence",
+      "depth": 2,
+      "context": "ethics",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 27047,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748486236819,
+        "endTime": 1748486323638,
+        "duration": 86819,
+        "timestamp": "2025-05-29T02:38:43.641Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "depthReached": 1,
+        "insightCount": 18,
+        "confidenceScores": [
+          0.6,
+          0.65,
+          0.65
+        ],
+        "llmCallCount": 5,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "The ethical implications of AI extend beyond individual concerns to reflect deeper societal values and conflicts, serving as a platform for broader discussions about the future we wish to create."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The ethical implications of AI challenge us to rethink not only how we develop and deploy technology but also how we engage with broader societal debates about our values and priorities for the future."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "The ethical implications of AI extend beyond how AI is used; they also encompass how AI influences human values and societal norms, suggesting a co-evolutionary relationship between technology and ethics."
+          }
+        ]
+      }
+    },
+    {
+      "query": "Design a solution for climate change",
+      "depth": 2,
+      "context": "climate",
+      "result": {
+        "success": true,
+        "hasResult": true,
+        "resultSize": 28481,
+        "error": null
+      },
+      "timing": {
+        "startTime": 1748486323942,
+        "endTime": 1748486406302,
+        "duration": 82360,
+        "timestamp": "2025-05-29T02:40:06.304Z"
+      },
+      "analysis": {
+        "thinkingPatternsUsed": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "depthReached": 1,
+        "insightCount": 18,
+        "confidenceScores": [
+          0.6,
+          0.65,
+          0.65
+        ],
+        "llmCallCount": 5,
+        "structuredThinking": true,
+        "patternsCovered": [
+          "break down complex problems into fundamental truths",
+          "explore unconventional connections and possibilities",
+          "explore unconventional connections and possibilities"
+        ],
+        "thinkingEvolution": [
+          {
+            "depth": 0,
+            "pattern": "break down complex problems into fundamental truths",
+            "keyInsight": "A key realization is that addressing climate change requires not just technological innovation but a societal transformation that integrates sustainability into the core values and practices of communities and nations."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "A key realization is that the effectiveness of climate change mitigation efforts is deeply intertwined with cultural narratives and psychological acceptance, suggesting that transformative action on climate change requires engaging these aspects with as much vigor as technological and economic solutions."
+          },
+          {
+            "depth": 1,
+            "pattern": "explore unconventional connections and possibilities",
+            "keyInsight": "A key realization is that addressing climate change could act as a catalyst for a broader cultural evolution, redefining human relationships with the natural world and each other, and promoting global equity and justice."
+          }
+        ]
+      }
+    }
+  ],
+  "qualityAnalysis": {
+    "structuredThinkingRate": 77.77777777777779,
+    "averageDuration": 84085.66666666667,
+    "averageInsights": 13.666666666666666,
+    "patternDistribution": {
+      "break down complex problems into fundamental truths": 7,
+      "explore unconventional connections and possibilities": 10,
+      "analyze interconnections and emergent properties": 4
+    }
+  },
+  "recommendations": [
+    "CRITICAL: Structured thinking rate below 80% - LLM forcing may need improvement"
+  ]
+}
