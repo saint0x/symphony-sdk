@@ -156,9 +156,9 @@ export class Cache {
 }
 
 // Export new cache intelligence services
-export { CommandMapProcessor } from './command-map-processor';
-export { ContextTreeBuilder } from './context-tree-builder';
-export { CacheIntelligenceService } from './cache-intelligence-service';
+export { CommandMapProcessor } from './map-processor';
+export { ContextTreeBuilder } from './tree-builder';
+export { CacheIntelligenceService } from './service';
 
 // Export types
 export type {
@@ -166,19 +166,19 @@ export type {
     Pattern,
     PatternMatch,
     CacheResult
-} from './command-map-processor';
+} from './map-processor';
 
 export type {
     ContextNode,
     ContextTree,
     ContextQuery
-} from './context-tree-builder';
+} from './tree-builder';
 
 export type {
     IntelligenceOptions,
     IntelligenceResult,
     SessionIntelligence
-} from './cache-intelligence-service';
+} from './service';
 
 // Backward compatibility function
 let globalCache: Cache | null = null;

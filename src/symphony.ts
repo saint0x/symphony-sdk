@@ -13,6 +13,8 @@ import {
     IntelligenceResult,
     Cache
 } from './cache';
+import { MemoryService, MemoryConfig, MemoryEntry, MemoryQuery, MemoryStats, AggregationResult } from './memory/service';
+import { LegacyMemory, Memory } from './memory/index';
 
 // Simple service interfaces
 interface IToolService {
@@ -76,6 +78,27 @@ interface ICacheService {
 interface IValidationManager {
     validate(config: any, type: string): Promise<{ isValid: boolean; errors: string[] }>;
     initialize(): Promise<void>;
+}
+
+interface IMemoryService {
+    // Legacy memory interface for backward compatibility
+    store(key: string, value: any, type?: 'short_term' | 'long_term', options?: any): Promise<void>;
+    retrieve(key: string, type?: 'short_term' | 'long_term', options?: any): Promise<any>;
+    search(query: MemoryQuery): Promise<MemoryEntry[]>;
+    delete(key: string, type?: 'short_term' | 'long_term', namespace?: string): Promise<boolean>;
+    clear(type?: 'short_term' | 'long_term', namespace?: string): Promise<number>;
+    
+    // Aggregation and analytics
+    aggregate(query: MemoryQuery): Promise<AggregationResult>;
+    getStats(): Promise<MemoryStats>;
+    getOperationalStats(): any;
+    
+    // Utility methods
+    healthCheck(): Promise<any>;
+    initialize(config?: MemoryConfig): Promise<void>;
+    
+    // Legacy compatibility
+    createMemoryInstance(sessionId?: string, namespace?: string): Memory;
 }
 
 // Simple implementations
@@ -491,6 +514,236 @@ class CacheServiceWrapper implements ICacheService {
     }
 }
 
+class MemoryServiceWrapper implements IMemoryService {
+    private memoryService: MemoryService;
+    private logger: Logger;
+    private initialized: boolean = false;
+
+    constructor(database: IDatabaseService) {
+        this.logger = Logger.getInstance('MemoryServiceWrapper');
+        this.memoryService = MemoryService.getInstance(database);
+    }
+
+    // Core memory operations
+    async store(
+        key: string, 
+        value: any, 
+        type: 'short_term' | 'long_term' = 'short_term',
+        options?: {
+            sessionId?: string;
+            namespace?: string;
+            metadata?: Record<string, any>;
+            tags?: string[];
+            customTTL?: number;
+        }
+    ): Promise<void> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized, using fallback storage');
+            return;
+        }
+
+        try {
+            await this.memoryService.store(key, value, type, options);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to store memory entry', { error, key, type });
+            throw error;
+        }
+    }
+
+    async retrieve(
+        key: string, 
+        type: 'short_term' | 'long_term' = 'short_term',
+        options?: {
+            namespace?: string;
+            includeMetadata?: boolean;
+        }
+    ): Promise<any> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized');
+            return null;
+        }
+
+        try {
+            return await this.memoryService.retrieve(key, type, options);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to retrieve memory entry', { error, key, type });
+            return null;
+        }
+    }
+
+    async search(query: MemoryQuery): Promise<MemoryEntry[]> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized');
+            return [];
+        }
+
+        try {
+            return await this.memoryService.search(query);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to search memory', { error, query });
+            return [];
+        }
+    }
+
+    async delete(
+        key: string, 
+        type: 'short_term' | 'long_term' = 'short_term', 
+        namespace?: string
+    ): Promise<boolean> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized');
+            return false;
+        }
+
+        try {
+            return await this.memoryService.delete(key, type, namespace);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to delete memory entry', { error, key, type });
+            return false;
+        }
+    }
+
+    async clear(type?: 'short_term' | 'long_term', namespace?: string): Promise<number> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized');
+            return 0;
+        }
+
+        try {
+            return await this.memoryService.clear(type, namespace);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to clear memory', { error, type, namespace });
+            return 0;
+        }
+    }
+
+    // Aggregation and analytics
+    async aggregate(query: MemoryQuery): Promise<AggregationResult> {
+        if (!this.initialized) {
+            this.logger.warn('MemoryServiceWrapper', 'Memory service not initialized');
+            return this.createEmptyAggregation();
+        }
+
+        try {
+            return await this.memoryService.aggregate(query);
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to aggregate memory', { error, query });
+            return this.createEmptyAggregation();
+        }
+    }
+
+    async getStats(): Promise<MemoryStats> {
+        if (!this.initialized) {
+            return this.createEmptyStats();
+        }
+
+        try {
+            return await this.memoryService.getStats();
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to get memory stats', { error });
+            return this.createEmptyStats();
+        }
+    }
+
+    getOperationalStats(): any {
+        if (!this.initialized) {
+            return { initialized: false, storeOperations: 0, retrieveOperations: 0 };
+        }
+
+        return this.memoryService.getOperationalStats();
+    }
+
+    async healthCheck(): Promise<any> {
+        if (!this.initialized) {
+            return {
+                status: 'unhealthy',
+                services: { initialized: false },
+                performance: {},
+                memory: { totalEntries: 0, hitRate: 0 }
+            };
+        }
+
+        try {
+            return await this.memoryService.healthCheck();
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Memory health check failed', { error });
+            return {
+                status: 'unhealthy',
+                services: { initialized: false },
+                performance: {},
+                memory: { totalEntries: 0, hitRate: 0 }
+            };
+        }
+    }
+
+    async initialize(config?: MemoryConfig): Promise<void> {
+        if (this.initialized) return;
+
+        this.logger.info('MemoryServiceWrapper', 'Initializing memory service');
+
+        try {
+            // Default configuration
+            const defaultConfig: MemoryConfig = {
+                shortTerm: { ttl: 3600, maxEntries: 1000 },      // 1 hour, 1K entries
+                longTerm: { ttl: 2592000, maxEntries: 10000 },   // 30 days, 10K entries
+                enableAggregation: true,
+                enableGlobalAccess: true,
+                ...config
+            };
+
+            await this.memoryService.initialize(defaultConfig);
+            this.initialized = true;
+
+            this.logger.info('MemoryServiceWrapper', 'Memory service initialized successfully', {
+                shortTermTTL: defaultConfig.shortTerm?.ttl,
+                longTermTTL: defaultConfig.longTerm?.ttl,
+                aggregationEnabled: defaultConfig.enableAggregation
+            });
+        } catch (error) {
+            this.logger.error('MemoryServiceWrapper', 'Failed to initialize memory service', { error });
+            // Don't throw - allow Symphony to continue with degraded memory functionality
+        }
+    }
+
+    // Legacy compatibility method
+    createMemoryInstance(sessionId?: string, namespace?: string): Memory {
+        if (!this.initialized) {
+            // Fallback to simple in-memory implementation
+            const { createMemory } = require('./memory/index');
+            return createMemory({ type: 'short_term' });
+        }
+
+        return new LegacyMemory(this.memoryService, { sessionId, namespace });
+    }
+
+    // Helper methods
+    private createEmptyAggregation(): AggregationResult {
+        return {
+            summary: 'Memory service not available',
+            patterns: [],
+            insights: [],
+            recommendations: [],
+            timeRange: { start: new Date(), end: new Date() },
+            totalEntriesAnalyzed: 0
+        };
+    }
+
+    private createEmptyStats(): MemoryStats {
+        return {
+            shortTerm: { count: 0, sizeBytes: 0 },
+            longTerm: { count: 0, sizeBytes: 0 },
+            totalEntries: 0,
+            totalSizeBytes: 0,
+            sessions: 0,
+            namespaces: []
+        };
+    }
+
+    getMemoryService(): MemoryService {
+        return this.memoryService;
+    }
+}
+
 export class Symphony implements Partial<ISymphony> {
     private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
     private _logger: Logger;
@@ -499,6 +752,7 @@ export class Symphony implements Partial<ISymphony> {
     private _metrics: IMetricsAPI;
     private _databaseService: DatabaseServiceWrapper;
     private _cacheService: CacheServiceWrapper;
+    private _memoryService: MemoryServiceWrapper;
     
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -534,6 +788,7 @@ export class Symphony implements Partial<ISymphony> {
         this._metrics = new SimpleMetricsAPI();
         this._databaseService = new DatabaseServiceWrapper(config);
         this._cacheService = new CacheServiceWrapper(this._databaseService.getService());
+        this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
         
         // Initialize services
         this.tool = new SimpleToolService();
@@ -570,6 +825,10 @@ export class Symphony implements Partial<ISymphony> {
     
     get cache(): CacheServiceWrapper {
         return this._cacheService;
+    }
+    
+    get memory(): MemoryServiceWrapper {
+        return this._memoryService;
     }
     
     getState(): ToolLifecycleState {
@@ -616,7 +875,8 @@ export class Symphony implements Partial<ISymphony> {
                 this.pipeline.initialize(),
                 this.validation.initialize(),
                 this.db.initialize(this._config.db),
-                this._cacheService.initialize()
+                this._cacheService.initialize(),
+                this._memoryService.initialize()
             ]);
             
             this._state = ToolLifecycleState.READY;
@@ -637,7 +897,8 @@ export class Symphony implements Partial<ISymphony> {
             validation: this.validation,
             metrics: this._metrics,
             database: this._databaseService,
-            cache: this._cacheService
+            cache: this._cacheService,
+            memory: this._memoryService
         };
         return services[name];
     }

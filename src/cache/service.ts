@@ -1,5 +1,5 @@
-import { CommandMapProcessor, CacheResult, PatternMatch } from './command-map-processor';
-import { ContextTreeBuilder, ContextTree, ContextQuery } from './context-tree-builder';
+import { CommandMapProcessor, CacheResult, PatternMatch } from './map-processor';
+import { ContextTreeBuilder, ContextTree, ContextQuery } from './tree-builder';
 import { Logger } from '../utils/logger';
 import { IDatabaseService } from '../db/types';
 
