@@ -1,13 +1,6 @@
-import { ToolLifecycleState } from './lifecycle';
-import { IAgentService, IToolService, ITeamService, IPipelineService } from '../services/interfaces';
-import { ServiceRegistry } from '../proto/symphonic/core/types';
+import { ToolLifecycleState, LogLevel } from './sdk';
 import { LLMHandler } from '../llm/handler';
-import { ContextManager } from '../proto/symphonic/core/cache/context';
-import { ServiceBus } from '../services/bus';
-import { ComponentManager } from '../symphony/components/component-manager';
 import { Logger } from '../utils/logger';
-import { IValidationManager } from '../managers/validation';
-import { LogLevel } from '../types/sdk';
 
 export interface SymphonyConfig {
     serviceRegistry: {
@@ -34,14 +27,15 @@ export interface IMetricsAPI {
     getAll(): Record<string, any>;
 }
 
+// Simplified ISymphony interface for what we actually implement
 export interface ISymphony {
     readonly name: string;
     readonly initialized: boolean;
     readonly isInitialized: boolean;
     readonly state: ToolLifecycleState;
     readonly llm: LLMHandler;
-    readonly contextManager: ContextManager;
     readonly logger: Logger;
+    readonly metrics: IMetricsAPI;
     readonly types: {
         CapabilityBuilder: {
             team(capability: string): string;
@@ -56,27 +50,14 @@ export interface ISymphony {
             readonly ADD: string;
         };
     };
-    readonly bus: ServiceBus;
-    readonly components: ComponentManager;
-    readonly componentManager: ComponentManager;
-    readonly tool: IToolService;
-    readonly agent: IAgentService;
-    readonly team: ITeamService;
-    readonly pipeline: IPipelineService;
-    readonly validation: IValidationManager;
-    readonly validationManager: IValidationManager;
-    readonly metrics: IMetricsAPI;
-    readonly serviceRegistry: ServiceRegistry;
 
     getState(): ToolLifecycleState;
     getDependencies(): string[];
     getConfig(): SymphonyConfig;
     updateConfig(config: Partial<SymphonyConfig>): void;
-    getRegistry(): Promise<ServiceRegistry>;
-    getServiceBus(): ServiceBus;
     startMetric(id: string, metadata?: Record<string, any>): void;
     endMetric(id: string, metadata?: Record<string, any>): void;
     getMetric(id: string): any;
-    initialize(options?: { logLevel?: LogLevel }): Promise<void>;
+    initialize(): Promise<void>;
     getService(name: string): Promise<any>;
 } 

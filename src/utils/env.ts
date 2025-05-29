@@ -102,9 +102,9 @@ export interface EnvConfig {
 // Default configuration values (no sensitive defaults)
 const DEFAULT_CONFIG: EnvConfig = {
     openaiApiKey: '',
-    defaultModel: 'gpt-4',
+    defaultModel: 'gpt-4o-mini',
     defaultTemperature: 0.7,
-    defaultMaxTokens: 1000,
+    defaultMaxTokens: 2048,
     defaultTopP: 0.9,
     defaultPresencePenalty: 0.1,
     defaultFrequencyPenalty: 0.1,
@@ -151,6 +151,26 @@ function loadConfig(): EnvConfig {
                         source: localEnvPath
                     }
                 });
+            }
+            // Handle LLM model configuration
+            else if (key === 'DEFAULT_LLM_MODEL') {
+                config.defaultModel = value || config.defaultModel;
+                logger.info(LogCategory.SYSTEM, 'Setting default LLM model:', {
+                    metadata: {
+                        model: value,
+                        source: localEnvPath
+                    }
+                });
+            }
+            // Handle LLM configuration
+            else if (key === 'DEFAULT_TEMPERATURE') {
+                config.defaultTemperature = parseFloat(value || '0.7');
+            }
+            else if (key === 'DEFAULT_MAX_TOKENS') {
+                config.defaultMaxTokens = parseInt(value || '2048', 10);
+            }
+            else if (key === 'REQUEST_TIMEOUT_MS') {
+                config.requestTimeoutMs = parseInt(value || '30000', 10);
             }
             // Handle custom endpoints
             else if (key.endsWith('_ENDPOINT')) {

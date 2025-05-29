@@ -400,4 +400,57 @@ export interface ToolStateEvent {
 
 export interface ToolEventHandler {
     (event: ToolStateEvent): Promise<void> | void;
+}
+
+// Tool chaining types
+export interface ToolChainStep {
+    id: string;
+    tool: string;
+    semantic_number: string; // e.g., "1", "2.1", "2.2", "3"
+    input_mapping?: Record<string, string>; // Maps input params to previous step outputs
+    static_params?: Record<string, any>; // Static parameters for this step
+    condition?: (context: ChainContext) => boolean; // Optional conditional execution
+    parallel_group?: string; // Group ID for parallel execution
+    depends_on?: string[]; // List of step IDs this step depends on
+}
+
+export interface ToolChain {
+    id: string;
+    name: string;
+    description: string;
+    steps: ToolChainStep[];
+    input_schema?: Record<string, any>; // Expected input parameters
+    output_mapping?: Record<string, string>; // Maps final outputs
+}
+
+export interface ChainContext {
+    input: Record<string, any>; // Initial chain input
+    stepResults: Map<string, ToolResult>; // Results from each step
+    chainId: string;
+    executionId: string;
+    startTime: number;
+    currentStep?: ToolChainStep;
+}
+
+export interface ChainExecutionResult {
+    success: boolean;
+    result?: any;
+    error?: string;
+    context: ChainContext;
+    metrics: {
+        totalDuration: number;
+        stepCount: number;
+        parallelGroups: number;
+        failedSteps: string[];
+        completedSteps: string[];
+        stepTimings: Record<string, number>;
+    };
+}
+
+export interface ChainExecutorConfig {
+    maxParallelSteps: number;
+    stepTimeoutMs: number;
+    retryFailedSteps: boolean;
+    continueOnStepFailure: boolean;
+    logLevel: 'minimal' | 'detailed' | 'verbose';
 } 

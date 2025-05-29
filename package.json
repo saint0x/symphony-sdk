@@ -2,7 +2,6 @@
   "name": "symphonic",
   "version": "0.1.0",
   "description": "A TypeScript SDK for building AI-powered applications with tools, agents, teams and pipelines",
-  "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -55,12 +54,14 @@
     "openai": "^4.0.0",
     "winston": "^3.10.0",
     "dotenv": "^16.3.1",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.3",
     "@types/node": "^20.4.8",
     "@types/uuid": "^9.0.2",
+    "@types/xml2js": "^0.4.14",
     "@typescript-eslint/eslint-plugin": "^6.2.1",
     "@typescript-eslint/parser": "^6.2.1",
     "eslint": "^8.46.0",

@@ -7,6 +7,9 @@ import { writeCodeTool } from './tools/write-code';
 import { createPlanTool } from './tools/create-plan';
 import { ponderTool } from './tools/ponder';
 
+// Export the ToolRegistry
+export { ToolRegistry } from './registry';
+
 // Standard tool configurations
 export const standardTools: ToolConfig[] = [
     // File System Tools

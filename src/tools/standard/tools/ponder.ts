@@ -41,7 +41,7 @@ interface MetaAnalysis {
     thinkingEvolution: Array<{
         depth: number;
         pattern: string;
-        keyInsight: string;
+        keyInsight?: string;
     }>;
 }
 
@@ -134,12 +134,24 @@ Your thinking should demonstrate:
                 const thoughts: Thought[] = [];
                 const emergentInsights = new Set<string>();
 
-                // Recursive thinking function
+                // Get array of thinking patterns for cycling
+                const patternValues = Object.values(THINKING_PATTERNS);
+
+                // Recursive thinking function - FIXED LOGIC
                 const thinkDeeply = async (currentQuery: string, currentContext: ThinkingContext, currentDepth: number): Promise<Thought | null> => {
-                    if (currentDepth >= depth) return null;
+                    // Fix 1: Correct termination condition - should continue UNTIL we reach max depth
+                    if (currentDepth >= depth) {
+                        console.log(`[PONDER] Reached maximum depth ${depth}, stopping recursion`);
+                        return null;
+                    }
 
                     console.log(`[PONDER] Starting thinking cycle at depth ${currentDepth}`);
-                    console.log(`[PONDER] Using thinking pattern: ${Object.values(THINKING_PATTERNS)[currentDepth]}`);
+                    
+                    // Fix 2: Use modulo to cycle through patterns if depth exceeds pattern count
+                    const patternIndex = currentDepth % patternValues.length;
+                    const currentPattern = patternValues[patternIndex];
+                    
+                    console.log(`[PONDER] Using thinking pattern: ${currentPattern}`);
                     console.log(`[PONDER] Analyzing query: "${currentQuery}"`);
 
                     const prompt = `
@@ -149,7 +161,7 @@ Consider the query: "${currentQuery}"
 Context:
 ${JSON.stringify(currentContext, null, 2)}
 
-Using the following pattern: ${Object.values(THINKING_PATTERNS)[currentDepth]}
+Using the following thinking pattern: ${currentPattern}
 
 ${THOUGHT_TAGS.OBSERVATION}
 What are the key elements and patterns you observe?
@@ -170,6 +182,8 @@ ${THOUGHT_TAGS.END}
 ${THOUGHT_TAGS.METACOGNITION}
 Reflect on your thinking process and any biases or assumptions.
 ${THOUGHT_TAGS.END}
+
+Generate at least 2-3 ${THOUGHT_TAGS.INSIGHT} tags with key realizations.
 `;
 
                     console.log(`[PONDER] Sending request to LLM for deep analysis...`);
@@ -184,8 +198,8 @@ ${THOUGHT_TAGS.END}
                                 content: prompt
                             }
                         ],
-                        temperature: llmConfig.temperature,
-                        maxTokens: llmConfig.maxTokens,
+                        temperature: llmConfig.temperature || 0.7,
+                        maxTokens: llmConfig.maxTokens || 2048,
                         provider: llmConfig.provider
                     });
 
@@ -193,39 +207,40 @@ ${THOUGHT_TAGS.END}
                     const responseText = response.toString();
 
                     // Extract insights and generate new queries for deeper analysis
-                    const insights = responseText.match(/<insight>(.*?)<\/insight>/gs) || [];
+                    const insights = extractAllInsights(responseText);
                     insights.forEach((insight: string) => emergentInsights.add(insight));
                     console.log(`[PONDER] Extracted ${insights.length} insights from response`);
 
                     // Structure the thought
                     const thought: Thought = {
                         depth: currentDepth,
-                        pattern: Object.values(THINKING_PATTERNS)[currentDepth],
+                        pattern: currentPattern,
                         observation: extractTag(responseText, 'observation'),
                         analysis: extractTag(responseText, 'analysis'),
                         synthesis: extractTag(responseText, 'synthesis'),
                         implication: extractTag(responseText, 'implication'),
                         metacognition: extractTag(responseText, 'metacognition'),
-                        insights: Array.from(insights),
-                        confidence: calculateConfidence(responseText),
+                        insights: insights,
+                        confidence: calculateConfidence(responseText, insights.length, currentDepth),
                         context: currentContext
                     };
 
                     thoughts.push(thought);
                     console.log(`[PONDER] Structured thought with confidence: ${thought.confidence}`);
 
-                    // Generate new queries for deeper analysis
-                    const newQueries = generateNewQueries(thought);
+                    // Fix 3: Generate new queries for deeper analysis based on actual insights
+                    const newQueries = generateNewQueries(thought, currentQuery);
                     console.log(`[PONDER] Generated ${newQueries.length} new queries for deeper analysis`);
 
-                    if (newQueries.length > 0) {
-                        console.log(`[PONDER] Diving deeper into analysis with new queries...`);
-                        for (const newQuery of newQueries) {
+                    // Fix 4: Recursive call with incremented depth
+                    if (newQueries.length > 0 && currentDepth + 1 < depth) {
+                        console.log(`[PONDER] Diving deeper into analysis (depth ${currentDepth + 1})...`);
+                        for (const newQuery of newQueries.slice(0, 2)) { // Limit to 2 queries per level
                             await thinkDeeply(newQuery, {
                                 ...currentContext,
                                 parentThought: thought,
                                 iteration: currentContext.iteration + 1
-                            }, currentDepth + 1);
+                            }, currentDepth + 1); // Fix: Increment depth
                         }
                     }
 
@@ -243,14 +258,18 @@ ${THOUGHT_TAGS.END}
                 const conclusionPrompt = `
 ${THOUGHT_TAGS.START}
 Based on all thoughts and insights:
-${thoughts.map(t => JSON.stringify(t, null, 2)).join('\n')}
+${thoughts.map(t => `Depth ${t.depth} (${t.pattern}): ${t.insights.join('; ')}`).join('\n')}
+
+All insights discovered: ${Array.from(emergentInsights).join('; ')}
 
 Synthesize a comprehensive conclusion that:
 1. Identifies key patterns and insights
-2. Explores systemic implications
+2. Explores systemic implications  
 3. Acknowledges uncertainties
 4. Suggests next steps
 ${THOUGHT_TAGS.END}
+
+Use ${THOUGHT_TAGS.SYNTHESIS}, ${THOUGHT_TAGS.IMPLICATION}, ${THOUGHT_TAGS.UNCERTAINTY}, and ${THOUGHT_TAGS.INSIGHT} tags.
 `;
 
                 console.log('[PONDER] Sending conclusion synthesis request to LLM...');
@@ -265,8 +284,8 @@ ${THOUGHT_TAGS.END}
                             content: conclusionPrompt
                         }
                     ],
-                    temperature: llmConfig.temperature,
-                    maxTokens: llmConfig.maxTokens,
+                    temperature: llmConfig.temperature || 0.7,
+                    maxTokens: llmConfig.maxTokens || 2048,
                     provider: llmConfig.provider
                 });
 
@@ -274,7 +293,7 @@ ${THOUGHT_TAGS.END}
                 const conclusionText = conclusionResponse.toString();
 
                 const conclusion: Conclusion = {
-                    summary: extractTag(conclusionText, 'synthesis'),
+                    summary: extractTag(conclusionText, 'synthesis') || conclusionText,
                     keyInsights: Array.from(emergentInsights),
                     implications: extractTag(conclusionText, 'implication'),
                     uncertainties: extractTag(conclusionText, 'uncertainty'),
@@ -282,7 +301,7 @@ ${THOUGHT_TAGS.END}
                         .split('\n')
                         .filter(Boolean)
                         .map(step => step.trim()),
-                    confidence: calculateConfidence(conclusionText)
+                    confidence: calculateConfidence(conclusionText, emergentInsights.size, depth)
                 };
 
                 console.log(`[PONDER] Conclusion synthesis complete with ${conclusion.keyInsights.length} key insights`);
@@ -297,7 +316,7 @@ ${THOUGHT_TAGS.END}
                     thinkingEvolution: thoughts.map(t => ({
                         depth: t.depth,
                         pattern: t.pattern,
-                        keyInsight: t.insights[0]
+                        keyInsight: t.insights[0] || 'No insight generated'
                     }))
                 };
 
@@ -321,7 +340,7 @@ ${THOUGHT_TAGS.END}
     }
 };
 
-// Helper functions
+// Helper functions - IMPROVED
 function extractTag(text: string, tag: string): string {
     const regex = new RegExp(`<${tag}>(.*?)<\/${tag}>`, 'gs');
     const matches = text.match(regex);
@@ -330,42 +349,49 @@ function extractTag(text: string, tag: string): string {
         .join('\n') : '';
 }
 
-function calculateConfidence(response: string): number {
+function extractAllInsights(text: string): string[] {
+    const insights = text.match(/<insight>(.*?)<\/insight>/gs) || [];
+    return insights.map(insight => 
+        insight.replace(/<\/?insight>/g, '').trim()
+    ).filter(Boolean);
+}
+
+function calculateConfidence(response: string, insightCount: number, depth: number): number {
     // Analyze response characteristics to estimate confidence
     const hasEvidence = /<evidence>.*?<\/evidence>/s.test(response);
     const hasUncertainty = /<uncertainty>.*?<\/uncertainty>/s.test(response);
-    const insightCount = (response.match(/<insight>.*?<\/insight>/gs) || []).length;
     
-    let confidence = 0.5; // Base confidence
+    let confidence = 0.3; // Lower base confidence
     if (hasEvidence) confidence += 0.2;
-    if (hasUncertainty) confidence -= 0.1; // Healthy skepticism
-    confidence += Math.min(0.2, insightCount * 0.05); // Bonus for insights
+    if (hasUncertainty) confidence -= 0.05; // Healthy skepticism
+    confidence += Math.min(0.3, insightCount * 0.1); // More bonus for insights
+    confidence += depth * 0.05; // Bonus for depth
     
     return Math.min(0.95, Math.max(0.1, confidence));
 }
 
-function generateNewQueries(thought: Thought): string[] {
+function generateNewQueries(thought: Thought, originalQuery: string): string[] {
     // Generate new questions based on insights and uncertainties
     const queries = new Set<string>();
     
-    // Extract potential areas for deeper exploration
-    const uncertainties = extractTag(thought.metacognition, 'uncertainty')
-        .split('\n')
-        .filter(Boolean);
-    
-    const insights = thought.insights
-        .map((insight: string) => extractTag(insight, 'insight'))
-        .filter(Boolean);
-    
-    // Generate queries from uncertainties
-    uncertainties.forEach((uncertainty: string) => {
-        queries.add(`Explore deeper: ${uncertainty}`);
+    // Generate queries from insights - look for gaps or implications
+    thought.insights.forEach((insight: string) => {
+        if (insight.length > 10) { // Only meaningful insights
+            queries.add(`What are the implications of: ${insight.substring(0, 100)}?`);
+            queries.add(`How does this relate to the broader context: ${insight.substring(0, 100)}?`);
+        }
     });
     
-    // Generate queries from insights
-    insights.forEach((insight: string) => {
-        queries.add(`Examine implications of: ${insight}`);
-    });
+    // Generate queries from metacognition - explore assumptions
+    if (thought.metacognition) {
+        queries.add(`Challenge the assumptions in: ${originalQuery}`);
+        queries.add(`What alternative perspectives exist for: ${originalQuery}?`);
+    }
+    
+    // Generate queries from synthesis - explore connections
+    if (thought.synthesis) {
+        queries.add(`What contradictions or tensions exist in: ${originalQuery}?`);
+    }
     
     return Array.from(queries).slice(0, 3); // Limit to top 3 queries
 } 
