@@ -15,6 +15,7 @@ import {
 } from './cache';
 import { MemoryService, MemoryConfig, MemoryEntry, MemoryQuery, MemoryStats, AggregationResult } from './memory/service';
 import { LegacyMemory, Memory } from './memory/index';
+import { StreamingService, StreamingConfig, ProgressUpdate, StreamOptions, StreamingStats } from './streaming/service';
 
 // Simple service interfaces
 interface IToolService {
@@ -101,6 +102,24 @@ interface IMemoryService {
     createMemoryInstance(sessionId?: string, namespace?: string): Memory;
 }
 
+interface IStreamingService {
+    // Stream lifecycle management
+    createStream(options: StreamOptions): string;
+    updateProgress(streamId: string, progress: Partial<ProgressUpdate>): void;
+    completeStream(streamId: string, finalData?: any): void;
+    errorStream(streamId: string, error: Error): void;
+    
+    // Subscription management
+    subscribe(streamId: string, callback: (update: ProgressUpdate) => void): () => void;
+    
+    // Utility methods
+    getActiveStreams(): string[];
+    getStreamStatus(streamId: string): any;
+    getStats(): StreamingStats;
+    healthCheck(): Promise<any>;
+    initialize(config?: StreamingConfig): Promise<void>;
+}
+
 // Simple implementations
 class SimpleToolService implements IToolService {
     async create(config: any): Promise<any> {
@@ -170,6 +189,7 @@ class EnhancedTeamService implements ITeamService {
                 return await teamCoordinator.executeTask(task, options);
             },
             getStatus: () => teamCoordinator.getTeamStatus(),
+            getContext: () => teamCoordinator.getContext(),
             coordinator: teamCoordinator // Expose coordinator for advanced usage
         };
     }
@@ -744,6 +764,193 @@ class MemoryServiceWrapper implements IMemoryService {
     }
 }
 
+class StreamingServiceWrapper implements IStreamingService {
+    private streamingService: StreamingService;
+    private logger: Logger;
+    private initialized: boolean = false;
+
+    constructor() {
+        this.logger = Logger.getInstance('StreamingServiceWrapper');
+        this.streamingService = StreamingService.getInstance();
+    }
+
+    // === STREAM LIFECYCLE MANAGEMENT ===
+
+    createStream(options: StreamOptions): string {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, creating stream with defaults');
+            // Initialize with defaults if not already done
+            this.streamingService.initialize().catch(error => {
+                this.logger.error('StreamingServiceWrapper', 'Failed to auto-initialize', { error });
+            });
+        }
+
+        try {
+            return this.streamingService.createStream(options);
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to create stream', { error, options });
+            throw error;
+        }
+    }
+
+    updateProgress(streamId: string, progress: Partial<ProgressUpdate>): void {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, skipping progress update');
+            return;
+        }
+
+        try {
+            this.streamingService.updateProgress(streamId, progress);
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to update progress', { error, streamId });
+        }
+    }
+
+    completeStream(streamId: string, finalData?: any): void {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, skipping stream completion');
+            return;
+        }
+
+        try {
+            this.streamingService.completeStream(streamId, finalData);
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to complete stream', { error, streamId });
+        }
+    }
+
+    errorStream(streamId: string, error: Error): void {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, skipping stream error');
+            return;
+        }
+
+        try {
+            this.streamingService.errorStream(streamId, error);
+        } catch (err) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to error stream', { err, streamId, originalError: error.message });
+        }
+    }
+
+    // === SUBSCRIPTION MANAGEMENT ===
+
+    subscribe(streamId: string, callback: (update: ProgressUpdate) => void): () => void {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, returning no-op unsubscribe');
+            return () => {}; // Return no-op unsubscribe function
+        }
+
+        try {
+            return this.streamingService.subscribe(streamId, callback);
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to subscribe to stream', { error, streamId });
+            return () => {}; // Return no-op unsubscribe function
+        }
+    }
+
+    // === UTILITY METHODS ===
+
+    getActiveStreams(): string[] {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, returning empty array');
+            return [];
+        }
+
+        try {
+            return this.streamingService.getActiveStreams();
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to get active streams', { error });
+            return [];
+        }
+    }
+
+    getStreamStatus(streamId: string): any {
+        if (!this.initialized) {
+            this.logger.warn('StreamingServiceWrapper', 'Streaming service not initialized, returning null');
+            return null;
+        }
+
+        try {
+            return this.streamingService.getStreamStatus(streamId);
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to get stream status', { error, streamId });
+            return null;
+        }
+    }
+
+    getStats(): StreamingStats {
+        if (!this.initialized) {
+            return {
+                activeStreams: 0,
+                totalStreamsCreated: 0,
+                messagesSent: 0,
+                averageStreamDuration: 0,
+                peakConcurrentStreams: 0
+            };
+        }
+
+        try {
+            return this.streamingService.getStats();
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to get streaming stats', { error });
+            return {
+                activeStreams: 0,
+                totalStreamsCreated: 0,
+                messagesSent: 0,
+                averageStreamDuration: 0,
+                peakConcurrentStreams: 0
+            };
+        }
+    }
+
+    async healthCheck(): Promise<any> {
+        if (!this.initialized) {
+            return {
+                status: 'unhealthy',
+                services: { initialized: false },
+                activeStreams: 0,
+                stats: this.getStats()
+            };
+        }
+
+        try {
+            return await this.streamingService.healthCheck();
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Health check failed', { error });
+            return {
+                status: 'unhealthy',
+                services: { initialized: false },
+                activeStreams: 0,
+                stats: this.getStats(),
+                error: error instanceof Error ? error.message : String(error)
+            };
+        }
+    }
+
+    async initialize(config?: StreamingConfig): Promise<void> {
+        if (this.initialized) return;
+
+        this.logger.info('StreamingServiceWrapper', 'Initializing streaming service');
+
+        try {
+            await this.streamingService.initialize(config);
+            this.initialized = true;
+            this.logger.info('StreamingServiceWrapper', 'Streaming service initialized successfully', {
+                enableRealTimeUpdates: config?.enableRealTimeUpdates,
+                maxConcurrentStreams: config?.maxConcurrentStreams
+            });
+        } catch (error) {
+            this.logger.error('StreamingServiceWrapper', 'Failed to initialize streaming service', { error });
+            throw error;
+        }
+    }
+
+    // Expose the underlying streaming service for advanced usage
+    getStreamingService(): StreamingService {
+        return this.streamingService;
+    }
+}
+
 export class Symphony implements Partial<ISymphony> {
     private _state: ToolLifecycleState = ToolLifecycleState.PENDING;
     private _logger: Logger;
@@ -753,6 +960,7 @@ export class Symphony implements Partial<ISymphony> {
     private _databaseService: DatabaseServiceWrapper;
     private _cacheService: CacheServiceWrapper;
     private _memoryService: MemoryServiceWrapper;
+    private _streamingService: StreamingServiceWrapper;
     
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -789,6 +997,7 @@ export class Symphony implements Partial<ISymphony> {
         this._databaseService = new DatabaseServiceWrapper(config);
         this._cacheService = new CacheServiceWrapper(this._databaseService.getService());
         this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
+        this._streamingService = new StreamingServiceWrapper();
         
         // Initialize services
         this.tool = new SimpleToolService();
@@ -829,6 +1038,10 @@ export class Symphony implements Partial<ISymphony> {
     
     get memory(): MemoryServiceWrapper {
         return this._memoryService;
+    }
+    
+    get streaming(): StreamingServiceWrapper {
+        return this._streamingService;
     }
     
     getState(): ToolLifecycleState {
@@ -876,7 +1089,8 @@ export class Symphony implements Partial<ISymphony> {
                 this.validation.initialize(),
                 this.db.initialize(this._config.db),
                 this._cacheService.initialize(),
-                this._memoryService.initialize()
+                this._memoryService.initialize(),
+                this._streamingService.initialize()
             ]);
             
             this._state = ToolLifecycleState.READY;
@@ -898,7 +1112,8 @@ export class Symphony implements Partial<ISymphony> {
             metrics: this._metrics,
             database: this._databaseService,
             cache: this._cacheService,
-            memory: this._memoryService
+            memory: this._memoryService,
+            streaming: this._streamingService
         };
         return services[name];
     }

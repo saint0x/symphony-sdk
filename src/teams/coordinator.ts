@@ -46,6 +46,76 @@ export enum TeamExecutionStrategy {
   ROLE_BASED = 'role_based'      // Assign based on agent specialization
 }
 
+// New comprehensive team context interface
+export interface TeamContext {
+  // Team identification
+  teamId: string;
+  teamName: string;
+  
+  // Current state
+  currentTask?: string;
+  executionPhase: 'idle' | 'planning' | 'executing' | 'coordinating' | 'completing';
+  activeStrategy?: TeamExecutionStrategy;
+  
+  // Member intelligence
+  members: {
+    available: Array<{
+      name: string;
+      capabilities: string[];
+      status: 'idle' | 'busy' | 'error';
+      currentLoad: number;
+      efficiency: number; // calculated from recent performance
+    }>;
+    optimal: {
+      name: string;
+      reason: string;
+    } | null;
+    workload: {
+      balanced: boolean;
+      distribution: Record<string, number>;
+    };
+  };
+  
+  // Task intelligence
+  tasks: {
+    active: number;
+    queued: number;
+    completed: number;
+    recentHistory: Array<{
+      task: string;
+      strategy: string;
+      duration: number;
+      success: boolean;
+      participatingAgents: string[];
+    }>;
+  };
+  
+  // Shared knowledge
+  workspace: {
+    sharedData: Record<string, any>;
+    recentCommunications: Array<{
+      from: string;
+      message: string;
+      timestamp: number;
+      type: string;
+    }>;
+    knowledgeBase: string[]; // key insights from past tasks
+  };
+  
+  // Intelligence insights
+  insights: {
+    recommendedStrategy: TeamExecutionStrategy;
+    strategyReason: string;
+    teamEfficiency: number;
+    suggestedOptimizations: string[];
+    riskFactors: string[];
+  };
+  
+  // Context metadata
+  lastUpdated: number;
+  contextVersion: string;
+}
+
 export class TeamCoordinator {
   private teamId: string;
   private config: TeamConfig;
@@ -676,6 +746,300 @@ export class TeamCoordinator {
       taskQueueLength: this.taskQueue.length,
       strategy: this.config.strategy?.name || 'default'
     };
+  }
+
+  // === TEAM CONTEXT INTELLIGENCE API ===
+
+  getContext(): TeamContext {
+    const now = Date.now();
+    
+    // Analyze member efficiency from recent task history
+    const memberEfficiencies = this.calculateMemberEfficiencies();
+    
+    // Build available members with intelligence
+    const availableMembers = Array.from(this.members.values()).map(member => ({
+      name: member.name,
+      capabilities: member.capabilities,
+      status: member.status,
+      currentLoad: member.currentLoad,
+      efficiency: memberEfficiencies[member.name] || 0.8 // default efficiency
+    }));
+
+    // Find optimal member for next task
+    const optimalMember = this.findOptimalMember(availableMembers);
+    
+    // Calculate workload distribution
+    const workloadDistribution = this.calculateWorkloadDistribution();
+    
+    // Analyze recent task history
+    const recentTasks = this.getRecentTaskHistory(5); // last 5 tasks
+    
+    // Get recent communications (last 10 entries)
+    const recentComms = this.sharedContext.communicationLog
+      .slice(-10)
+      .map(comm => ({
+        from: comm.from,
+        message: comm.message.length > 100 ? comm.message.substring(0, 100) + '...' : comm.message,
+        timestamp: comm.timestamp,
+        type: comm.type
+      }));
+
+    // Extract knowledge base from successful tasks
+    const knowledgeBase = this.extractKnowledgeBase();
+    
+    // Generate insights and recommendations
+    const insights = this.generateTeamInsights(availableMembers, recentTasks);
+
+    return {
+      // Team identification
+      teamId: this.teamId,
+      teamName: this.config.name,
+      
+      // Current state
+      currentTask: this.getCurrentTask(),
+      executionPhase: this.determineExecutionPhase(),
+      activeStrategy: this.getCurrentStrategy(),
+      
+      // Member intelligence
+      members: {
+        available: availableMembers,
+        optimal: optimalMember,
+        workload: {
+          balanced: this.isWorkloadBalanced(workloadDistribution),
+          distribution: workloadDistribution
+        }
+      },
+      
+      // Task intelligence
+      tasks: {
+        active: this.activeExecutions.size,
+        queued: this.taskQueue.length,
+        completed: this.sharedContext.taskHistory.length,
+        recentHistory: recentTasks
+      },
+      
+      // Shared knowledge
+      workspace: {
+        sharedData: Object.fromEntries(this.sharedContext.workspaceData),
+        recentCommunications: recentComms,
+        knowledgeBase
+      },
+      
+      // Intelligence insights
+      insights,
+      
+      // Context metadata
+      lastUpdated: now,
+      contextVersion: '1.0.0'
+    };
+  }
+
+  // === PRIVATE CONTEXT ANALYSIS METHODS ===
+
+  private calculateMemberEfficiencies(): Record<string, number> {
+    const efficiencies: Record<string, number> = {};
+    
+    // Analyze from task history - calculate success rate and average execution time
+    this.sharedContext.taskHistory.forEach(task => {
+      if (!efficiencies[task.agentId]) {
+        efficiencies[task.agentId] = 0.8; // baseline efficiency
+      }
+    });
+
+    // For now, simulate efficiency based on current load (inverse relationship)
+    Array.from(this.members.values()).forEach(member => {
+      const loadFactor = Math.max(0.1, 1 - (member.currentLoad * 0.1));
+      const activityFactor = member.lastActivity > Date.now() - 300000 ? 1.0 : 0.9; // 5 min activity
+      efficiencies[member.name] = loadFactor * activityFactor;
+    });
+
+    return efficiencies;
+  }
+
+  private findOptimalMember(availableMembers: any[]): { name: string; reason: string } | null {
+    const idleMembers = availableMembers.filter(m => m.status === 'idle');
+    
+    if (idleMembers.length === 0) {
+      return null;
+    }
+
+    // Find member with highest efficiency and lowest load
+    const optimal = idleMembers.sort((a, b) => {
+      const scoreA = a.efficiency - (a.currentLoad * 0.1);
+      const scoreB = b.efficiency - (b.currentLoad * 0.1);
+      return scoreB - scoreA;
+    })[0];
+
+    return {
+      name: optimal.name,
+      reason: `Highest efficiency (${(optimal.efficiency * 100).toFixed(1)}%) with low load (${optimal.currentLoad})`
+    };
+  }
+
+  private calculateWorkloadDistribution(): Record<string, number> {
+    const distribution: Record<string, number> = {};
+    
+    Array.from(this.members.values()).forEach(member => {
+      distribution[member.name] = member.currentLoad;
+    });
+
+    return distribution;
+  }
+
+  private isWorkloadBalanced(distribution: Record<string, number>): boolean {
+    const loads = Object.values(distribution);
+    if (loads.length === 0) return true;
+    
+    const maxLoad = Math.max(...loads);
+    const minLoad = Math.min(...loads);
+    
+    // Consider balanced if difference is less than 2
+    return (maxLoad - minLoad) <= 2;
+  }
+
+  private getRecentTaskHistory(count: number): Array<{
+    task: string;
+    strategy: string;
+    duration: number;
+    success: boolean;
+    participatingAgents: string[];
+  }> {
+    // For now, return simplified task history
+    // In the future, we could store more detailed execution results
+    return this.sharedContext.taskHistory
+      .slice(-count)
+      .map(task => ({
+        task: task.task,
+        strategy: 'role_based', // simplified
+        duration: 5000, // estimated duration
+        success: true, // assume success for now
+        participatingAgents: [task.agentId]
+      }));
+  }
+
+  private extractKnowledgeBase(): string[] {
+    const insights: string[] = [];
+    
+    // Extract patterns from communication log
+    const successfulTasks = this.sharedContext.taskHistory.length;
+    if (successfulTasks > 5) {
+      insights.push(`Team has successfully completed ${successfulTasks} tasks`);
+    }
+
+    // Analyze member specializations
+    const capabilityMap: Record<string, number> = {};
+    Array.from(this.members.values()).forEach(member => {
+      member.capabilities.forEach(cap => {
+        capabilityMap[cap] = (capabilityMap[cap] || 0) + 1;
+      });
+    });
+
+    const topCapabilities = Object.entries(capabilityMap)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([cap]) => cap);
+
+    if (topCapabilities.length > 0) {
+      insights.push(`Team specializes in: ${topCapabilities.join(', ')}`);
+    }
+
+    return insights;
+  }
+
+  private generateTeamInsights(members: any[], recentTasks: any[]): {
+    recommendedStrategy: TeamExecutionStrategy;
+    strategyReason: string;
+    teamEfficiency: number;
+    suggestedOptimizations: string[];
+    riskFactors: string[];
+  } {
+    const idleMembers = members.filter(m => m.status === 'idle').length;
+    const totalMembers = members.length;
+    const averageEfficiency = members.reduce((sum, m) => sum + m.efficiency, 0) / members.length;
+
+    // Recommend strategy based on team state
+    let recommendedStrategy: TeamExecutionStrategy;
+    let strategyReason: string;
+
+    if (idleMembers >= 3) {
+      recommendedStrategy = TeamExecutionStrategy.PARALLEL;
+      strategyReason = `${idleMembers} idle agents available for parallel execution`;
+    } else if (idleMembers === 1) {
+      recommendedStrategy = TeamExecutionStrategy.ROLE_BASED;
+      strategyReason = 'Single agent optimization for focused execution';
+    } else {
+      recommendedStrategy = TeamExecutionStrategy.COLLABORATIVE;
+      strategyReason = 'Limited availability requires collaborative approach';
+    }
+
+    // Generate optimization suggestions
+    const optimizations: string[] = [];
+    if (averageEfficiency < 0.7) {
+      optimizations.push('Consider reducing agent workload to improve efficiency');
+    }
+    if (idleMembers === 0) {
+      optimizations.push('All agents busy - consider queuing or load balancing');
+    }
+    if (recentTasks.length === 0) {
+      optimizations.push('No recent task history - establish baseline performance');
+    }
+
+    // Identify risk factors
+    const riskFactors: string[] = [];
+    const errorMembers = members.filter(m => m.status === 'error').length;
+    if (errorMembers > 0) {
+      riskFactors.push(`${errorMembers} agents in error state`);
+    }
+    if (idleMembers === 0 && this.taskQueue.length > 0) {
+      riskFactors.push('Task queue backlog with no available agents');
+    }
+
+    return {
+      recommendedStrategy,
+      strategyReason,
+      teamEfficiency: averageEfficiency,
+      suggestedOptimizations: optimizations,
+      riskFactors
+    };
+  }
+
+  private getCurrentTask(): string | undefined {
+    // Return the most recent task if any active executions
+    if (this.activeExecutions.size > 0) {
+      const recentTask = this.sharedContext.taskHistory[this.sharedContext.taskHistory.length - 1];
+      return recentTask?.task;
+    }
+    return undefined;
+  }
+
+  private determineExecutionPhase(): 'idle' | 'planning' | 'executing' | 'coordinating' | 'completing' {
+    if (this.activeExecutions.size === 0 && this.taskQueue.length === 0) {
+      return 'idle';
+    }
+    if (this.activeExecutions.size > 0) {
+      return 'executing';
+    }
+    if (this.taskQueue.length > 0) {
+      return 'planning';
+    }
+    return 'idle';
+  }
+
+  private getCurrentStrategy(): TeamExecutionStrategy | undefined {
+    // For now, return the default strategy from config
+    // In the future, we could track the strategy of the current active task
+    if (this.config.strategy?.name) {
+      // Map string to enum
+      switch (this.config.strategy.name.toLowerCase()) {
+        case 'parallel': return TeamExecutionStrategy.PARALLEL;
+        case 'sequential': return TeamExecutionStrategy.SEQUENTIAL;
+        case 'pipeline': return TeamExecutionStrategy.PIPELINE;
+        case 'collaborative': return TeamExecutionStrategy.COLLABORATIVE;
+        case 'role_based': return TeamExecutionStrategy.ROLE_BASED;
+        default: return TeamExecutionStrategy.ROLE_BASED;
+      }
+    }
+    return undefined;
   }
 
   async shutdown(): Promise<void> {

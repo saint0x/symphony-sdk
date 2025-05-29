@@ -2,6 +2,7 @@ import { PipelineResult, PipelineStepResult } from '../types/sdk';
 import { Logger } from '../utils/logger';
 import { ChainExecutor, ToolChain } from '../tools/executor';
 import { ToolRegistry } from '../tools/standard/registry';
+import { PipelineIntelligence, PipelinePerformanceProfile, OptimizationRecommendation } from './pipeline-intelligence';
 
 export interface PipelineContext {
   pipelineId: string;
@@ -95,6 +96,7 @@ export class PipelineExecutor {
   private chainExecutor: ChainExecutor;
   private status: PipelineExecutionStatus;
   private activeSteps: Map<string, Promise<PipelineStepResult>>;
+  private intelligence: PipelineIntelligence;
 
   constructor(definition: PipelineDefinition) {
     this.pipelineId = `pipeline_${Date.now()}`;
@@ -104,6 +106,7 @@ export class PipelineExecutor {
     this.toolRegistry = ToolRegistry.getInstance();
     this.chainExecutor = ChainExecutor.getInstance();
     this.activeSteps = new Map();
+    this.intelligence = new PipelineIntelligence();
 
     this.context = {
       pipelineId: this.pipelineId,
@@ -127,7 +130,8 @@ export class PipelineExecutor {
       pipelineId: this.pipelineId,
       executionId: this.context.executionId,
       stepCount: this.definition.steps.length,
-      input: input ? Object.keys(input) : []
+      input: input ? Object.keys(input) : [],
+      intelligenceEnabled: true
     });
 
     this.status = PipelineExecutionStatus.RUNNING;
@@ -143,11 +147,17 @@ export class PipelineExecutor {
       // Build execution plan
       const executionPlan = await this.buildExecutionPlan();
       
-      // Execute pipeline steps
+      // Execute pipeline steps with intelligence
       await this.executePipeline(executionPlan);
       
       const endTime = Date.now();
       const duration = endTime - startTime;
+
+      // Generate performance profile
+      const performanceProfile = await this.intelligence.generatePerformanceProfile(
+        this.pipelineId, 
+        this.context
+      );
 
       this.status = PipelineExecutionStatus.COMPLETED;
 
@@ -155,7 +165,12 @@ export class PipelineExecutor {
         pipelineId: this.pipelineId,
         duration,
         stepsExecuted: this.context.stepResults.size,
-        successRate: this.calculateSuccessRate()
+        successRate: this.calculateSuccessRate(),
+        performanceProfile: {
+          totalDuration: performanceProfile.totalDuration,
+          bottleneckCount: performanceProfile.bottlenecks.length,
+          optimizationOpportunities: performanceProfile.optimization.parallelizationOpportunities.length
+        }
       });
 
       return {
@@ -166,7 +181,8 @@ export class PipelineExecutor {
           status: this.status,
           steps: Array.from(this.context.stepResults.values()),
           output: this.extractPipelineOutput(),
-          context: this.serializeContext()
+          context: this.serializeContext(),
+          performanceProfile
         },
         metrics: {
           duration,
@@ -176,6 +192,11 @@ export class PipelineExecutor {
             stepsExecuted: this.context.stepResults.size,
             successRate: this.calculateSuccessRate(),
             retryCount: this.context.metadata.retryCount
+          },
+          intelligence: {
+            bottlenecksIdentified: performanceProfile.bottlenecks.length,
+            optimizationRecommendations: performanceProfile.optimization.parallelizationOpportunities.length,
+            estimatedImprovement: performanceProfile.optimization.estimatedImprovement
           }
         }
       };
@@ -186,12 +207,29 @@ export class PipelineExecutor {
 
       this.status = PipelineExecutionStatus.FAILED;
 
+      // Generate performance profile even for failed executions
+      let performanceProfile: PipelinePerformanceProfile | undefined;
+      try {
+        performanceProfile = await this.intelligence.generatePerformanceProfile(
+          this.pipelineId, 
+          this.context
+        );
+      } catch (profileError) {
+        this.logger.warn('PipelineExecutor', 'Failed to generate performance profile for failed pipeline', {
+          error: profileError instanceof Error ? profileError.message : String(profileError)
+        });
+      }
+
       this.logger.error('PipelineExecutor', `Pipeline execution failed`, {
         pipelineId: this.pipelineId,
         error: error instanceof Error ? error.message : String(error),
         duration,
         stepsCompleted: this.context.stepResults.size,
-        totalSteps: this.definition.steps.length
+        totalSteps: this.definition.steps.length,
+        performanceInsights: performanceProfile ? {
+          bottlenecks: performanceProfile.bottlenecks.length,
+          failurePatterns: Object.keys(performanceProfile.trends.errorPatterns).length
+        } : undefined
       });
 
       return {
@@ -202,7 +240,8 @@ export class PipelineExecutor {
           executionId: this.context.executionId,
           status: this.status,
           steps: Array.from(this.context.stepResults.values()),
-          context: this.serializeContext()
+          context: this.serializeContext(),
+          performanceProfile
         },
         metrics: {
           duration,
@@ -290,91 +329,12 @@ export class PipelineExecutor {
   }
 
   private async executeStepWithRetry(step: PipelineStepDefinition): Promise<PipelineStepResult> {
-    const maxRetries = step.retryPolicy?.maxRetries || 0;
-    let retryCount = 0;
-
-    while (retryCount <= maxRetries) {
-      try {
-        this.logger.info('PipelineExecutor', `Executing step: ${step.id}`, {
-          stepType: step.type,
-          attempt: retryCount + 1,
-          maxRetries: maxRetries + 1
-        });
-
-        const result = await this.executeStep(step);
-        
-        if (result.success || retryCount >= maxRetries) {
-          return result;
-        }
-
-        // Check if error is retryable
-        if (step.retryPolicy?.retryOn && result.error) {
-          const isRetryable = step.retryPolicy.retryOn.some(pattern => 
-            result.error!.includes(pattern)
-          );
-          
-          if (!isRetryable) {
-            return result;
-          }
-        }
-
-        retryCount++;
-        this.context.metadata.retryCount++;
-
-        // Record error
-        this.context.metadata.errorHistory.push({
-          step: step.id,
-          error: result.error || 'Unknown error',
-          timestamp: Date.now(),
-          retryAttempt: retryCount
-        });
-
-        // Backoff before retry
-        if (step.retryPolicy?.backoffMs) {
-          await this.wait(step.retryPolicy.backoffMs * retryCount);
-        }
-
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        
-        if (retryCount >= maxRetries) {
-          return {
-            stepId: step.id,
-            success: false,
-            error: errorMsg,
-            startTime: Date.now(),
-            endTime: Date.now(),
-            duration: 0,
-            retryCount
-          };
-        }
-
-        retryCount++;
-        this.context.metadata.retryCount++;
-
-        this.context.metadata.errorHistory.push({
-          step: step.id,
-          error: errorMsg,
-          timestamp: Date.now(),
-          retryAttempt: retryCount
-        });
-
-        if (step.retryPolicy?.backoffMs) {
-          await this.wait(step.retryPolicy.backoffMs * retryCount);
-        }
-      }
-    }
-
-    // Should not reach here, but just in case
-    return {
-      stepId: step.id,
-      success: false,
-      error: 'Maximum retries exceeded',
-      startTime: Date.now(),
-      endTime: Date.now(),
-      duration: 0,
-      retryCount
-    };
+    // Use enhanced intelligence-driven retry logic
+    return await this.intelligence.executeStepWithEnhancedRecovery(
+      step,
+      this.context,
+      (stepDef) => this.executeStep(stepDef)
+    );
   }
 
   private async executeStep(step: PipelineStepDefinition): Promise<PipelineStepResult> {
@@ -691,8 +651,30 @@ export class PipelineExecutor {
     return Math.random().toString(36).substring(2, 12);
   }
 
+  getPerformanceProfile(): PipelinePerformanceProfile | undefined {
+    return this.intelligence.getPerformanceProfile(this.pipelineId);
+  }
+
+  getOptimizationRecommendations(): OptimizationRecommendation[] {
+    return this.intelligence.getOptimizationRecommendations(this.pipelineId);
+  }
+
+  getCircuitBreakerStatus(stepId: string): any {
+    const stepKey = `${this.pipelineId}_${stepId}`;
+    return this.intelligence.getCircuitBreakerStatus(stepKey);
+  }
+
+  resetCircuitBreaker(stepId: string): void {
+    const stepKey = `${this.pipelineId}_${stepId}`;
+    this.intelligence.resetCircuitBreaker(stepKey);
+  }
+
+  getIntelligenceHealth(): any {
+    return this.intelligence.getHealthMetrics();
+  }
+
   getPipelineStatus(): any {
-    return {
+    const baseStatus = {
       pipelineId: this.pipelineId,
       name: this.definition.name,
       status: this.status,
@@ -704,6 +686,29 @@ export class PipelineExecutor {
       stepResults: Array.from(this.context.stepResults.values()),
       errorHistory: this.context.metadata.errorHistory,
       activeSteps: this.activeSteps.size
+    };
+
+    // Add intelligence insights if available
+    const performanceProfile = this.intelligence.getPerformanceProfile(this.pipelineId);
+    const optimizationRecommendations = this.intelligence.getOptimizationRecommendations(this.pipelineId);
+    const intelligenceHealth = this.intelligence.getHealthMetrics();
+
+    return {
+      ...baseStatus,
+      intelligence: {
+        performanceProfile: performanceProfile ? {
+          totalDuration: performanceProfile.totalDuration,
+          bottleneckCount: performanceProfile.bottlenecks.length,
+          trends: performanceProfile.trends,
+          estimatedImprovement: performanceProfile.optimization.estimatedImprovement
+        } : undefined,
+        optimizationRecommendations: optimizationRecommendations.slice(0, 5), // Top 5 recommendations
+        health: intelligenceHealth,
+        circuitBreakers: this.definition.steps.map(step => ({
+          stepId: step.id,
+          status: this.intelligence.getCircuitBreakerStatus(`${this.pipelineId}_${step.id}`)
+        })).filter(cb => cb.status)
+      }
     };
   }
 } 

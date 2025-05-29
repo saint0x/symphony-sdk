@@ -328,6 +328,27 @@ export interface TeamResult<T = any> {
     };
 }
 
+export interface PipelineStepResult {
+    stepId: string;
+    success: boolean;
+    result?: any;
+    error?: string;
+    outputs?: Record<string, any>;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    retryCount: number;
+    failureAnalysis?: {
+        errorCategory: 'transient' | 'persistent' | 'critical' | 'resource' | 'timeout';
+        severity: 'low' | 'medium' | 'high' | 'critical';
+        isRetryable: boolean;
+        suggestedAction: 'retry' | 'skip' | 'fallback' | 'abort';
+        confidence: number;
+        reasoning: string;
+    };
+    circuitBreakerTripped?: boolean;
+}
+
 export interface PipelineResult<T = any> {
     success: boolean;
     result?: T;
@@ -337,6 +358,11 @@ export interface PipelineResult<T = any> {
         startTime: number;
         endTime: number;
         stepResults: Record<string, any>;
+        intelligence?: {
+            bottlenecksIdentified: number;
+            optimizationRecommendations: number;
+            estimatedImprovement: number;
+        };
     };
 }
 
@@ -453,16 +479,4 @@ export interface ChainExecutorConfig {
     retryFailedSteps: boolean;
     continueOnStepFailure: boolean;
     logLevel: 'minimal' | 'detailed' | 'verbose';
-}
-
-export interface PipelineStepResult {
-    stepId: string;
-    success: boolean;
-    result?: any;
-    error?: string;
-    outputs?: Record<string, any>;
-    startTime: number;
-    endTime: number;
-    duration: number;
-    retryCount: number;
 } 
