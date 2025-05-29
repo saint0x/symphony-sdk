@@ -183,9 +183,16 @@ export type {
 // Backward compatibility function
 let globalCache: Cache | null = null;
 
-export function getCache(options?: CacheOptions): Cache {
+export function getCache(options?: CacheOptions, database?: IDatabaseService): Cache {
     if (!globalCache) {
         globalCache = new Cache(options);
+        // Set database if provided
+        if (database) {
+            globalCache.setDatabase(database);
+        }
+    } else if (database && !globalCache.getStats().databaseConnected) {
+        // If cache exists but database not connected, connect it
+        globalCache.setDatabase(database);
     }
     return globalCache;
 }

@@ -1,8 +1,9 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
+import { LLMHandler } from '../../../llm/handler';
 
 export const createPlanTool: ToolConfig = {
     name: 'createPlan',
-    description: 'Create execution plan',
+    description: 'Create execution plan using LLM',
     type: 'planning',
     config: {
         inputs: ['objective', 'query', 'constraints', 'context'],
@@ -20,38 +21,50 @@ export const createPlanTool: ToolConfig = {
                     };
                 }
 
-                // In a real implementation, this would use an LLM to create a structured plan
-                // For now, return a simple plan template
+                console.log('[CREATEPLAN] Making real LLM call to generate plan...');
+                
+                // REAL LLM CALL - Generate actual plan using AI
+                const llm = LLMHandler.getInstance();
+                const response = await llm.complete({
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are an expert project planning assistant. Create detailed, actionable execution plans.'
+                        },
+                        {
+                            role: 'user',
+                            content: `Create a detailed execution plan for: ${objective}
+
+Constraints: ${JSON.stringify(constraints)}
+Context: ${JSON.stringify(context)}
+
+Provide a structured plan with:
+1. Clear phases/steps
+2. Estimated timelines  
+3. Resource requirements
+4. Dependencies
+5. Risk considerations
+
+Format as a concise but complete execution roadmap.`
+                        }
+                    ],
+                    temperature: 0.7,
+                    maxTokens: 1024
+                });
+
+                const planContent = response.toString();
+                
+                console.log(`[CREATEPLAN] Generated ${planContent.length} character plan`);
+
+                // Structure the response
                 const plan = {
                     objective,
                     constraints,
                     context,
-                    steps: [
-                        {
-                            id: 1,
-                            name: 'Initialize',
-                            description: 'Set up required resources',
-                            estimatedDuration: '5m',
-                            dependencies: []
-                        },
-                        {
-                            id: 2,
-                            name: 'Execute',
-                            description: 'Perform main task',
-                            estimatedDuration: '15m',
-                            dependencies: [1]
-                        },
-                        {
-                            id: 3,
-                            name: 'Validate',
-                            description: 'Check results',
-                            estimatedDuration: '5m',
-                            dependencies: [2]
-                        }
-                    ],
-                    estimatedCompletion: '25m',
-                    risks: [],
-                    alternatives: []
+                    generatedPlan: planContent,
+                    timestamp: new Date().toISOString(),
+                    model: 'LLM-generated',
+                    planLength: planContent.length
                 };
 
                 return {
@@ -59,9 +72,10 @@ export const createPlanTool: ToolConfig = {
                     result: { plan }
                 };
             } catch (error) {
+                console.error('[CREATEPLAN] LLM call failed:', error);
                 return {
                     success: false,
-                    error: error instanceof Error ? error.message : String(error)
+                    error: `Plan generation failed: ${error instanceof Error ? error.message : String(error)}`
                 };
             }
         }

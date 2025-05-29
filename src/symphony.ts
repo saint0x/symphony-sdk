@@ -1163,6 +1163,11 @@ export class Symphony implements Partial<ISymphony> {
                 this._streamingService.initialize()
             ]);
             
+            // Set cache service on LLM Handler after cache is initialized
+            const { LLMHandler } = await import('./llm/handler');
+            const llmHandler = LLMHandler.getInstance();
+            llmHandler.setCacheService(this._cacheService);
+            
             this._state = ToolLifecycleState.READY;
             this._logger.info('Symphony', 'Initialization complete');
         } catch (error) {

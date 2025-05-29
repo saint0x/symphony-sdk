@@ -1,7 +1,7 @@
 import { logger, LogCategory } from '../../utils/logger';
 import { LLMConfig, LLMRequest, LLMResponse, LLMProvider } from '../types';
 import { createMetricsTracker } from '../../utils/metrics';
-import { getCache } from '../../cache';
+import { LLMHandler } from '../handler';
 
 interface OpenAICompletion {
     content: string;
@@ -38,16 +38,19 @@ export class OpenAIProvider implements LLMProvider {
 
     async complete(request: LLMRequest): Promise<LLMResponse> {
         const metrics = createMetricsTracker();
-        const cache = getCache();
+        const llmHandler = LLMHandler.getInstance();
+        const cache = llmHandler.getCacheService();
 
         try {
             metrics.trackOperation('request_preparation');
             const cacheKey = `openai:${this.model}:${JSON.stringify(request.messages)}`;
             
-            // Check cache
-            const cached = await cache.get(cacheKey);
-            if (cached && this.isOpenAICompletion(cached)) {
-                return this.formatResponse(cached);
+            // Check cache only if cache service is available
+            if (cache) {
+                const cached = await cache.get(cacheKey);
+                if (cached && this.isOpenAICompletion(cached)) {
+                    return this.formatResponse(cached);
+                }
             }
 
             // Get API key from config
@@ -92,8 +95,10 @@ export class OpenAIProvider implements LLMProvider {
                 usage: data.usage
             };
 
-            // Cache successful responses
-            await cache.set(cacheKey, completion);
+            // Cache successful responses only if cache service is available
+            if (cache) {
+                await cache.set(cacheKey, completion);
+            }
 
             return this.formatResponse(completion);
         } catch (error) {

@@ -12,6 +12,7 @@ export class LLMHandler {
     private static instance: LLMHandler;
     private providers: Map<string, LLMProvider>;
     private defaultProvider?: string;
+    private cacheService?: any; // ICacheService from Symphony
 
     private constructor() {
         this.providers = new Map();
@@ -29,6 +30,16 @@ export class LLMHandler {
             LLMHandler.instance = new LLMHandler();
         }
         return LLMHandler.instance;
+    }
+
+    // Set cache service from Symphony
+    setCacheService(cacheService: any): void {
+        this.cacheService = cacheService;
+    }
+
+    // Get cache service for providers
+    getCacheService(): any {
+        return this.cacheService;
     }
 
     private async initializeDefaultProviders(): Promise<void> {
