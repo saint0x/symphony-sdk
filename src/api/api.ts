@@ -177,6 +177,7 @@ export interface AgentConfig {
   llm: LLMConfig;
   
   // Optional configuration
+  directives?: string;
   maxCalls?: number;
   requireApproval?: boolean;
   timeout?: number;

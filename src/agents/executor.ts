@@ -117,12 +117,21 @@ export class AgentExecutor extends BaseAgent {
             this.logger.info('AgentExecutor', `Executing task with enhanced workflow: ${task}`);
 
             // Step 1: Generate system prompt from XML template
-            const systemPrompt = this.systemPromptService.generateSystemPrompt(this.config);
+            let systemPrompt = this.systemPromptService.generateSystemPrompt(this.config);
+            
+            // Step 1.5: Append custom directives if provided
+            if (this.config.directives) {
+                systemPrompt += `\n\nAdditional Directives:\n${this.config.directives}`;
+                this.logger.info('AgentExecutor', 'Added custom directives to system prompt', {
+                    directivesLength: this.config.directives.length
+                });
+            }
             
             this.logger.info('AgentExecutor', 'Generated system prompt', {
                 promptLength: systemPrompt.length,
                 agentName: this.config.name,
-                toolCount: this.config.tools.length
+                toolCount: this.config.tools.length,
+                hasCustomDirectives: !!this.config.directives
             });
 
             // Step 2: Use LLM to analyze task and decide on execution strategy

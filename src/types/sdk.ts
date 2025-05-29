@@ -86,6 +86,7 @@ export interface AgentConfig {
     tools: string[];
     capabilities?: string[];
     llm: LLMConfig;
+    directives?: string;
     thresholds?: {
         fastPath?: number;
         confidence?: number;
