@@ -9,6 +9,9 @@ import {
 import { ToolRegistry } from './standard/registry';
 import { Logger } from '../utils/logger';
 
+// Re-export types for external use
+export type { ToolChain, ToolChainStep };
+
 export class ChainExecutor {
     private static instance: ChainExecutor;
     private toolRegistry: ToolRegistry;

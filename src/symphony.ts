@@ -4,6 +4,7 @@ import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
 import { AgentExecutor } from './agents/executor';
 import { TeamCoordinator } from './teams/coordinator';
+import { PipelineExecutor, PipelineDefinition } from './pipelines/pipeline-executor';
 
 // Simple service interfaces
 interface IToolService {
@@ -127,18 +128,70 @@ class EnhancedTeamService implements ITeamService {
     }
 }
 
-class SimplePipelineService implements IPipelineService {
+class EnhancedPipelineService implements IPipelineService {
+    private pipelines: Map<string, PipelineExecutor> = new Map();
+    private logger: Logger;
+
+    constructor() {
+        this.logger = Logger.getInstance('EnhancedPipelineService');
+    }
+
     async create(config: any): Promise<any> {
+        this.logger.info('EnhancedPipelineService', `Creating pipeline: ${config.name}`, {
+            stepCount: config.steps?.length || 0,
+            version: config.version || '1.0.0'
+        });
+
+        // Convert config to PipelineDefinition
+        const definition: PipelineDefinition = {
+            id: config.id || `pipeline_${Date.now()}`,
+            name: config.name,
+            description: config.description || `Pipeline: ${config.name}`,
+            version: config.version || '1.0.0',
+            steps: config.steps || [],
+            variables: config.variables,
+            errorHandling: config.errorHandling,
+            concurrency: config.concurrency
+        };
+
+        // Create PipelineExecutor instance
+        const pipelineExecutor = new PipelineExecutor(definition);
+        
+        // Store for management
+        this.pipelines.set(config.name, pipelineExecutor);
+
+        // Return pipeline interface compatible with existing API
         return {
             name: config.name,
-            run: async (_input: any) => {
-                return { success: true, result: `Pipeline ${config.name} completed` };
-            }
+            run: async (input?: any) => {
+                this.logger.info('EnhancedPipelineService', `Pipeline ${config.name} executing with input`, {
+                    hasInput: !!input,
+                    inputKeys: input ? Object.keys(input) : []
+                });
+                return await pipelineExecutor.execute(input);
+            },
+            getStatus: () => pipelineExecutor.getPipelineStatus(),
+            executor: pipelineExecutor // Expose executor for advanced usage
         };
     }
     
     async initialize(): Promise<void> {
-        // Simple initialization
+        this.logger.info('EnhancedPipelineService', 'Enhanced pipeline service initialized');
+    }
+
+    async shutdown(): Promise<void> {
+        this.logger.info('EnhancedPipelineService', `Shutting down ${this.pipelines.size} pipelines`);
+        // Pipelines don't need special shutdown logic currently
+        this.pipelines.clear();
+        this.logger.info('EnhancedPipelineService', 'All pipelines shut down successfully');
+    }
+
+    getPipelines(): string[] {
+        return Array.from(this.pipelines.keys());
+    }
+
+    getPipeline(name: string): PipelineExecutor | undefined {
+        return this.pipelines.get(name);
     }
 }
 
@@ -231,7 +284,7 @@ export class Symphony implements Partial<ISymphony> {
         this.tool = new SimpleToolService();
         this.agent = new SimpleAgentService();
         this.team = new EnhancedTeamService();
-        this.pipeline = new SimplePipelineService();
+        this.pipeline = new EnhancedPipelineService();
         this.validation = new SimpleValidationManager();
         this.validationManager = this.validation;
     }
