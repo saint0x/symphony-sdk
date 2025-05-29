@@ -641,7 +641,7 @@ Focus on scalable strategies that deliver measurable business results.`,
             console.log('\n🚀 Executing Business Intelligence Pipeline...');
             const pipelineStart = Date.now();
             
-            const pipelineResult = await symphony.pipeline.execute(biPipeline.name);
+            const pipelineResult = await biPipeline.run();
             pipelineExecutions++;
             
             const pipelineTime = Date.now() - pipelineStart;

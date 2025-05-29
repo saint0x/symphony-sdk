@@ -20,8 +20,8 @@ import { ToolRegistry } from './tools/standard/registry';
 
 // Simple service interfaces
 interface IToolService {
-    create(config: any): Promise<any>;
-    execute(toolName: string, params: any): Promise<any>;
+    create(config: any): Promise<any>; // Returns tool object with run() method
+    execute(toolName: string, params: any): Promise<any>; // Legacy support
     getAvailable(): string[];
     getInfo(toolName: string): any;
     register(name: string, tool: any): void;
@@ -140,11 +140,7 @@ class SimpleToolService implements IToolService {
         this.logger.info('SimpleToolService', `Creating tool: ${config.name}`);
         
         // Create the tool
-        const tool = {
-            name: config.name,
-            run: config.handler || (() => Promise.resolve({ success: true, result: null })),
-            config: config
-        };
+        const toolHandler = config.handler || (() => Promise.resolve({ success: true, result: null }));
 
         // Auto-register the tool in the registry
         this.toolRegistry.registerTool(config.name, {
@@ -152,7 +148,7 @@ class SimpleToolService implements IToolService {
             description: config.description || '',
             type: config.type || 'custom',
             config: {
-                handler: config.handler,
+                handler: toolHandler,
                 inputs: config.inputs || [],
                 outputs: config.outputs || [],
                 timeout: config.timeout,
@@ -161,8 +157,22 @@ class SimpleToolService implements IToolService {
             }
         });
 
+        // Return tool object with consistent API (like agents/teams/pipelines)
+        const toolObject = {
+            name: config.name,
+            run: async (params: any) => {
+                this.logger.info('SimpleToolService', `Tool ${config.name} executing with params`, {
+                    hasParams: !!params,
+                    paramKeys: params ? Object.keys(params) : []
+                });
+                return await this.toolRegistry.executeTool(config.name, params);
+            },
+            getInfo: () => this.toolRegistry.getToolInfo(config.name),
+            config: config
+        };
+
         this.logger.info('SimpleToolService', `Tool created and registered: ${config.name}`);
-        return tool;
+        return toolObject;
     }
 
     async execute(toolName: string, params: any): Promise<any> {

@@ -109,7 +109,7 @@ export class AgentExecutor extends BaseAgent {
         response += `${JSON.stringify(chainResult.result, null, 2)}`;
 
         return response;
-            }
+    }
 
     // Enhanced task execution that can decide between single tools and tool chains
     async executeTask(task: string): Promise<ToolResult> {

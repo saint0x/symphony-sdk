@@ -5,15 +5,18 @@ export const writeCodeTool: ToolConfig = {
     description: 'Generate code based on spec',
     type: 'code',
     config: {
-        inputs: ['spec', 'language', 'context'],
+        inputs: ['spec', 'query', 'language', 'context'],
         outputs: ['code', 'explanation'],
         handler: async (params: any): Promise<ToolResult<any>> => {
             try {
-                const { spec, language, context = {} } = params;
-                if (!spec || !language) {
+                // Accept both 'spec' and 'query' for flexibility
+                const spec = params.spec || params.query;
+                const { language = 'javascript', context = {} } = params;
+                
+                if (!spec) {
                     return {
                         success: false,
-                        error: 'Spec and language parameters are required'
+                        error: 'Spec or query parameter is required'
                     };
                 }
 
@@ -33,7 +36,8 @@ export const writeCodeTool: ToolConfig = {
                         code,
                         explanation,
                         language,
-                        context
+                        context,
+                        spec: spec
                     }
                 };
             } catch (error) {

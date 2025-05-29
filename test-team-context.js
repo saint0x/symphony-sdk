@@ -239,7 +239,7 @@ async function runRobustTeamContextTest() {
         db: {
             enabled: true,
             adapter: 'sqlite',
-            path: './symphonic.db'
+            path: './symphony.db'
         }
     });
     

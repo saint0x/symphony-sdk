@@ -23,7 +23,7 @@ async function runPipelineIntelligenceTest() {
         db: {
             enabled: true,
             adapter: 'sqlite',
-            path: './symphonic.db'
+            path: './symphony.db'
         }
     });
     

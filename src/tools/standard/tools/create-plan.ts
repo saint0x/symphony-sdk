@@ -5,15 +5,18 @@ export const createPlanTool: ToolConfig = {
     description: 'Create execution plan',
     type: 'planning',
     config: {
-        inputs: ['objective', 'constraints', 'context'],
+        inputs: ['objective', 'query', 'constraints', 'context'],
         outputs: ['plan'],
         handler: async (params: any): Promise<ToolResult<any>> => {
             try {
-                const { objective, constraints = {}, context = {} } = params;
+                // Accept both 'objective' and 'query' for flexibility
+                const objective = params.objective || params.query;
+                const { constraints = {}, context = {} } = params;
+                
                 if (!objective) {
                     return {
                         success: false,
-                        error: 'Objective parameter is required'
+                        error: 'Objective or query parameter is required'
                     };
                 }
 
