@@ -114,7 +114,7 @@ export class AgentExecutor extends BaseAgent {
     // Enhanced task execution that can decide between single tools and tool chains
     async executeTask(task: string): Promise<ToolResult> {
         try {
-            this.logger.info('AgentExecutor', `Executing task with enhanced workflow: ${task}`);
+            this.logger.info('AgentExecutor', `Executing task: ${task}`);
 
             // Step 1: Generate system prompt from XML template
             let systemPrompt = this.systemPromptService.generateSystemPrompt(this.config);
@@ -134,39 +134,23 @@ export class AgentExecutor extends BaseAgent {
                 hasCustomDirectives: !!this.config.directives
             });
 
-            // Step 2: Use LLM to analyze task and decide on execution strategy
+            // Step 2: Use LLM to analyze task
             const analysisResult = await this.analyzeTaskWithLLM(task, systemPrompt);
             
-            // Step 3: Determine if this needs a tool chain or single tool
-            const executionStrategy = await this.determineExecutionStrategy(task, analysisResult);
-            
-            let executionResult;
-            if (executionStrategy.type === 'tool_chain') {
-                // Execute as tool chain
-                const chain = this.buildToolChainFromStrategy(task, executionStrategy);
-                executionResult = await this.executeToolChain(chain, { task });
-            } else {
-                // Execute as single tool (existing workflow)
-                executionResult = await this.tryToolExecution(task, analysisResult);
-            }
+            // Step 3: Execute with single tool approach (removed automatic chain detection)
+            const executionResult = await this.tryToolExecution(task, analysisResult);
             
             // Step 4: Generate final response
-            const finalResponse = await this.synthesizeEnhancedResponse(task, analysisResult, executionResult, executionStrategy);
+            const finalResponse = await this.synthesizeResponse(task, analysisResult, executionResult);
 
-            // Store comprehensive execution data in memory
+            // Store execution data in memory
             await this.memory.store(`task:${Date.now()}`, {
                 task,
                 analysisResponse: analysisResult.response,
-                executionStrategy: executionStrategy.type,
                 executionResult,
                 finalResponse: finalResponse.response,
                 timestamp: new Date().toISOString(),
-                tokenUsage: analysisResult.tokenUsage,
-                metrics: {
-                    analysisTokens: analysisResult.tokenUsage,
-                    executionTime: executionResult?.chainMetrics?.totalDuration || executionResult?.metrics?.duration || 0,
-                    totalWorkflowSuccess: true
-                }
+                tokenUsage: analysisResult.tokenUsage
             });
 
             return {
@@ -175,7 +159,7 @@ export class AgentExecutor extends BaseAgent {
             };
 
         } catch (error) {
-            this.logger.error('AgentExecutor', 'Enhanced workflow execution failed', { error });
+            this.logger.error('AgentExecutor', 'Task execution failed', { error });
             
             // Fallback to basic response if anything fails
             const fallbackResult = {
@@ -193,161 +177,10 @@ export class AgentExecutor extends BaseAgent {
         }
     }
 
-    private async determineExecutionStrategy(task: string, _analysisResult: any): Promise<{ type: 'single_tool' | 'tool_chain', confidence: number, reasoning: string }> {
-        // Simple strategy determination for now
-        // In the future, this could use LLM to analyze task complexity
-        
-        const taskLower = task.toLowerCase();
-        
-        // Look for keywords that suggest multi-step workflows
-        const chainKeywords = [
-            'and then', 'after that', 'followed by', 'then', 'next',
-            'first', 'second', 'third', 'finally',
-            'step by step', 'process', 'workflow', 'sequence',
-            'analyze and', 'search and write', 'read and summarize'
-        ];
-
-        const hasChainKeywords = chainKeywords.some(keyword => taskLower.includes(keyword));
-        
-        if (hasChainKeywords) {
-            return {
-                type: 'tool_chain',
-                confidence: 0.8,
-                reasoning: `Task contains multi-step workflow indicators: ${chainKeywords.filter(k => taskLower.includes(k)).join(', ')}`
-            };
-        }
-
-        return {
-            type: 'single_tool',
-            confidence: 0.9,
-            reasoning: 'Task appears to be suitable for single tool execution'
-        };
-    }
-
-    private buildToolChainFromStrategy(task: string, _strategy: any): ToolChain {
-        // Build a simple tool chain based on task analysis
-        // This is a basic implementation - could be enhanced with LLM-powered chain generation
-        
-        const chainId = `chain_${Date.now()}`;
-        const taskLower = task.toLowerCase();
-        
-        // Example: "Search for AI developments and then write a summary to a file"
-        if (taskLower.includes('search') && taskLower.includes('write')) {
-            return {
-                id: chainId,
-                name: 'Search and Write Chain',
-                description: 'Search for information and write results to a file',
-                steps: [
-                    {
-                        id: 'search_step',
-                        tool: 'webSearch',
-                        chained: '1',
-                        static_params: {
-                            query: task.replace(/search for|and then.*$/gi, '').trim(),
-                            type: 'search'
-                        }
-                    },
-                    {
-                        id: 'write_step', 
-                        tool: 'writeFile',
-                        chained: '2',
-                        input_mapping: {
-                            content: 'search_step.result'
-                        },
-                        static_params: {
-                            path: 'search_results.txt'
-                        },
-                        depends_on: ['search_step']
-                    }
-                ],
-                output_mapping: {
-                    searchResults: 'search_step.result',
-                    filePath: 'write_step.path'
-                }
-            };
-        }
-
-        // Example: "Think about AI and then search for more information"
-        if (taskLower.includes('think') && taskLower.includes('search')) {
-            return {
-                id: chainId,
-                name: 'Think and Research Chain',
-                description: 'Deep thinking followed by research',
-                steps: [
-                    {
-                        id: 'think_step',
-                        tool: 'ponder',
-                        chained: '1',
-                        static_params: {
-                            query: task,
-                            depth: 2
-                        }
-                    },
-                    {
-                        id: 'research_step',
-                        tool: 'webSearch', 
-                        chained: '2',
-                        input_mapping: {
-                            query: 'think_step.conclusion'
-                        },
-                        static_params: {
-                            type: 'search'
-                        },
-                        depends_on: ['think_step']
-                    }
-                ],
-                output_mapping: {
-                    thoughts: 'think_step.result',
-                    research: 'research_step.result'
-                }
-            };
-        }
-
-        // Default: simple sequential chain
-        return {
-            id: chainId,
-            name: 'Default Sequential Chain',
-            description: 'Default multi-step workflow',
-            steps: [
-                {
-                    id: 'analyze_step',
-                    tool: 'ponder',
-                    chained: '1',
-                    static_params: {
-                        query: task,
-                        depth: 1
-                    }
-                },
-                {
-                    id: 'execute_step',
-                    tool: 'webSearch',
-                    chained: '2', 
-                    static_params: {
-                        query: task,
-                        type: 'search'
-                    }
-                }
-            ],
-            output_mapping: {
-                analysis: 'analyze_step.result',
-                execution: 'execute_step.result'
-            }
-        };
-    }
-
-    private async synthesizeEnhancedResponse(_task: string, analysisResult: any, executionResult: any, strategy: any) {
+    private async synthesizeResponse(_task: string, analysisResult: any, executionResult: any) {
         let response = analysisResult.response;
         
-        if (strategy.type === 'tool_chain') {
-            response += `\n\n[Tool Chain Execution]`;
-            response += `\nStrategy: ${strategy.reasoning}`;
-            response += `\nConfidence: ${strategy.confidence}`;
-            
-            if (executionResult && executionResult.result) {
-                response += `\nChain Results: ${JSON.stringify(executionResult.result, null, 2)}`;
-            }
-        } else if (executionResult && executionResult.result?.success) {
-            // Single tool execution (existing logic)
+        if (executionResult && executionResult.result?.success) {
             response += `\n\n[Tool Execution Results]`;
             response += `\nTool Used: ${executionResult.toolName}`;
             response += `\nExecution Time: ${executionResult.metrics?.duration || 0}ms`;
@@ -359,14 +192,11 @@ export class AgentExecutor extends BaseAgent {
 
         return {
             response,
-            reasoning: `Enhanced workflow: ${strategy.type} execution`,
+            reasoning: 'Task execution completed',
             agent: this.config.name,
             timestamp: new Date().toISOString(),
             tokenUsage: analysisResult.tokenUsage,
-            model: analysisResult.model,
-            executionStrategy: strategy.type,
-            strategyConfidence: strategy.confidence,
-            workflowComplete: true
+            model: analysisResult.model
         };
     }
 
