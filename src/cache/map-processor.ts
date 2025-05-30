@@ -500,8 +500,126 @@ export class CommandMapProcessor {
         return Array.from(this.patterns.values());
     }
 
-    getPattern(id: string): Pattern | undefined {
-        return this.patterns.get(id);
+    /**
+     * Add Runtime Pattern - Creates new patterns dynamically from tool registrations
+     */
+    async addRuntimePattern(nlpPattern: string, toolCall: { name: string; parameters: Record<string, any>; confidence?: number }): Promise<void> {
+        try {
+            this.logger.info('CommandMapProcessor', 'Adding runtime pattern', {
+                nlpPattern: nlpPattern.substring(0, 50) + '...',
+                toolName: toolCall.name
+            });
+
+            const patternId = `runtime_${toolCall.name}_${Date.now()}`;
+            
+            // Create pattern from NLP text
+            const pattern: Pattern = {
+                id: patternId,
+                groupType: 'runtime',
+                confidence: toolCall.confidence || 0.7,
+                trigger: nlpPattern,
+                variables: this.extractVariablesFromNLP(nlpPattern),
+                examples: [nlpPattern],
+                toolName: toolCall.name,
+                parameters: toolCall.parameters,
+                usageStats: {
+                    successCount: 0,
+                    failureCount: 0,
+                    lastUsed: new Date(),
+                    averageLatency: 0
+                }
+            };
+
+            // Add to in-memory patterns
+            this.patterns.set(patternId, pattern);
+
+            // Save to database
+            await this.savePatternToDatabase(pattern);
+
+            this.logger.info('CommandMapProcessor', 'Runtime pattern added successfully', {
+                patternId,
+                toolName: toolCall.name,
+                confidence: pattern.confidence
+            });
+
+        } catch (error) {
+            this.logger.error('CommandMapProcessor', 'Failed to add runtime pattern', { 
+                error, 
+                nlpPattern, 
+                toolName: toolCall.name 
+            });
+        }
+    }
+
+    /**
+     * Extract Variables from NLP - Parses NLP text to identify variable placeholders
+     */
+    private extractVariablesFromNLP(nlpText: string): Variable[] {
+        const variables: Variable[] = [];
+        
+        // Look for common variable patterns in NLP text
+        const patterns = [
+            /\{(\w+)\}/g,           // {variable}
+            /\$\{(\w+)\}/g,         // ${variable}
+            /\[(\w+)\]/g,           // [variable]
+            /\*(\w+)\*/g,           // *variable*
+            /\b(file|path|name|query|text|input|output)\b/gi  // Common parameter names
+        ];
+
+        let position = 0;
+        for (const pattern of patterns) {
+            let match;
+            while ((match = pattern.exec(nlpText)) !== null) {
+                const varName = match[1] || match[0].toLowerCase();
+                
+                // Avoid duplicates
+                if (!variables.some(v => v.name === varName)) {
+                    variables.push({
+                        name: varName,
+                        position: position++,
+                        type: this.inferVariableType(varName),
+                        description: `Auto-extracted variable: ${varName}`
+                    });
+                }
+            }
+        }
+
+        // If no specific variables found, add a generic 'input' variable
+        if (variables.length === 0) {
+            variables.push({
+                name: 'input',
+                position: 0,
+                type: 'string',
+                description: 'Generic input parameter'
+            });
+        }
+
+        return variables;
+    }
+
+    /**
+     * Infer Variable Type - Attempts to determine variable type from name
+     */
+    private inferVariableType(varName: string): string {
+        const name = varName.toLowerCase();
+        
+        if (name.includes('count') || name.includes('num') || name.includes('size')) {
+            return 'number';
+        }
+        
+        if (name.includes('enable') || name.includes('is') || name.includes('has')) {
+            return 'boolean';
+        }
+        
+        if (name.includes('list') || name.includes('array') || name.includes('items')) {
+            return 'array';
+        }
+        
+        return 'string';
+    }
+
+    getPattern(patternId: string): Pattern | undefined {
+        return this.patterns.get(patternId);
     }
 
     getPatternsByTool(toolName: string): Pattern[] {

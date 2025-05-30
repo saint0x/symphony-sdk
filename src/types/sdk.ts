@@ -12,6 +12,7 @@ export interface ToolConfig {
     name: string;
     description?: string;
     type: string;
+    nlp?: string; // Natural language pattern for tool invocation
     apiKey?: string;
     timeout?: number;
     retryCount?: number;
@@ -81,22 +82,27 @@ export type LLMConfig = {
 export interface AgentConfig {
     name: string;
     description: string;
-    systemPrompt?: string;
     task: string;
     tools: string[];
-    capabilities?: string[];
-    llm: LLMConfig;
+    llm: LLMConfig | string;
     directives?: string;
-    thresholds?: {
-        fastPath?: number;
-        confidence?: number;
-        performance?: number;
-    };
+    systemPrompt?: string;
     maxCalls?: number;
     requireApproval?: boolean;
     timeout?: number;
-    handler?: (params: any) => Promise<ToolResult<any>>;
-    memory?: MemoryConfig;
+    capabilities?: string[];
+    enableCache?: boolean;
+    enableStreaming?: boolean;
+    streamOptions?: {
+        updateInterval?: number;
+        includeIntermediateSteps?: boolean;
+    };
+    log?: {
+        inputs?: boolean;
+        outputs?: boolean;
+        llmCalls?: boolean;
+        toolCalls?: boolean;
+    };
 }
 
 export interface BaseMemoryConfig {

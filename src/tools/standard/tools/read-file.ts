@@ -5,6 +5,7 @@ export const readFileTool: ToolConfig = {
     name: 'readFileTool',
     description: 'Read content from a file',
     type: 'filesystem',
+    nlp: 'read file * OR read the contents of * OR open file * OR get file contents from *',
     config: {
         inputs: ['path'],
         outputs: ['content', 'metadata'],

@@ -11,6 +11,7 @@ export const webSearchTool: ToolConfig = {
     name: 'webSearchTool',
     description: 'Search the web for information',
     type: 'web',
+    nlp: 'search the web for * OR find information about * OR look up * online OR web search for *',
     config: {
         inputs: ['query', 'type'],
         outputs: ['results'],

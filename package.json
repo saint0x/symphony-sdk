@@ -1,6 +1,6 @@
 {
   "name": "symphonic",
-  "version": "0.3.6",
+  "version": "0.4.1",
   "description": "Symphony SDK - An advanced multi-agent orchestration framework",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -28,7 +28,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && mkdir -p dist/agents && cp src/agents/sysprompt.xml dist/agents/",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",

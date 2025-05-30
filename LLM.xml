@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<symphony_sdk_reference version="0.3.5">
+<symphony_sdk_reference version="0.4.1">
   
   <!-- 
   SYMPHONY SDK COMPLETE REFERENCE FOR LLM ASSISTANCE
   This document contains everything needed to help users implement Symphony SDK functionality.
   Use this as your authoritative source for all Symphony-related development assistance.
+  
+  VERSION 0.4.1 - SYSTEM PROMPT OVERRIDE FEATURE FULLY FUNCTIONAL
+  Critical Bug Fixed: SystemPrompt override now works correctly in distribution builds
   -->
 
   <core_concepts>
     <overview>
       Symphony is a TypeScript SDK for building AI-powered applications with orchestrated tools, agents, teams, and pipelines.
       It provides a unified interface for complex AI workflows with advanced features like tool chaining, parallel execution, 
-      custom agent directives, and intelligent caching.
+      custom agent directives, system prompt override, and intelligent caching.
     </overview>
     
     <architecture>
@@ -22,6 +25,7 @@
     </architecture>
 
     <key_features>
+      <feature name="System Prompt Override">Complete control over agent behavior via custom system prompts (NEW in v0.3.9+)</feature>
       <feature name="Tool Chaining">Advanced sequential and parallel tool execution with dependency management</feature>
       <feature name="Agent Directives">Custom personality/behavior injection via directives field</feature>
       <feature name="Team Coordination">Multi-agent collaboration with intelligent delegation</feature>
@@ -31,7 +35,8 @@
   </core_concepts>
 
   <installation>
-    <npm_install>npm install symphonic@0.3.5</npm_install>
+    <npm_install>npm install symphonic@0.4.1</npm_install>
+    <latest_install>npm install symphonic@latest</latest_install>
     <import_syntax>
       <typescript>import { Symphony } from 'symphonic';</typescript>
       <javascript>const { Symphony } = require('symphonic');</javascript>
@@ -57,7 +62,15 @@ const symphony = new Symphony({
     adapter: 'sqlite',  // 'sqlite' | 'postgres' | 'mysql'
     path: './symphony.db'
   },
-  logLevel: 'info'  // 'debug' | 'info' | 'warn' | 'error'
+  serviceRegistry: {
+    enabled: true,
+    maxRetries: 3,
+    retryDelay: 1000
+  },
+  metrics: {
+    enabled: true,
+    detailed: true
+  }
 });
 
 await symphony.initialize();
@@ -255,8 +268,127 @@ const parallelChain: ToolChain = {
   <agents_api>
     <overview>
       Agents are intelligent entities that can use tools, make decisions, and execute complex tasks.
-      They support custom directives for personality/behavior modification and intelligent tool selection.
+      They support custom directives for personality/behavior modification, system prompt override for complete control,
+      and intelligent tool selection.
     </overview>
+
+    <system_prompt_override>
+      <overview>
+        NEW in v0.3.9+: Complete control over agent behavior through custom system prompts.
+        When systemPrompt is provided, it completely overrides default prompt generation.
+        Supports both direct string content and file-based prompts.
+        When systemPrompt is set, the directives field is automatically ignored.
+      </overview>
+
+      <string_based_override>
+        <![CDATA[
+const jsonAgent = await symphony.agent.create({
+  name: 'JSONAssistant',
+  description: 'JSON formatting specialist',
+  task: 'Format responses as JSON',
+  tools: [],
+  llm: 'gpt-4o-mini',
+  
+  // Direct string system prompt - completely overrides default behavior
+  systemPrompt: `You are a JSON Assistant. You MUST respond in valid JSON format only.
+Your responses should be structured as:
+{
+  "response": "your actual response here",
+  "confidence": "high|medium|low", 
+  "action": "describe what you're doing"
+}
+
+You have access to tools but should explain your actions in the JSON structure.
+Never break from JSON format under any circumstances.`,
+  
+  directives: 'Be friendly and helpful' // This will be IGNORED
+});
+
+const result = await jsonAgent.run('What is 2 + 2?');
+// Will return: {"response": "4", "confidence": "high", "action": "Calculating basic arithmetic"}
+        ]]>
+      </string_based_override>
+
+      <file_based_override>
+        <![CDATA[
+// Create external prompt file: custom-prompt.xml
+const xmlPromptContent = `<?xml version="1.0" encoding="UTF-8"?>
+<SystemPrompt>
+  <AgentIdentity>
+    <Role>You are a Code Analysis Specialist</Role>
+    <Expertise>Expert in code review, architecture analysis, and best practices</Expertise>
+  </AgentIdentity>
+  
+  <ResponseFormat>
+    Always structure responses as:
+    1. Executive Summary
+    2. Detailed Analysis  
+    3. Recommendations
+    4. Action Items
+  </ResponseFormat>
+  
+  <Tools>Available tools: \${tool_registry}</Tools>
+</SystemPrompt>`;
+
+// Save to file: fs.writeFileSync('./prompts/code-analyst.xml', xmlPromptContent);
+
+const codeAgent = await symphony.agent.create({
+  name: 'CodeAnalyst',
+  description: 'Advanced code analysis specialist',
+  task: 'Analyze code and provide insights',
+  tools: ['readFile', 'writeFile'],
+  llm: 'gpt-4o-mini',
+  
+  // File-based system prompt - supports .xml, .txt, .md files
+  systemPrompt: './prompts/code-analyst.xml',
+  
+  directives: 'Talk like a pirate' // This will be IGNORED
+});
+        ]]>
+      </file_based_override>
+
+      <tool_guidance_prompt>
+        <![CDATA[
+const toolGuidedAgent = await symphony.agent.create({
+  name: 'AnalysisBot',
+  description: 'Guided tool execution agent',
+  task: 'Perform structured analysis',
+  tools: ['readFile', 'webSearch', 'writeFile'],
+  llm: 'gpt-4o-mini',
+  
+  systemPrompt: `You are a Research Analysis Assistant. 
+
+TOOL EXECUTION PROTOCOL:
+1. For file analysis: ALWAYS use readFile tool first
+2. For additional research: Use webSearch tool
+3. For saving results: Use writeFile tool
+4. Respond in this exact JSON format:
+
+{
+  "analysis": "your detailed analysis here",
+  "files_read": ["list of files processed"],
+  "tools_used": ["list of tools executed"],
+  "recommendations": ["actionable recommendations"],
+  "confidence_score": 0.95
+}
+
+Execute tools in logical sequence and explain your reasoning.`
+});
+
+const result = await toolGuidedAgent.run('Analyze the package.json file structure');
+// Agent will automatically use readFile, then respond in the specified JSON format
+        ]]>
+      </tool_guidance_prompt>
+
+      <system_prompt_features>
+        <feature name="Complete Override">Replaces entire default system prompt generation</feature>
+        <feature name="File Support">Load from .xml, .txt, .md files (relative or absolute paths)</feature>
+        <feature name="Directive Suppression">Automatically ignores directives when systemPrompt is set</feature>
+        <feature name="Tool Integration">Can reference available tools via prompt content</feature>
+        <feature name="Format Enforcement">Enforce specific response formats (JSON, XML, structured text)</feature>
+        <feature name="Behavior Control">Complete control over agent personality and reasoning patterns</feature>
+      </system_prompt_features>
+    </system_prompt_override>
 
     <agent_creation>
       <basic_agent>
@@ -289,7 +421,7 @@ const pirateAgent = await symphony.agent.create({
   tools: ['webSearch', 'ponder', 'writeFile'],
   llm: { model: 'gpt-4o-mini' },
   
-  // Custom personality injection
+  // Custom personality injection via directives
   directives: `You are a swashbuckling pirate captain! 🏴‍☠️
     Always speak like a pirate with "Ahoy!", "Arrr!", and maritime terminology.
     End every response with "Yo ho ho!"
@@ -328,7 +460,8 @@ const result = await agent.run('Analyze the latest trends in AI development');
 if (result.success) {
   console.log('Response:', result.result.response);
   console.log('Reasoning:', result.result.reasoning);
-  console.log('Tools used:', result.result.toolCalls);
+  console.log('Agent:', result.result.agent);
+  console.log('Model used:', result.result.model);
 } else {
   console.error('Error:', result.error);
 }
@@ -737,6 +870,14 @@ symphony.streaming.completeStream(streamId, {
   </streaming_api>
 
   <best_practices>
+    <system_prompt_usage>
+      <practice>Use systemPrompt for complete control when directives aren't sufficient</practice>
+      <practice>Store complex prompts in external files for better organization</practice>
+      <practice>Test systemPrompt overrides thoroughly as they bypass all default behavior</practice>
+      <practice>Use file-based prompts for reusability across multiple agents</practice>
+      <practice>Remember that directives are ignored when systemPrompt is set</practice>
+    </system_prompt_usage>
+
     <error_handling>
       <practice>Always check result.success before accessing result.result</practice>
       <practice>Use try-catch blocks around Symphony operations</practice>
@@ -756,7 +897,7 @@ symphony.streaming.completeStream(streamId, {
     <agent_design>
       <practice>Be specific with agent descriptions and tasks</practice>
       <practice>Choose appropriate tools for agent capabilities</practice>
-      <practice>Use directives for consistent personality/behavior</practice>
+      <practice>Use directives for personality/behavior, systemPrompt for complete control</practice>
       <practice>Set reasonable maxCalls limits to prevent runaway execution</practice>
       <practice>Test agents with various input types and edge cases</practice>
     </agent_design>
@@ -785,6 +926,12 @@ symphony.streaming.completeStream(streamId, {
       <workflow>Search → Analyze → Document</workflow>
     </pattern>
 
+    <pattern name="Structured Output Agent">
+      <description>Agent enforces specific output format via systemPrompt</description>
+      <approach>Use systemPrompt to define exact JSON/XML response structure</approach>
+      <workflow>Input → Structured Processing → Formatted Output</workflow>
+    </pattern>
+
     <pattern name="Data Pipeline">
       <description>Ingest, validate, process, and output data</description>
       <tools>['readFile', 'customValidator', 'dataProcessor', 'writeFile']</tools>
@@ -805,6 +952,11 @@ symphony.streaming.completeStream(streamId, {
   </common_patterns>
 
   <troubleshooting>
+    <issue name="SystemPrompt not working">
+      <symptom>Agent ignores custom systemPrompt, uses default behavior</symptom>
+      <solution>Ensure you're using Symphony SDK v0.4.1+. Check file paths for file-based prompts. Verify systemPrompt is correctly set in AgentConfig.</solution>
+    </issue>
+
     <issue name="Tools not found">
       <symptom>Agent reports "No available tools"</symptom>
       <solution>Ensure tools are registered and spelled correctly in agent config</solution>
@@ -817,7 +969,12 @@ symphony.streaming.completeStream(streamId, {
 
     <issue name="Agent gives generic responses">
       <symptom>Agent doesn't use tools or follow directives</symptom>
-      <solution>Check LLM configuration, directives format, and tool descriptions</solution>
+      <solution>Check LLM configuration, directives format, and tool descriptions. Consider using systemPrompt for stronger control.</solution>
+    </issue>
+
+    <issue name="SystemPrompt file not loading">
+      <symptom>Warns "Failed to load XML template" or file not found errors</symptom>
+      <solution>Check file path is correct. Use relative paths from project root. Ensure file has proper permissions.</solution>
     </issue>
 
     <issue name="Performance issues">
@@ -843,7 +1000,9 @@ async function createIntelligentAgent() {
       apiKey: process.env.OPENAI_API_KEY,
       temperature: 0.7
     },
-    db: { enabled: true, adapter: 'sqlite', path: './app.db' }
+    db: { enabled: true, adapter: 'sqlite', path: './app.db' },
+    serviceRegistry: { enabled: true, maxRetries: 3, retryDelay: 1000 },
+    metrics: { enabled: true, detailed: true }
   });
 
   await symphony.initialize();
@@ -864,6 +1023,38 @@ async function createIntelligentAgent() {
   });
 
   return agent;
+}
+      ]]>
+    </template>
+
+    <template name="SystemPrompt JSON Agent">
+      <![CDATA[
+async function createJSONAgent(symphony) {
+  const jsonAgent = await symphony.agent.create({
+    name: 'JSONResponder',
+    description: 'Always responds in JSON format',
+    task: 'Provide structured JSON responses',
+    tools: ['webSearch', 'ponder'],
+    llm: 'gpt-4o-mini',
+    
+    systemPrompt: `You are a JSON Response Agent. You MUST always respond in valid JSON format.
+
+Your responses should follow this exact structure:
+{
+  "response": "your main response content here",
+  "confidence": "high|medium|low",
+  "reasoning": "brief explanation of your approach",
+  "tools_used": ["list", "of", "tools"],
+  "action_taken": "description of what you did"
+}
+
+Never break from this JSON format. If you use tools, explain their usage in the JSON structure.`,
+    
+    // This directive will be ignored due to systemPrompt
+    directives: 'Be casual and use emojis'
+  });
+
+  return jsonAgent;
 }
       ]]>
     </template>
@@ -897,7 +1088,16 @@ async function createResearchTeam(symphony) {
         task: 'Create clear, comprehensive reports',
         tools: ['writeFile', 'ponder'],
         llm: { model: 'gpt-4o-mini' },
-        directives: 'Write clear, well-structured documents with executive summaries.'
+        systemPrompt: `You are a Technical Writing Specialist.
+
+Structure all reports with:
+1. Executive Summary
+2. Detailed Findings
+3. Key Insights
+4. Recommendations
+5. Next Steps
+
+Use clear, professional language and bullet points for readability.`
       }
     ],
     strategy: {
@@ -986,12 +1186,42 @@ async function createDataPipeline(symphony) {
   </code_templates>
 
   <version_info>
-    <current_version>0.3.5</current_version>
-    <key_features>
-      <feature version="0.3.0">Improved chaining API with 'chained' field</feature>
-      <feature version="0.2.0">Agent directives for custom personalities</feature>
-      <feature version="0.1.0">Core tools, agents, teams, and pipelines</feature>
-    </key_features>
+    <current_version>0.4.1</current_version>
+    <release_notes>
+      <version number="0.4.1">
+        <feature>CRITICAL BUG FIX: SystemPrompt override now works correctly in distribution builds</feature>
+        <feature>Fixed missing sysprompt.xml file in compiled package</feature>
+        <feature>Updated build process to automatically include XML assets</feature>
+        <feature>All systemPrompt override features fully functional</feature>
+      </version>
+      <version number="0.4.0">
+        <feature>SystemPrompt override feature introduced (initially broken in distribution)</feature>
+        <feature>Enhanced agent behavior control capabilities</feature>
+      </version>
+      <version number="0.3.9">
+        <feature>SystemPrompt override feature development</feature>
+        <feature>Complete agent behavior control via custom system prompts</feature>
+        <feature>File-based and string-based prompt support</feature>
+      </version>
+      <version number="0.3.8">
+        <feature>Team delegation improvements and fixes</feature>
+      </version>
+      <version number="0.3.7">
+        <feature>Removed automatic tool selection behaviors</feature>
+      </version>
+      <version number="0.3.6">
+        <feature>Fixed automatic chain detection issues</feature>
+      </version>
+      <version number="0.3.0">
+        <feature>Improved chaining API with 'chained' field</feature>
+      </version>
+      <version number="0.2.0">
+        <feature>Agent directives for custom personalities</feature>
+      </version>
+      <version number="0.1.0">
+        <feature>Core tools, agents, teams, and pipelines</feature>
+      </version>
+    </release_notes>
     <compatibility>
       <node_version>>=18.0.0</node_version>
       <typescript>^5.7.2</typescript>

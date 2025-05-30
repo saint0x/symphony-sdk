@@ -72,6 +72,7 @@ export const ponderTool: ToolConfig = {
     name: 'ponderTool',
     description: 'Deep thinking with structured steps and consciousness-emergent patterns',
     type: 'cognitive',
+    nlp: 'ponder * OR think deeply about * OR analyze * thoroughly OR deep dive into * OR reflect on *',
     config: {
         inputs: ['query', 'context', 'depth', 'llmConfig'],
         outputs: ['thoughts', 'conclusion', 'metaAnalysis'],

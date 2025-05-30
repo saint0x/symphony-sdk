@@ -1,11 +1,15 @@
 import { ToolConfig, ToolResult } from '../../types/sdk';
 import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
+import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
+import { IDatabaseService } from '../../db/types';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
     private tools: Map<string, ToolConfig> = new Map();
     private logger: Logger;
+    private contextAPI?: ContextIntelligenceAPI;
+    private database?: IDatabaseService;
 
     constructor() {
         this.logger = Logger.getInstance('ToolRegistry');
@@ -17,6 +21,94 @@ export class ToolRegistry {
             ToolRegistry.instance = new ToolRegistry();
         }
         return ToolRegistry.instance;
+    }
+
+    /**
+     * Initialize Context Intelligence Integration
+     */
+    initializeContextIntegration(database: IDatabaseService): void {
+        this.database = database;
+        this.contextAPI = new ContextIntelligenceAPI(database);
+        this.registerContextTools();
+        this.logger.info('ToolRegistry', 'Context intelligence integration initialized');
+    }
+
+    /**
+     * Register Context Management Tools - Available to all agents
+     */
+    private registerContextTools(): void {
+        if (!this.contextAPI) return;
+
+        const contextTools: ToolConfig[] = [
+            {
+                name: 'validateCommandMapUpdate',
+                description: 'Validates command map updates for consistency and conflicts',
+                type: 'context_management',
+                nlp: 'validate command map update for patterns and conflicts',
+                config: {
+                    handler: async (params: any) => {
+                        return await this.contextAPI!.validateCommandMapUpdate(params);
+                    }
+                }
+            },
+            {
+                name: 'updateLearningContext',
+                description: 'Updates learning context based on execution results and feedback',
+                type: 'context_management', 
+                nlp: 'update learning context with execution results and user feedback',
+                config: {
+                    handler: async (params: any) => {
+                        return await this.contextAPI!.updateLearningContext(params);
+                    }
+                }
+            },
+            {
+                name: 'executeContextPruning',
+                description: 'Prunes old or low-confidence context entries for performance',
+                type: 'context_management',
+                nlp: 'execute context pruning to remove old or low confidence entries',
+                config: {
+                    handler: async (params: any) => {
+                        return await this.contextAPI!.executeContextPruning(params);
+                    }
+                }
+            },
+            {
+                name: 'updatePatternStats',
+                description: 'Updates pattern usage statistics and performance metrics',
+                type: 'context_management',
+                nlp: 'update pattern statistics and performance metrics',
+                config: {
+                    handler: async (params: any) => {
+                        return await this.contextAPI!.updatePatternStats(params);
+                    }
+                }
+            },
+            {
+                name: 'validateContextTreeUpdate',
+                description: 'Validates context tree consistency and structure',
+                type: 'context_management',
+                nlp: 'validate context tree update for consistency and structure',
+                config: {
+                    handler: async (params: any) => {
+                        return await this.contextAPI!.validateContextTreeUpdate(params);
+                    }
+                }
+            }
+        ];
+
+        // Register each context tool
+        for (const tool of contextTools) {
+            this.tools.set(tool.name, tool);
+            this.logger.info('ToolRegistry', `Registered context tool: ${tool.name}`, {
+                type: tool.type,
+                hasNLP: !!tool.nlp
+            });
+        }
+
+        this.logger.info('ToolRegistry', 'Context management tools registered', {
+            toolCount: contextTools.length
+        });
     }
 
     private initializeStandardTools(): void {
@@ -97,6 +189,24 @@ export class ToolRegistry {
                 hasError: !!result.error
             });
 
+            // Auto-update learning context for non-context-management tools
+            if (this.contextAPI && !tool.type.includes('context_management')) {
+                try {
+                    await this.contextAPI.updateLearningContext({
+                        toolName,
+                        parameters: params,
+                        result: result.result,
+                        success: result.success,
+                        contextData: {
+                            executionTime: duration,
+                            toolType: tool.type
+                        }
+                    });
+                } catch (error) {
+                    this.logger.warn('ToolRegistry', 'Failed to update learning context', { error, toolName });
+                }
+            }
+
             // Add execution metrics
             const enhancedResult = {
                 ...result,
@@ -131,11 +241,110 @@ export class ToolRegistry {
         return this.tools.get(toolName) || null;
     }
 
+    /**
+     * Enhanced Tool Registration with Auto-Cache Population
+     */
     registerTool(name: string, tool: ToolConfig): void {
         this.tools.set(name, tool);
+        
         this.logger.info('ToolRegistry', `Custom tool registered: ${name}`, {
             type: tool.type,
-            description: tool.description
+            description: tool.description,
+            hasNLP: !!tool.nlp
+        });
+
+        // Auto-populate cache if tool has NLP field
+        if (tool.nlp && this.contextAPI) {
+            this.populateCacheWithNLP(name, tool).catch(error => {
+                this.logger.error('ToolRegistry', 'Failed to populate cache with NLP mapping', {
+                    error,
+                    toolName: name,
+                    nlp: tool.nlp
+                });
+            });
+        }
+    }
+
+    /**
+     * Populate Cache with NLP Mapping - Auto-registers tool patterns
+     */
+    private async populateCacheWithNLP(toolName: string, tool: ToolConfig): Promise<void> {
+        if (!tool.nlp || !this.contextAPI) return;
+
+        try {
+            this.logger.info('ToolRegistry', 'Auto-populating cache with NLP mapping', {
+                toolName,
+                nlp: tool.nlp.substring(0, 50) + '...'
+            });
+
+            await this.contextAPI.registerToolNLPMapping(toolName, tool.nlp, {
+                toolType: tool.type,
+                description: tool.description,
+                capabilities: tool.capabilities || [],
+                autoRegistered: true,
+                registeredAt: new Date().toISOString()
+            });
+
+            this.logger.info('ToolRegistry', 'Cache NLP mapping populated successfully', {
+                toolName,
+                nlpLength: tool.nlp.length
+            });
+
+        } catch (error) {
+            this.logger.error('ToolRegistry', 'Failed to populate cache with NLP mapping', {
+                error,
+                toolName,
+                nlp: tool.nlp
+            });
+        }
+    }
+
+    /**
+     * Get Enhanced Tool List with Full Metadata
+     */
+    getEnhancedToolList(): Array<ToolConfig & { name: string; registeredAt?: string }> {
+        return Array.from(this.tools.entries()).map(([name, tool]) => ({
+            ...tool,
+            name,
+            registeredAt: new Date().toISOString() // Could track actual registration time
+        }));
+    }
+
+    /**
+     * Get Context Management Tools - For agent inspection
+     */
+    getContextTools(): string[] {
+        return Array.from(this.tools.entries())
+            .filter(([_, tool]) => tool.type === 'context_management')
+            .map(([name, _]) => name);
+    }
+
+    /**
+     * Initialize All Auto-Population - Called after context integration setup
+     */
+    async initializeAutoPopulation(): Promise<void> {
+        if (!this.contextAPI) {
+            this.logger.warn('ToolRegistry', 'Cannot initialize auto-population without context API');
+            return;
+        }
+
+        this.logger.info('ToolRegistry', 'Initializing auto-population for existing tools');
+
+        let populatedCount = 0;
+        for (const [name, tool] of this.tools.entries()) {
+            if (tool.nlp) {
+                try {
+                    await this.populateCacheWithNLP(name, tool);
+                    populatedCount++;
+                } catch (error) {
+                    this.logger.warn('ToolRegistry', 'Failed to auto-populate tool', { error, name });
+                }
+            }
+        }
+
+        this.logger.info('ToolRegistry', 'Auto-population completed', {
+            totalTools: this.tools.size,
+            populatedTools: populatedCount
         });
     }
 } 

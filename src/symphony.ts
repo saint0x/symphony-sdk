@@ -210,13 +210,20 @@ class AgentService implements IAgentService {
     }
 
     async create(config: any): Promise<any> {
+        // Auto-add context management tools to all agents
+        const contextTools = this.toolRegistry.getContextTools();
+        const enhancedConfig = {
+            ...config,
+            tools: [...(config.tools || []), ...contextTools]
+        };
+
         // Create an actual AgentExecutor instance with LLM capabilities and the correct ToolRegistry
-        const agentExecutor = new AgentExecutor(config, this.toolRegistry);
+        const agentExecutor = new AgentExecutor(enhancedConfig, this.toolRegistry);
         
         return {
             name: config.name,
             capabilities: config.capabilities,
-            tools: config.tools,
+            tools: enhancedConfig.tools, // Return enhanced tool list
             run: async (task: string) => {
                 // Use the AgentExecutor's executeTask method which includes LLM integration
                 return await agentExecutor.executeTask(task);
@@ -514,6 +521,11 @@ class CacheServiceWrapper implements ICacheService {
     async getPatternAnalytics(): Promise<any> {
         if (!this.initialized) return { totalPatterns: 0, averageConfidence: 0, topPatterns: [] };
         return await this.cacheIntelligence.getPatternAnalytics();
+    }
+
+    getPatterns(): any[] {
+        if (!this.initialized) return [];
+        return this.cacheIntelligence.getCommandMapProcessor().getPatterns();
     }
 
     async getContextAnalytics(): Promise<any> {
@@ -1075,14 +1087,24 @@ export class Symphony implements Partial<ISymphony> {
         this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
         this._streamingService = new StreamingServiceWrapper();
         
-        // Initialize services
+        // Initialize tool registry with context intelligence integration
         const sharedToolRegistry = new ToolRegistry();
+        
+        // Initialize context intelligence integration
+        sharedToolRegistry.initializeContextIntegration(this._databaseService.getService());
+        
+        // Initialize services with enhanced registry
         this.tool = new ToolService(sharedToolRegistry);
         this.agent = new AgentService(sharedToolRegistry);
         this.team = new TeamService();
         this.pipeline = new PipelineService();
         this.validation = new ValidationService();
         this.validationManager = this.validation;
+        
+        this._logger.info('Symphony', 'Context intelligence integration enabled', {
+            contextTools: sharedToolRegistry.getContextTools(),
+            totalTools: sharedToolRegistry.getAvailableTools().length
+        });
     }
     
     get state(): ToolLifecycleState {
@@ -1170,13 +1192,20 @@ export class Symphony implements Partial<ISymphony> {
                 this._streamingService.initialize()
             ]);
             
+            // Initialize auto-population of cache with tool NLP mappings
+            const toolRegistry = (this.tool as ToolService).registry;
+            await toolRegistry.initializeAutoPopulation();
+            
             // Set cache service on LLM Handler after cache is initialized
             const { LLMHandler } = await import('./llm/handler');
             const llmHandler = LLMHandler.getInstance();
             llmHandler.setCacheService(this._cacheService);
             
             this._state = ToolLifecycleState.READY;
-            this._logger.info('Symphony', 'Initialization complete');
+            this._logger.info('Symphony', 'Initialization complete', {
+                contextToolsAvailable: toolRegistry.getContextTools().length,
+                totalToolsRegistered: toolRegistry.getAvailableTools().length
+            });
         } catch (error) {
             this._state = ToolLifecycleState.ERROR;
             this._logger.error('Symphony', 'Initialization failed', { error });

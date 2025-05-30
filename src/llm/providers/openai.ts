@@ -47,9 +47,9 @@ export class OpenAIProvider implements LLMProvider {
             
             // Check cache only if cache service is available
             if (cache) {
-                const cached = await cache.get(cacheKey);
-                if (cached && this.isOpenAICompletion(cached)) {
-                    return this.formatResponse(cached);
+            const cached = await cache.get(cacheKey);
+            if (cached && this.isOpenAICompletion(cached)) {
+                return this.formatResponse(cached);
                 }
             }
 
@@ -97,7 +97,7 @@ export class OpenAIProvider implements LLMProvider {
 
             // Cache successful responses only if cache service is available
             if (cache) {
-                await cache.set(cacheKey, completion);
+            await cache.set(cacheKey, completion);
             }
 
             return this.formatResponse(completion);

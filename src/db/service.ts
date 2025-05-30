@@ -507,16 +507,15 @@ export class DatabaseService implements IDatabaseService {
         session_id: execution.session_id,
         pattern_id: execution.pattern_id,
         agent_id: execution.agent_id,
-        parameters: execution.parameters || JSON.stringify(execution.input_parameters || {}),
-        result: execution.result || JSON.stringify(execution.output_result || {}),
-        error_message: execution.error_message || execution.error_details,
+        input_parameters: execution.input_parameters || (execution.parameters ? JSON.parse(execution.parameters) : {}),
+        output_result: execution.output_result || (execution.result ? JSON.parse(execution.result) : {}),
+        error_details: execution.error_message || execution.error_details,
         success: execution.success,
         execution_time_ms: execution.execution_time_ms,
         memory_used_mb: execution.memory_used_mb,
         cpu_time_ms: execution.cpu_time_ms,
         confidence_score: execution.confidence_score,
         user_feedback: execution.user_feedback,
-        retry_count: execution.retry_count,
         created_at: new Date()
       });
     } catch (error) {

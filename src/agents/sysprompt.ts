@@ -1,44 +1,84 @@
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-import { AgentConfig } from '../types/sdk';
 import { Logger } from '../utils/logger';
+import { AgentConfig } from '../types/sdk';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface SystemPromptVariables {
+    name: string;
     description: string;
     task: string;
     tool_registry: string;
-    FAST_PATH_THRESHOLD: number;
+    llm_model: string;
+    directives: string;
 }
 
 export class SystemPromptService {
-    private static instance: SystemPromptService;
     private logger: Logger;
-    private systemPromptTemplate: string = '';
+    private systemPromptTemplate: string;
 
-    private constructor() {
+    constructor() {
         this.logger = Logger.getInstance('SystemPromptService');
-        this.loadSystemPromptTemplate();
-    }
-
-    static getInstance(): SystemPromptService {
-        if (!SystemPromptService.instance) {
-            SystemPromptService.instance = new SystemPromptService();
-        }
-        return SystemPromptService.instance;
-    }
-
-    private loadSystemPromptTemplate(): void {
+        
         try {
-            const promptPath = resolve(__dirname, 'sysprompt.xml');
-            this.systemPromptTemplate = readFileSync(promptPath, 'utf-8');
-            this.logger.info('SystemPromptService', 'Loaded XML system prompt template', {
-                templateLength: this.systemPromptTemplate.length
-            });
+            // Load default system prompt template
+            const templatePath = path.join(__dirname, 'sysprompt.xml');
+            this.systemPromptTemplate = fs.readFileSync(templatePath, 'utf-8');
+            this.logger.info('SystemPromptService', 'Loaded system prompt template');
         } catch (error) {
-            this.logger.error('SystemPromptService', 'Failed to load system prompt template', { error });
-            // Fallback to basic system prompt
+            this.logger.warn('SystemPromptService', 'Failed to load XML template, using basic prompt');
             this.systemPromptTemplate = this.getBasicSystemPrompt();
         }
+    }
+
+    generateSystemPrompt(config: AgentConfig): string {
+        try {
+            // Check for custom system prompt override
+            if (config.systemPrompt) {
+                return this.loadCustomSystemPrompt(config.systemPrompt);
+            }
+
+            // Otherwise, use the default template with variables
+            const variables: SystemPromptVariables = {
+                name: config.name,
+                description: config.description,
+                task: config.task,
+                tool_registry: this.formatToolRegistry(config.tools),
+                llm_model: typeof config.llm === 'string' ? config.llm : config.llm.model,
+                directives: config.directives || 'None specified'
+            };
+
+            let prompt = this.systemPromptTemplate;
+
+            // Replace variables in the template
+            Object.entries(variables).forEach(([key, value]) => {
+                const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
+                prompt = prompt.replace(regex, value);
+            });
+
+            return prompt;
+
+        } catch (error) {
+            this.logger.error('SystemPromptService', 'Failed to generate system prompt', { error });
+            return this.getBasicSystemPrompt();
+        }
+    }
+
+    private loadCustomSystemPrompt(systemPrompt: string): string {
+        // Check if it's a file path
+        if (systemPrompt.endsWith('.xml') || systemPrompt.endsWith('.txt') || systemPrompt.endsWith('.md')) {
+            try {
+                const content = fs.readFileSync(systemPrompt, 'utf-8');
+                this.logger.info('SystemPromptService', `Loaded custom system prompt from file: ${systemPrompt}`);
+                return content;
+            } catch (error) {
+                this.logger.warn('SystemPromptService', `Failed to load system prompt from file: ${systemPrompt}, treating as string`);
+                // Fall through to treat as string
+            }
+        }
+
+        // Otherwise, treat as direct string content
+        this.logger.info('SystemPromptService', 'Using custom system prompt string');
+        return systemPrompt;
     }
 
     private getBasicSystemPrompt(): string {
@@ -48,63 +88,26 @@ export class SystemPromptService {
         <Description>You are an agent that \${description}</Description>
         <Task>You have been tasked to \${task}</Task>
         <Capabilities>
-            <Tools>REGISTERED_TOOLS: \${tool_registry}</Tools>
+            <Tools>Available tools: \${tool_registry}</Tools>
         </Capabilities>
     </AgentIdentity>
     
     <Instructions>
-        You are an intelligent AI agent that can use tools to accomplish tasks.
+        You are an intelligent AI agent designed to analyze tasks and provide helpful responses.
         
-        Available tools: \${tool_registry}
+        Your role:
+        1. Understand and analyze the user's request
+        2. Think about how to best accomplish the task
+        3. Provide a helpful, detailed response
+        4. If tools would be useful, you can suggest which tools would help
         
-        When given a task:
-        1. Analyze the task requirements
-        2. Select the most appropriate tool(s)
-        3. Execute the tools with proper parameters
-        4. Return a helpful response
-        
-        Always be helpful, accurate, and efficient in your responses.
+        Remember: You are focused on analysis and planning, not automatic tool execution.
     </Instructions>
+    
+    <Directives>
+        \${directives}
+    </Directives>
 </SystemPrompt>`;
-    }
-
-    generateSystemPrompt(config: AgentConfig): string {
-        try {
-            const variables: SystemPromptVariables = {
-                description: config.description,
-                task: config.task,
-                tool_registry: this.formatToolRegistry(config.tools),
-                FAST_PATH_THRESHOLD: config.thresholds?.fastPath || 0.7
-            };
-
-            let systemPrompt = this.systemPromptTemplate;
-            
-            // Replace template variables
-            Object.entries(variables).forEach(([key, value]) => {
-                const pattern = new RegExp(`\\$\\{${key}\\}`, 'g');
-                systemPrompt = systemPrompt.replace(pattern, String(value));
-            });
-
-            // Extract the actual prompt content from XML (simple extraction)
-            const instructionsMatch = systemPrompt.match(/<Instructions>([\s\S]*?)<\/Instructions>/);
-            if (instructionsMatch) {
-                return this.cleanXmlContent(instructionsMatch[1]);
-            }
-
-            // Fallback: extract content between AgentIdentity and ToolExecution
-            const identityMatch = systemPrompt.match(/<AgentIdentity>([\s\S]*?)<\/AgentIdentity>/);
-            if (identityMatch) {
-                return this.cleanXmlContent(identityMatch[1]) + 
-                       "\n\nYou are an intelligent AI agent. Use the available tools to accomplish the given task effectively.";
-            }
-
-            // Final fallback
-            return `You are an AI agent that ${variables.description}. Your task is to ${variables.task}. Available tools: ${variables.tool_registry}`;
-
-        } catch (error) {
-            this.logger.error('SystemPromptService', 'Failed to generate system prompt', { error });
-            return `You are an AI agent. Use available tools to accomplish tasks.`;
-        }
     }
 
     private formatToolRegistry(tools: string[]): string {
@@ -113,13 +116,6 @@ export class SystemPromptService {
         }
         
         return tools.map(tool => `- ${tool}`).join('\n');
-    }
-
-    private cleanXmlContent(content: string): string {
-        return content
-            .replace(/<[^>]+>/g, '') // Remove XML tags
-            .replace(/\s+/g, ' ')    // Normalize whitespace
-            .trim();
     }
 
     // Method to get the raw XML template for cache integration later

@@ -7,13 +7,13 @@ import { LLMRequest } from '../llm/types';
 
 export class AgentExecutor extends BaseAgent {
     private systemPromptService: SystemPromptService;
-    private toolRegistry: ToolRegistry;
     private chainExecutor: ChainExecutor;
+    private registry: ToolRegistry;
 
-    constructor(config: AgentConfig, toolRegistry?: ToolRegistry) {
+    constructor(config: AgentConfig, sharedRegistry?: ToolRegistry) {
         super(config);
-        this.systemPromptService = SystemPromptService.getInstance();
-        this.toolRegistry = toolRegistry || ToolRegistry.getInstance();
+        this.registry = sharedRegistry || ToolRegistry.getInstance();
+        this.systemPromptService = new SystemPromptService();
         this.chainExecutor = ChainExecutor.getInstance();
     }
 
@@ -111,20 +111,17 @@ export class AgentExecutor extends BaseAgent {
         return response;
     }
 
-    // Enhanced task execution that can decide between single tools and tool chains
+    // Simplified task execution - context intelligence handles complexity
     async executeTask(task: string): Promise<ToolResult> {
         try {
             this.logger.info('AgentExecutor', `Executing task: ${task}`);
 
-            // Step 1: Generate system prompt from XML template
+            // Generate system prompt with context tools available
             let systemPrompt = this.systemPromptService.generateSystemPrompt(this.config);
             
-            // Step 1.5: Append custom directives if provided
-            if (this.config.directives) {
+            // Append custom directives if provided and not using custom systemPrompt
+            if (this.config.directives && !this.config.systemPrompt) {
                 systemPrompt += `\n\nAdditional Directives:\n${this.config.directives}`;
-                this.logger.info('AgentExecutor', 'Added custom directives to system prompt', {
-                    directivesLength: this.config.directives.length
-                });
             }
             
             this.logger.info('AgentExecutor', 'Generated system prompt', {
@@ -134,34 +131,25 @@ export class AgentExecutor extends BaseAgent {
                 hasCustomDirectives: !!this.config.directives
             });
 
-            // Step 2: Use LLM to analyze task
-            const analysisResult = await this.analyzeTaskWithLLM(task, systemPrompt);
+            // Analyze task with LLM - simplified approach
+            const analysisResult = await this.analyzeAndExecuteTask(task, systemPrompt);
             
-            // Step 3: Execute with single tool approach (removed automatic chain detection)
-            const executionResult = await this.tryToolExecution(task, analysisResult);
-            
-            // Step 4: Generate final response
-            const finalResponse = await this.synthesizeResponse(task, analysisResult, executionResult);
-
-            // Store execution data in memory
+            // Store execution data in memory for learning
             await this.memory.store(`task:${Date.now()}`, {
                 task,
-                analysisResponse: analysisResult.response,
-                executionResult,
-                finalResponse: finalResponse.response,
+                result: analysisResult,
                 timestamp: new Date().toISOString(),
-                tokenUsage: analysisResult.tokenUsage
+                agent: this.config.name
             });
 
             return {
                 success: true,
-                result: finalResponse
+                result: analysisResult
             };
 
         } catch (error) {
             this.logger.error('AgentExecutor', 'Task execution failed', { error });
             
-            // Fallback to basic response if anything fails
             const fallbackResult = {
                 response: `Agent ${this.config.name} encountered an error processing: ${task}`,
                 error: error instanceof Error ? error.message : String(error),
@@ -177,30 +165,8 @@ export class AgentExecutor extends BaseAgent {
         }
     }
 
-    private async synthesizeResponse(_task: string, analysisResult: any, executionResult: any) {
-        let response = analysisResult.response;
-        
-        if (executionResult && executionResult.result?.success) {
-            response += `\n\n[Tool Execution Results]`;
-            response += `\nTool Used: ${executionResult.toolName}`;
-            response += `\nExecution Time: ${executionResult.metrics?.duration || 0}ms`;
-            
-            if (executionResult.result.result) {
-                response += `\nTool Output: ${JSON.stringify(executionResult.result.result, null, 2)}`;
-            }
-        }
-
-        return {
-            response,
-            reasoning: 'Task execution completed',
-            agent: this.config.name,
-            timestamp: new Date().toISOString(),
-            tokenUsage: analysisResult.tokenUsage,
-            model: analysisResult.model
-        };
-    }
-
-    private async analyzeTaskWithLLM(task: string, systemPrompt: string) {
+    // Simplified analysis and execution - let LLM handle tool selection through registry
+    private async analyzeAndExecuteTask(task: string, systemPrompt: string) {
         const llmRequest: LLMRequest = {
             messages: [
                 {
@@ -219,106 +185,24 @@ export class AgentExecutor extends BaseAgent {
             }
         };
 
-        this.logger.info('AgentExecutor', 'Analyzing task with LLM');
+        this.logger.info('AgentExecutor', 'Analyzing and executing task with LLM');
         const llmResponse = await this.llm.complete(llmRequest);
         
-        this.logger.info('AgentExecutor', 'Received LLM analysis', {
-            responseLength: llmResponse.content.length,
-            model: llmResponse.model,
-            tokenUsage: llmResponse.usage
-        });
-
         return {
             response: llmResponse.content,
+            reasoning: 'Task analyzed and executed with context intelligence',
+            agent: this.config.name,
+            timestamp: new Date().toISOString(),
             model: llmResponse.model,
             tokenUsage: llmResponse.usage
         };
     }
 
-    private async tryToolExecution(task: string, _analysisResult: any): Promise<any> {
-        try {
-            // Use intelligent tool selection
-            const selectedTool = await this.executeToolSelection(task);
-            
-            if (!selectedTool) {
-                this.logger.info('AgentExecutor', 'No tool selected for task - using LLM response only');
-                return null;
-            }
-
-            this.logger.info('AgentExecutor', `Executing selected tool: ${selectedTool}`);
-
-            // Extract parameters from task (simple approach for now)
-            const toolParams = this.extractToolParams(task, selectedTool);
-            
-            // Execute the tool using ToolRegistry
-            const toolResult = await this.toolRegistry.executeTool(selectedTool, toolParams);
-            
-            this.logger.info('AgentExecutor', 'Tool execution completed', {
-                toolName: selectedTool,
-                success: toolResult.success,
-                duration: toolResult.metrics?.duration || 0
-            });
-
-            return {
-                toolName: selectedTool,
-                params: toolParams,
-                result: toolResult,
-                metrics: toolResult.metrics
-            };
-
-        } catch (error) {
-            this.logger.error('AgentExecutor', 'Tool execution failed', { error });
-            return null;
-        }
-    }
-
-    private extractToolParams(task: string, toolName: string): any {
-        // Simple parameter extraction based on tool type
-        // This is a basic implementation - could be enhanced with LLM-based extraction
-        
-        switch (toolName) {
-            case 'webSearch':
-            case 'webSearchTool':
-                // Extract search query from task
-                return {
-                    query: task.replace(/search for|find|look up|web search/gi, '').trim(),
-                    type: 'search'
-                };
-                
-            case 'readFile':
-            case 'readFileTool':
-                // Try to extract file path
-                const readMatch = task.match(/read\s+(?:file\s+)?["']?([^"']+)["']?/i);
-                return {
-                    path: readMatch ? readMatch[1] : task.replace(/read\s+file\s*/i, '').trim()
-                };
-                
-            case 'writeFile':
-            case 'writeFileTool':
-                // Try to extract file path and content
-                const writeMatch = task.match(/write\s+(?:to\s+)?["']?([^"']+)["']?\s*:?\s*(.+)/i);
-                return {
-                    path: writeMatch ? writeMatch[1] : 'output.txt',
-                    content: writeMatch ? writeMatch[2] : task.replace(/write\s+(?:to\s+)?file\s*/i, '').trim()
-                };
-                
-            case 'ponder':
-            case 'ponderTool':
-                return {
-                    query: task,
-                    depth: 2
-                };
-                
-            default:
-                // Generic parameter extraction
-                return { query: task };
-        }
-    }
-
+    // Simplified tool selection for backward compatibility
     async executeToolSelection(task: string): Promise<string | null> {
         try {
             // Get available tools from registry
-            const availableTools = this.toolRegistry.getAvailableTools();
+            const availableTools = this.registry.getAvailableTools();
             const agentTools = this.config.tools.filter(tool => availableTools.includes(tool));
             
             if (agentTools.length === 0) {
@@ -326,45 +210,38 @@ export class AgentExecutor extends BaseAgent {
                 return null;
             }
 
-            // Use LLM to intelligently select tools
-            const systemPrompt = `You are a tool selection expert. Given a task and available tools, select the most appropriate tool.
+            // Simple tool selection - context intelligence will handle sophisticated matching
+            const toolDescriptions = agentTools.map(tool => {
+                const toolInfo = this.registry.getToolInfo(tool);
+                return `${tool}: ${toolInfo?.description || 'Available tool'}`;
+            }).join('\n');
 
-Available tools: ${agentTools.join(', ')}
-
-Respond with only the tool name, or 'none' if no tool is suitable.`;
+            const systemPrompt = `Select the most appropriate tool for this task. Available tools:\n${toolDescriptions}\n\nRespond with ONLY the tool name or "none".`;
 
             const llmRequest: LLMRequest = {
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `Select the best tool for this task: ${task}` }
+                    { role: 'user', content: `Task: ${task}` }
                 ],
                 llmConfig: {
                     model: typeof this.config.llm === 'string' ? this.config.llm : this.config.llm.model,
-                    temperature: 0.3, // Lower temperature for more deterministic tool selection
-                    maxTokens: 100
+                    temperature: 0.1,
+                    maxTokens: 50
                 }
             };
 
             const response = await this.llm.complete(llmRequest);
-            const selectedTool = response.content.trim();
+            const selectedTool = response.content.trim().toLowerCase();
             
-            // Validate that the selected tool is actually available
-            if (agentTools.includes(selectedTool)) {
-                this.logger.info('AgentExecutor', `LLM selected tool: ${selectedTool} for task: ${task}`);
-                return selectedTool;
-            } else if (selectedTool !== 'none') {
-                this.logger.warn('AgentExecutor', `LLM selected invalid tool: ${selectedTool}, falling back to heuristic selection`);
-                // Fallback to parent class heuristic selection
-                return await this.selectTool(task);
-            } else {
-                this.logger.info('AgentExecutor', `LLM determined no tool needed for task: ${task}`);
-                return null;
-            }
+            if (selectedTool === 'none') return null;
+            
+            // Find tool with case-insensitive matching
+            const matchedTool = agentTools.find(tool => tool.toLowerCase() === selectedTool);
+            return matchedTool || null;
 
         } catch (error) {
-            this.logger.error('AgentExecutor', 'LLM tool selection failed, using fallback', { error });
-            // Fallback to parent class heuristic selection
-            return await this.selectTool(task);
+            this.logger.error('AgentExecutor', 'Tool selection failed', { error });
+            return null;
         }
     }
 } 

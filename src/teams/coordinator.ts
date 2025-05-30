@@ -268,7 +268,7 @@ export class TeamCoordinator {
           result = await this.executeRoleBased(taskId, task, options);
           break;
         default:
-          result = await this.executeRoleBased(taskId, task, options);
+          result = await this.executeCollaborative(taskId, task, options);
       }
 
       const endTime = Date.now();
@@ -297,7 +297,8 @@ export class TeamCoordinator {
           strategy,
           executionDetails: result,
           sharedContext: this.serializeContext(),
-          participatingAgents: result.participatingAgents || []
+          participatingAgents: result.participatingAgents || [],
+          delegations: (result as any).delegations || []  // Type assertion since only collaborative has delegations
         },
         metrics: {
           duration,
@@ -363,8 +364,8 @@ export class TeamCoordinator {
       return TeamExecutionStrategy.ROLE_BASED;
     }
 
-    // Default to role-based for efficiency
-    return TeamExecutionStrategy.ROLE_BASED;
+    // Default to collaborative for proper delegation support
+    return TeamExecutionStrategy.COLLABORATIVE;
   }
 
   private async executeParallel(taskId: string, task: string, _options?: any) {
@@ -514,39 +515,102 @@ export class TeamCoordinator {
   private async executeCollaborative(taskId: string, task: string, _options?: any) {
     this.logger.info('TeamCoordinator', `Executing collaborative strategy for task: ${taskId}`);
     
-    // Break down task into collaborative subtasks
-    const subtasks = await this.decomposeTaskForCollaboration(task);
-    const participatingAgents: string[] = [];
+    // Step 1: Find the manager agent (or use first agent as manager)
+    const managerAgent = Array.from(this.members.values()).find(m => 
+      m.name.toLowerCase().includes('manager') || 
+      m.name.toLowerCase().includes('lead')
+    ) || Array.from(this.members.values())[0];
+    
+    if (!managerAgent) {
+      throw new Error('No manager agent available for collaboration');
+    }
+
+    const participatingAgents: string[] = [managerAgent.name];
     const results: any[] = [];
 
-    // Assign different aspects to different agents
-    let agentIndex = 0;
-    for (const subtask of subtasks) {
-      const members = Array.from(this.members.values());
-      if (agentIndex < members.length && members[agentIndex].status === 'idle') {
-        const member = members[agentIndex];
-        participatingAgents.push(member.name);
-        
-        try {
-          const result = await this.executeAgentTask(member, subtask, taskId);
-          results.push({
-            agent: member.name,
-            subtask,
-            result
-          });
+    // Step 2: Have manager analyze and create delegation plan
+    this.logger.info('TeamCoordinator', `Manager ${managerAgent.name} creating delegation plan`);
+    const managerResult = await this.executeAgentTask(managerAgent, task, taskId);
+    
+    results.push({
+      agent: managerAgent.name,
+      role: 'manager',
+      result: managerResult
+    });
 
-          // Share result with team
-          await this.shareResultWithTeam(member.name, result, 'data_share');
-          
-        } catch (error) {
-          results.push({
-            agent: member.name,
-            subtask,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
+    // Step 3: Parse manager's response for delegations
+    const delegations = this.parseDelegations(managerResult);
+    
+    if (delegations.length > 0) {
+      this.logger.info('TeamCoordinator', `Manager created ${delegations.length} delegations`);
+      
+      // Step 4: Execute each delegation
+      for (const delegation of delegations) {
+        const targetMember = Array.from(this.members.values()).find(m => 
+          m.name === delegation.agentName || 
+          m.name.toLowerCase() === delegation.agentName.toLowerCase()
+        );
         
-        agentIndex++;
+        if (targetMember && targetMember.status === 'idle') {
+          participatingAgents.push(targetMember.name);
+          
+          try {
+            this.logger.info('TeamCoordinator', `Executing delegation to ${targetMember.name}: ${delegation.task}`);
+            const delegationResult = await this.executeAgentTask(targetMember, delegation.task, taskId);
+            
+            results.push({
+              agent: targetMember.name,
+              role: 'delegated',
+              task: delegation.task,
+              result: delegationResult
+            });
+            
+            // Share result with team
+            await this.shareResultWithTeam(targetMember.name, delegationResult, 'data_share');
+            
+          } catch (error) {
+            results.push({
+              agent: targetMember.name,
+              role: 'delegated',
+              task: delegation.task,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        } else {
+          this.logger.warn('TeamCoordinator', `Could not delegate to ${delegation.agentName} - agent not found or busy`);
+        }
+      }
+    } else {
+      // Fallback to automatic task decomposition if no delegations found
+      this.logger.info('TeamCoordinator', 'No delegations found, using automatic task decomposition');
+      const subtasks = await this.decomposeTaskForCollaboration(task);
+      
+      let agentIndex = 1; // Start from 1 since manager is 0
+      for (const subtask of subtasks) {
+        const members = Array.from(this.members.values());
+        if (agentIndex < members.length && members[agentIndex].status === 'idle') {
+          const member = members[agentIndex];
+          participatingAgents.push(member.name);
+          
+          try {
+            const result = await this.executeAgentTask(member, subtask, taskId);
+            results.push({
+              agent: member.name,
+              role: 'automatic',
+              task: subtask,
+              result
+            });
+            await this.shareResultWithTeam(member.name, result, 'data_share');
+          } catch (error) {
+            results.push({
+              agent: member.name,
+              role: 'automatic',
+              task: subtask,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+          agentIndex++;
+        }
       }
     }
 
@@ -556,11 +620,57 @@ export class TeamCoordinator {
     return {
       strategy: 'collaborative',
       participatingAgents,
-      subtasks,
+      managerAnalysis: managerResult,
+      delegations,
       individualContributions: results,
       synthesizedResult,
-      executionSummary: `${participatingAgents.length} agents collaborated on task decomposition`
+      executionSummary: `${participatingAgents.length} agents collaborated with ${delegations.length} manager delegations`
     };
+  }
+
+  private parseDelegations(managerResult: any): Array<{ agentName: string; task: string }> {
+    const delegations: Array<{ agentName: string; task: string }> = [];
+    
+    if (!managerResult?.result?.response) {
+      this.logger.warn('TeamCoordinator', 'No response from manager to parse for delegations');
+      return delegations;
+    }
+
+    const response = managerResult.result.response;
+    
+    this.logger.info('TeamCoordinator', `Parsing manager response for delegations`, {
+      responseLength: response.length,
+      responsePreview: response.substring(0, 200) + '...'
+    });
+    
+    // Look for JSON delegations in the response
+    const delegationMatch = response.match(/DELEGATIONS:\s*(\{[\s\S]*?\})/);
+    
+    if (delegationMatch && delegationMatch[1]) {
+      try {
+        const parsed = JSON.parse(delegationMatch[1]);
+        
+        if (parsed.delegations && Array.isArray(parsed.delegations)) {
+          for (const delegation of parsed.delegations) {
+            if (delegation.agent && delegation.task) {
+              delegations.push({
+                agentName: delegation.agent,
+                task: delegation.task
+              });
+              this.logger.debug('TeamCoordinator', `Found delegation: ${delegation.agent} -> ${delegation.task}`);
+            }
+          }
+        }
+        
+        this.logger.info('TeamCoordinator', `Parsed ${delegations.length} delegations from JSON`);
+      } catch (error) {
+        this.logger.error('TeamCoordinator', 'Failed to parse delegation JSON', { error });
+      }
+    } else {
+      this.logger.info('TeamCoordinator', 'No JSON delegations found in manager response');
+    }
+    
+    return delegations;
   }
 
   private async executeRoleBased(taskId: string, task: string, options?: any) {
