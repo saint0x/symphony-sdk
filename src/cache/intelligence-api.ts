@@ -83,7 +83,7 @@ export class ContextIntelligenceAPI {
             // Check for pattern conflicts
             const existingPatterns = this.mapProcessor.getPatterns();
             const hasConflict = existingPatterns.some(pattern => 
-                pattern.nlpPattern === nlpPattern && pattern.toolName !== toolName
+                pattern.trigger === nlpPattern && pattern.toolName !== toolName
             );
 
             if (hasConflict && operation === 'add') {
@@ -153,7 +153,7 @@ export class ContextIntelligenceAPI {
                 session_id: this.config.sessionId || 'default',
                 error_details: success ? null : (result?.error || 'Execution failed'),
                 user_feedback: userFeedback ? this.mapUserFeedbackToInteger(userFeedback) : undefined,
-                pattern_id: null // No specific pattern for learning context updates
+                pattern_id: undefined // No specific pattern for learning context updates
             });
 
             // Update pattern confidence if applicable
@@ -203,7 +203,6 @@ export class ContextIntelligenceAPI {
             this.logger.info('ContextIntelligenceAPI', 'Executing context pruning', params);
 
             const {
-                sessionId = this.config.sessionId || 'default',
                 maxAge = 24 * 60 * 60 * 1000, // 24 hours default
                 minConfidence = 0.3,
                 keepRecentCount = 50
@@ -215,7 +214,6 @@ export class ContextIntelligenceAPI {
             this.treeBuilder.clearCache();
 
             // 2. Intelligent Database Pruning - Remove old tool execution records
-            const cutoffTime = new Date(Date.now() - maxAge).toISOString();
             
             // Get old records that are candidates for pruning
             const allExecutions = await this.database.table('tool_executions').find();
@@ -384,7 +382,7 @@ export class ContextIntelligenceAPI {
             // Find the pattern
             const patterns = this.mapProcessor.getPatterns();
             const pattern = patterns.find(p => 
-                p.nlpPattern === nlpPattern || p.toolName === toolName
+                p.trigger === nlpPattern || p.toolName === toolName
             );
 
             if (!pattern) {
@@ -403,7 +401,7 @@ export class ContextIntelligenceAPI {
             } else {
                 pattern.usageStats.failureCount++;
             }
-            pattern.usageStats.lastUsed = new Date().toISOString();
+            pattern.usageStats.lastUsed = new Date();
 
             // Calculate success rate
             const totalAttempts = pattern.usageStats.successCount + pattern.usageStats.failureCount;
@@ -477,7 +475,7 @@ export class ContextIntelligenceAPI {
                     metrics: {
                         totalNodes: contextTree.totalNodes,
                         toolExecutions: contextTree.metadata.totalToolExecutions,
-                        avgConfidence: contextTree.metadata.averageConfidence
+                        avgConfidence: contextTree.metadata.learningAdaptations
                     }
                 }
             };
@@ -589,7 +587,7 @@ export class ContextIntelligenceAPI {
         // Validate that type bindings are consistent
         return contextTree && 
                contextTree.metadata &&
-               typeof contextTree.metadata.averageConfidence === 'number';
+               typeof contextTree.metadata.learningAdaptations === 'number';
     }
 
     private mapUserFeedbackToInteger(feedback: string): number {

@@ -9,7 +9,6 @@ export class ToolRegistry {
     private tools: Map<string, ToolConfig> = new Map();
     private logger: Logger;
     private contextAPI?: ContextIntelligenceAPI;
-    private database?: IDatabaseService;
 
     constructor() {
         this.logger = Logger.getInstance('ToolRegistry');
@@ -27,7 +26,6 @@ export class ToolRegistry {
      * Initialize Context Intelligence Integration
      */
     initializeContextIntegration(database: IDatabaseService): void {
-        this.database = database;
         this.contextAPI = new ContextIntelligenceAPI(database);
         this.registerContextTools();
         this.logger.info('ToolRegistry', 'Context intelligence integration initialized');

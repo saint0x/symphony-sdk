@@ -1180,13 +1180,17 @@ export class Symphony implements Partial<ISymphony> {
         this._logger.info('Symphony', 'Initializing...');
         
         try {
+            // First, initialize the database service as other services depend on it
+            await this.db.initialize(this._config.db);
+            this._logger.info('Symphony', 'Database initialized');
+            
+            // Then initialize services that depend on the database in parallel
             await Promise.all([
                 this.tool.initialize(),
                 this.agent.initialize(),
                 this.team.initialize(),
                 this.pipeline.initialize(),
                 this.validation.initialize(),
-                this.db.initialize(this._config.db),
                 this._cacheService.initialize(),
                 this._memoryService.initialize(),
                 this._streamingService.initialize()

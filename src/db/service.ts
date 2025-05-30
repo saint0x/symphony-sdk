@@ -48,7 +48,16 @@ export class DatabaseService implements IDatabaseService {
 
     this.config = { ...this.config, ...config };
     
-    if (!this.config.enabled) {
+    // If database config is provided (path, adapter, etc), assume it should be enabled
+    // Only disable if explicitly set to enabled: false
+    const isEnabled = this.config.enabled !== false && (
+      this.config.path !== undefined ||
+      this.config.adapter !== undefined ||
+      this.config.connection !== undefined ||
+      Object.keys(this.config).length > 0
+    );
+    
+    if (!isEnabled) {
       this.logger.info('DatabaseService', 'Database service disabled by configuration');
       return;
     }
