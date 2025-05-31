@@ -1,153 +1,304 @@
 import { symphony } from './src/index';
 import fs from 'fs'; // Use ES6 import for fs
+import path from 'path'; // For path manipulation if needed
 
 const AGENT_RUN_TIMEOUT_MS = 90000; // 90 seconds timeout
 
-async function testStandardTool() {
-    console.log('🧪 Testing standard tool functionality...\n');
-    const testFilePath = 'std-tool-test.txt';
-    let exitCode = 0; 
-    let agentTaskSuccessful = false;
-    let fileSuccessfullyCreated = false;
+interface ToolTestCase {
+    toolName: string;
+    agentName: string;
+    agentTaskDescription: string;
+    systemPrompt: string;
+    userRequest: string;
+    validation: (result: any, testFiles?: Record<string, string>) => Promise<{ success: boolean; message: string }>;
+    setup?: () => Promise<Record<string, string> | void>; // Optional setup, can return paths to files created
+    cleanup?: (testFiles?: Record<string, string>) => Promise<void>; // Optional cleanup
+}
 
-    const systemPrompt = `You are TestStdToolAgent, a diligent file management assistant.
-    Your primary function is to manage files based on user requests.
-    When a user asks you to create or write to a file, you MUST use the "writeFile" tool.
-    The "writeFile" tool requires the following JSON parameters: 
-    - "path": string (the full path or filename for the file)
-    - "content": string (the content to write into the file)
-    
-    When you decide to use the "writeFile" tool, your response MUST be a JSON object in the following format:
+// Helper to create the common JSON structure prompt
+function getToolExecutionSystemPrompt(toolName: string, parametersString: string, exampleParams: string): string {
+    return `You are a diligent agent. Your task is to use the "${toolName}" tool.
+The "${toolName}" tool requires the following JSON parameters:
+${parametersString}
+
+When you decide to use the "${toolName}" tool, your response MUST be a JSON object in the following format:
+{
+  "tool_name": "${toolName}",
+  "parameters": {
+${exampleParams}
+  }
+}
+Replace the example values with the actual values derived from the user's request.
+Carefully analyze the user's request to extract the correct parameters.
+Invoke the tool with these exact parameters in the required JSON format.
+Confirm successful operations based on the tool's output.`;
+}
+
+// placeholder for all test cases
+const testCases: ToolTestCase[] = [
     {
-      "tool_name": "writeFile",
-      "parameters": {
-        "path": "PATH_VALUE",
-        "content": "CONTENT_VALUE"
-      }
-    }
-    Replace PATH_VALUE and CONTENT_VALUE with the actual path and content derived from the user's request.
-    
-    Carefully analyze the user's request to extract the correct values for "path" and "content".
-    Then, invoke the "writeFile" tool with these exact parameters in the required JSON format.
-    Do not attempt to create files through other means or by saying you've created them without using the tool. 
-    Confirm successful file operations based on the tool's output.`;
+        toolName: 'writeFile',
+        agentName: 'FileWritingAgent',
+        agentTaskDescription: 'Writes files based on user requests.',
+        systemPrompt: getToolExecutionSystemPrompt(
+            'writeFile',
+            '    - "path": string (the full path or filename for the file)\n    - "content": string (the content to write into the file)',
+            '        "path": "PATH_VALUE",\n        "content": "CONTENT_VALUE"'
+        ),
+        userRequest: 'Please create a new file named "test-write-file.txt" and write the exact text "Hello from writeFileTool!" into it.',
+        async setup() {
+            // No specific setup needed beyond what the tool does
+            return { testFilePath: 'test-write-file.txt' };
+        },
+        async validation(agentRunResult: any, testFiles?: Record<string, string>) {
+            let toolExecutedSuccessfully = false;
+            let fileCorrectlyCreated = false;
+            let message = '';
+
+            if (agentRunResult.success && agentRunResult.result && agentRunResult.result.toolsExecuted && agentRunResult.result.toolsExecuted.length > 0) {
+                const toolOp = agentRunResult.result.toolsExecuted.find((t: any) => t.name === 'writeFile');
+                if (toolOp && toolOp.success) {
+                    toolExecutedSuccessfully = true;
+                    message += 'writeFile tool reported success. ';
+                } else {
+                    message += `writeFile tool reported failure or was not executed. Error: ${toolOp?.error}. `; 
+                }
+            } else {
+                message += 'Agent task failed or no tools reported. ';
+            }
+
+            const filePath = testFiles?.testFilePath || 'test-write-file.txt';
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf-8');
+                if (content === "Hello from writeFileTool!") {
+                    fileCorrectlyCreated = true;
+                    message += 'File content is CORRECT. ';
+                } else {
+                    message += `File content is INCORRECT. Expected \"Hello from writeFileTool!\", got \"${content}\". `;
+                }
+            } else {
+                message += 'File was NOT created. ';
+            }
+            return { success: toolExecutedSuccessfully && fileCorrectlyCreated, message };
+        },
+        async cleanup(testFiles?: Record<string, string>) {
+            const filePath = testFiles?.testFilePath || 'test-write-file.txt';
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`🧹 Cleaned up ${filePath}`);
+            }
+        }
+    },
+    {
+        toolName: 'readFile',
+        agentName: 'FileReaderAgent',
+        agentTaskDescription: 'Reads files based on user requests.',
+        systemPrompt: getToolExecutionSystemPrompt(
+            'readFile',
+            '    - "path": string (the full path or filename of the file to read)',
+            '        "path": "FILE_PATH_VALUE"'
+        ),
+        userRequest: 'Please read the file named "test-read-file.txt".',
+        async setup() {
+            const filePath = 'test-read-file.txt';
+            const fileContent = "Content to be read by readFileTool.";
+            fs.writeFileSync(filePath, fileContent, 'utf-8');
+            console.log(`🔧 Created temporary file ${filePath} for readFile test.`);
+            return { testFilePath: filePath, expectedContent: fileContent };
+        },
+        async validation(agentRunResult: any, testFiles?: Record<string, string>) {
+            let toolExecutedSuccessfully = false;
+            let contentCorrectlyRead = false;
+            let message = '';
+            const expectedContent = testFiles?.expectedContent || "";
+
+            if (agentRunResult.success && agentRunResult.result && agentRunResult.result.toolsExecuted && agentRunResult.result.toolsExecuted.length > 0) {
+                const toolOp = agentRunResult.result.toolsExecuted.find((t: any) => t.name === 'readFile');
+                if (toolOp && toolOp.success) {
+                    toolExecutedSuccessfully = true;
+                    message += 'readFile tool reported success. ';
+                    if (toolOp.result && toolOp.result.content === expectedContent) {
+                        contentCorrectlyRead = true;
+                        message += 'File content read CORRECTLY. ';
+                    } else {
+                        message += `File content read INCORRECTLY. Expected \"${expectedContent}\", got \"${toolOp.result?.content}\". `;
+                    }
+                } else {
+                    message += `readFile tool reported failure or was not executed. Error: ${toolOp?.error}. `;
+                }
+            } else {
+                message += 'Agent task failed or no tools reported. ';
+            }
+            return { success: toolExecutedSuccessfully && contentCorrectlyRead, message };
+        },
+        async cleanup(testFiles?: Record<string, string>) {
+            const filePath = testFiles?.testFilePath;
+            if (filePath && fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`🧹 Cleaned up ${filePath}`);
+            }
+        }
+    },
+    {
+        toolName: 'webSearch',
+        agentName: 'WebSearchAgent',
+        agentTaskDescription: 'Searches the web for information.',
+        systemPrompt: getToolExecutionSystemPrompt(
+            'webSearch',
+            '    - "query": string (the search query)\n    - "type": string (optional, e.g., \"news\", \"images\")',
+            '        "query": "SEARCH_QUERY_VALUE",\n        "type": "OPTIONAL_TYPE_VALUE"'
+        ),
+        userRequest: 'Please search the web for "Symphony SDK framework".',
+        async validation(agentRunResult: any) {
+            let toolExecutedSuccessfully = false;
+            let resultsReceived = false;
+            let message = '';
+
+            if (agentRunResult.success && agentRunResult.result && agentRunResult.result.toolsExecuted && agentRunResult.result.toolsExecuted.length > 0) {
+                const toolOp = agentRunResult.result.toolsExecuted.find((t: any) => t.name === 'webSearch');
+                if (toolOp && toolOp.success) {
+                    toolExecutedSuccessfully = true;
+                    message += 'webSearch tool reported success. ';
+                    if (toolOp.result && (toolOp.result.organic_results || toolOp.result.news_results || toolOp.result.related_searches || toolOp.result.searchParameters)) {
+                        resultsReceived = true;
+                        message += 'Search results seem to have been received. ';
+                    } else {
+                        message += `Search result structure looks unexpected or empty: ${JSON.stringify(toolOp.result)}. `;
+                    }
+                } else {
+                    message += `webSearch tool reported failure or was not executed. Error: ${toolOp?.error}. `;
+                }
+            } else {
+                message += 'Agent task failed or no tools reported. ';
+            }
+            return { success: toolExecutedSuccessfully && resultsReceived, message };
+        }
+        // No specific setup or cleanup needed for webSearch beyond ensuring SERPER_API_KEY is in .env
+    },
+    // We will add more test cases here
+];
+
+async function runAllStandardToolTests() {
+    console.log('🧪 Testing ALL standard tool functionalities...\n');
+    let allTestsPassed = true;
+    const overallResults: Array<{ toolName: string; passed: boolean; message: string }> = [];
 
     try {
         console.log('Initializing Symphony...');
         await symphony.initialize();
         console.log('✅ Symphony initialized');
 
-        console.log('Creating agent with detailed system prompt...');
+        for (const tc of testCases) {
+            console.log(`\n--- Testing Tool: ${tc.toolName} ---`);
+            let testPassed = false;
+            let validationMessage = 'Test not executed.';
+            let testFiles: Record<string, string> | void = undefined;
+
+            try {
+                if (tc.setup) {
+                    console.log('🔧 Running test setup...');
+                    testFiles = await tc.setup();
+                    console.log('🔧 Setup complete.');
+                }
+
+                console.log('Creating agent...');
         const agent = await symphony.agent.create({
-            name: 'TestStdToolAgent',
-            description: 'Test agent for standard tools, with detailed system prompt for tool parameterization',
-            task: 'Use standard tools to write files as per user requests, paying close attention to tool parameters.',
-            tools: ['writeFile'],
-            systemPrompt: systemPrompt, 
+                    name: tc.agentName,
+                    description: tc.agentTaskDescription,
+                    task: tc.agentTaskDescription, // Simplified, can be same as description
+                    tools: [tc.toolName],
+                    systemPrompt: tc.systemPrompt,
             llm: {
                 model: 'gpt-3.5-turbo',
-                temperature: 0.0 // Minimal temperature for max adherence to instructions
+                        temperature: 0.0
             }
         });
-        console.log('✅ Agent created with writeFile tool and detailed system prompt');
+                console.log(`✅ Agent "${tc.agentName}" created for tool "${tc.toolName}".`);
 
-        const userRequest = 'Please create a new file named "std-tool-test.txt" and write the exact text "Standard tools working!" into it.';
-        console.log(`
-🗣️ User Request: "${userRequest}"`);
+                console.log(`🗣️ User Request: "${tc.userRequest}"`);
         console.log(`⏳ Attempting to run agent task with a ${AGENT_RUN_TIMEOUT_MS / 1000}s timeout...`);
         
-        let result: any = { success: false, response: 'Agent run not initiated', toolsExecuted: [] };
+                let agentRunResult: any = { success: false, result: { response: 'Agent run not initiated' } };
 
         try {
-            result = await Promise.race([
-                agent.run(userRequest),
+                    agentRunResult = await Promise.race([
+                        agent.run(tc.userRequest),
                 new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('Agent execution timed out')), AGENT_RUN_TIMEOUT_MS)
                 )
             ]);
-            // Check if agent.run() itself indicates success AND if toolsExecuted has a successful writeFile
-            // The detailed execution result, including toolsExecuted, is nested in result.result
-            if (result.success && result.result && result.result.toolsExecuted && result.result.toolsExecuted.length > 0) {
-                const writeFileToolExecution = result.result.toolsExecuted.find((t:any) => t.name === 'writeFile'); // toolsExecuted items have .name
-                agentTaskSuccessful = writeFileToolExecution ? writeFileToolExecution.success : false;
-            } else {
-                agentTaskSuccessful = false;
-            }
-
-        } catch (e:any) {
+                } catch (e: any) {
             if (e.message === 'Agent execution timed out') {
                 console.warn('⏰ Agent execution timed out.');
-                result = { success: false, response: 'Execution timed out', toolsExecuted: [] };
-                agentTaskSuccessful = false;
+                        agentRunResult = { success: false, result: { response: 'Execution timed out' } };
             } else {
                 console.error('❌ Error during agent.run():', e);
-                agentTaskSuccessful = false;
-                throw e; 
+                        throw e; // Rethrow critical errors
             }
         }
         
         console.log('\n📊 Agent Result:');
-        console.log(`Agent task chain overall success: ${result.success}`);
-        console.log(`Specific writeFile tool success: ${agentTaskSuccessful}`);
-
-        if (result.result && result.result.response) { // Access response from result.result
-            const responseStr = typeof result.result.response === 'string' ? result.result.response : JSON.stringify(result.result.response);
-            console.log(`LLM Response: ${responseStr.substring(0, 500)}${responseStr.length > 500 ? '...' : ''}`);
-        }
-
-        if (result.result && result.result.toolsExecuted && result.result.toolsExecuted.length > 0) { // Access toolsExecuted from result.result
-            console.log(`Tools executed by agent: ${result.result.toolsExecuted.length}`);
-            result.result.toolsExecuted.forEach((tool:any, i:number) => {
-                console.log(`  ${i + 1}. Tool: ${tool.name}`); // toolsExecuted items have .name
-                console.log(`     Params: ${JSON.stringify(tool.parameters)}`); // This might be undefined if not explicitly passed through
+                console.log(`Agent task chain overall success: ${agentRunResult.success}`);
+                if (agentRunResult.result && agentRunResult.result.toolsExecuted && agentRunResult.result.toolsExecuted.length > 0) {
+                    console.log(`Tools executed by agent: ${agentRunResult.result.toolsExecuted.length}`);
+                    agentRunResult.result.toolsExecuted.forEach((tool: any, i: number) => {
+                        console.log(`  ${i + 1}. Tool: ${tool.name}`);
                 console.log(`     Success: ${tool.success ? '✅' : '❌'}`);
                 console.log(`     Result: ${JSON.stringify(tool.result)}`);
+                         if(tool.error) console.log(`     Error: ${tool.error}`);
             });
         } else {
             console.log('No tools reported as executed by the agent.');
         }
-
-    } catch (error) {
-        console.error('❌ Test script failed critically:', error);
-        exitCode = 1; 
-    } finally {
-        console.log('\n🔍 Performing cleanup and final validation...');
-        const fileExists = fs.existsSync(testFilePath);
-        
-        if (fileExists) {
-            try {
-                const content = fs.readFileSync(testFilePath, 'utf-8');
-                console.log(`📄 File "${testFilePath}" exists. Content: "${content}"`);
-                if (content === "Standard tools working!") {
-                    console.log('✅ File content is CORRECT.');
-                    fileSuccessfullyCreated = true;
-                } else {
-                    console.error('❌ File content is INCORRECT.');
-                    fileSuccessfullyCreated = false;
+                 if (agentRunResult.result && agentRunResult.result.response) {
+                    const responseStr = typeof agentRunResult.result.response === 'string' ? agentRunResult.result.response : JSON.stringify(agentRunResult.result.response);
+                    console.log(`LLM Response: ${responseStr.substring(0, 300)}${responseStr.length > 300 ? '...' : ''}`);
                 }
-                fs.unlinkSync(testFilePath);
-                console.log(`🧹 Test file "${testFilePath}" cleaned up.`);
-            } catch (cleanupError) {
-                console.error(`🧹 Error during file read/cleanup:`, cleanupError);
-                fileSuccessfullyCreated = false; 
+
+
+                console.log('\n🔍 Performing validation...');
+                const validationResult = await tc.validation(agentRunResult, testFiles || undefined);
+                testPassed = validationResult.success;
+                validationMessage = validationResult.message;
+
+                if (testPassed) {
+                    console.log(`✅ Test for ${tc.toolName}: PASSED. ${validationMessage}`);
+                } else {
+                    console.error(`❌ Test for ${tc.toolName}: FAILED. ${validationMessage}`);
+                    allTestsPassed = false;
+                }
+
+            } catch (error: any) {
+                console.error(`❌ Test script for ${tc.toolName} failed critically:`, error);
+                validationMessage = `Critical error: ${error.message}`;
+                allTestsPassed = false;
+            } finally {
+                if (tc.cleanup) {
+                    console.log('🧹 Running test cleanup...');
+                    await tc.cleanup(testFiles || undefined);
+                    console.log('🧹 Cleanup complete.');
+                }
+                overallResults.push({ toolName: tc.toolName, passed: testPassed, message: validationMessage });
             }
-        } else {
-            console.error(`❌ File "${testFilePath}" was NOT created.`);
-            fileSuccessfullyCreated = false;
         }
+    } catch (mainError: any) {
+        console.error('❌ Main test script failed critically:', mainError);
+        allTestsPassed = false;
+        overallResults.push({ toolName: 'Framework', passed: false, message: `Main error: ${mainError.message}`});
+    } finally {
+        console.log('\n--- Overall Test Summary --- ');
+        overallResults.forEach(r => {
+            console.log(`[${r.passed ? '✅ PASSED' : '❌ FAILED'}] ${r.toolName}: ${r.message}`);
+        });
 
-        if (agentTaskSuccessful && fileSuccessfullyCreated) {
-            console.log('✅ Test Outcome: PASSED');
-            exitCode = 0;
+        if (allTestsPassed) {
+            console.log('\n🎉🎉🎉 ALL STANDARD TOOL TESTS PASSED! 🎉🎉🎉');
+            process.exit(0);
         } else {
-            console.error('❌ Test Outcome: FAILED (Agent task or file creation/validation failed).');
-            exitCode = 1; 
+            console.error('\n🚫 SOME STANDARD TOOL TESTS FAILED. 🚫');
+            process.exit(1);
         }
-
-        console.log(`
-🎉 Standard tool test script finished with exit code ${exitCode}.`);
-        process.exit(exitCode); 
     }
 }
 
-testStandardTool(); 
+runAllStandardToolTests();

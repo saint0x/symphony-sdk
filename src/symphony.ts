@@ -98,25 +98,35 @@ class ToolService implements IToolService {
     async create(config: any): Promise<any> {
         this.logger.info('ToolService', `Creating tool: ${config.name}`);
         
-        // Create the tool
         const toolHandler = config.handler || (() => Promise.resolve({ success: true, result: null }));
 
-        // Auto-register the tool in the registry
-        this.toolRegistry.registerTool(config.name, {
+        // Construct the object to be registered, adhering to ToolConfig structure
+        const toolToRegister = {
             name: config.name,
             description: config.description || '',
             type: config.type || 'custom',
-            config: {
-                handler: toolHandler,
-                inputs: config.inputs || [],
-                outputs: config.outputs || [],
-                timeout: config.timeout,
-                retry: config.retry,
-                cache: config.cache
-            }
-        });
+            
+            // Critical: handler at the top level
+            handler: toolHandler,
 
-        // Return tool object with consistent API (like agents/teams/pipelines)
+            // Pass through other standard top-level ToolConfig properties from user input
+            nlp: config.nlp,
+            apiKey: config.apiKey,
+            timeout: config.timeout,
+            retryCount: config.retryCount,
+            maxSize: config.maxSize,
+            inputs: config.inputs,
+            outputs: config.outputs,
+            capabilities: config.capabilities,
+
+            // The nested 'config' property should be what the user provided in *their* 'config.config' (if any)
+            // This is for additional/custom settings, not for handler, inputs, outputs etc. if they have top-level spots.
+            config: config.config || {}
+        };
+
+        this.toolRegistry.registerTool(config.name, toolToRegister);
+
+        // Return tool object with consistent API
         const toolObject = {
             name: config.name,
             run: async (params: any) => {
@@ -127,7 +137,9 @@ class ToolService implements IToolService {
                 return await this.toolRegistry.executeTool(config.name, params);
             },
             getInfo: () => this.toolRegistry.getToolInfo(config.name),
-            config: config
+            // Expose the original user-provided config structure for transparency, 
+            // even though the registry uses the transformed 'toolToRegister' structure.
+            config: config 
         };
 
         this.logger.info('ToolService', `Tool created and registered: ${config.name}`);
