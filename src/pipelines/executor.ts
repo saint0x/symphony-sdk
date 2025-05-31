@@ -1,8 +1,9 @@
-import { PipelineResult, PipelineStepResult } from '../types/sdk';
+import { PipelineResult, PipelineStepResult, AgentConfig, TeamConfig } from '../types/sdk';
 import { Logger } from '../utils/logger';
 import { ChainExecutor, ToolChain } from '../tools/executor';
 import { ToolRegistry } from '../tools/standard/registry';
 import { PipelineIntelligence, PipelinePerformanceProfile, OptimizationRecommendation } from './service';
+import { IAgentService, ITeamService } from '../services';
 
 // Re-export PipelineStepResult for use by other pipeline modules
 export type { PipelineStepResult };
@@ -30,9 +31,11 @@ export interface PipelineContext {
 export interface PipelineStepDefinition {
   id: string;
   name: string;
-  type: 'tool' | 'chain' | 'condition' | 'transform' | 'parallel' | 'wait';
+  type: 'tool' | 'chain' | 'agent' | 'team' | 'condition' | 'transform' | 'parallel' | 'wait';
   tool?: string;
   chain?: ToolChain;
+  agent?: string;
+  team?: string;
   condition?: {
     expression: string;
     ifTrue: string;
@@ -52,6 +55,7 @@ export interface PipelineStepDefinition {
     condition?: string;
   };
   inputs?: Record<string, string>;
+  inputMap?: (context: PipelineContext) => Record<string, any> | Promise<Record<string, any>>;
   outputs?: Record<string, string>;
   dependencies?: string[];
   retryPolicy?: {
@@ -100,8 +104,10 @@ export class PipelineExecutor {
   private status: PipelineExecutionStatus;
   private activeSteps: Map<string, Promise<PipelineStepResult>>;
   private intelligence: PipelineIntelligence;
+  private agentService: IAgentService;
+  private teamService: ITeamService;
 
-  constructor(definition: PipelineDefinition) {
+  constructor(definition: PipelineDefinition, agentService: IAgentService, teamService: ITeamService) {
     this.pipelineId = `pipeline_${Date.now()}`;
     this.definition = definition;
     this.status = PipelineExecutionStatus.PENDING;
@@ -110,6 +116,8 @@ export class PipelineExecutor {
     this.chainExecutor = ChainExecutor.getInstance();
     this.activeSteps = new Map();
     this.intelligence = new PipelineIntelligence();
+    this.agentService = agentService;
+    this.teamService = teamService;
 
     this.context = {
       pipelineId: this.pipelineId,
@@ -342,41 +350,56 @@ export class PipelineExecutor {
 
   private async executeStep(step: PipelineStepDefinition): Promise<PipelineStepResult> {
     const startTime = Date.now();
+    let inputs: Record<string, any> = {};
 
     try {
-      // Resolve inputs
-      const inputs = await this.resolveInputs(step.inputs || {});
+      // Resolve inputs: prioritize inputMap if available, otherwise use static inputs
+      if (typeof step.inputMap === 'function') {
+        this.logger.debug('PipelineExecutor', `Using inputMap function for step: ${step.id}`);
+        // Provide the current pipeline context to inputMap
+        inputs = await step.inputMap(this.context); 
+      } else if (step.inputs) {
+        this.logger.debug('PipelineExecutor', `Using static inputs for step: ${step.id}`);
+        inputs = await this.resolveInputs(step.inputs);
+      } else {
+        this.logger.debug('PipelineExecutor', `No inputMap or static inputs for step: ${step.id}, using empty inputs.`);
+      }
+
+      this.logger.debug('PipelineExecutor', `Resolved inputs for step ${step.id}:`, { inputs: Object.keys(inputs).length > 0 ? inputs : '{}' });
 
       let result: any;
       let outputs: Record<string, any> = {};
+
+      this.logger.debug('PipelineExecutor', `Executing step: ${step.id} of type: ${step.type}`, { inputs });
 
       switch (step.type) {
         case 'tool':
           result = await this.executeToolStep(step, inputs);
           break;
-        
         case 'chain':
           result = await this.executeChainStep(step, inputs);
           break;
-        
+        case 'agent':
+          result = await this.executeAgentStep(step, inputs);
+          break;
+        case 'team':
+          result = await this.executeTeamStep(step, inputs);
+          break;
         case 'condition':
           result = await this.executeConditionStep(step, inputs);
           break;
-        
         case 'transform':
           result = await this.executeTransformStep(step, inputs);
           break;
-        
         case 'parallel':
           result = await this.executeParallelStep(step, inputs);
           break;
-        
         case 'wait':
           result = await this.executeWaitStep(step, inputs);
           break;
-        
         default:
-          throw new Error(`Unknown step type: ${step.type}`);
+          const exhaustiveCheck: never = step.type;
+          throw new Error(`Unknown or unhandled step type: ${exhaustiveCheck}`);
       }
 
       // Process outputs
@@ -442,6 +465,59 @@ export class PipelineExecutor {
     });
 
     return await this.chainExecutor.executeChain(step.chain, inputs);
+  }
+
+  private async executeAgentStep(step: PipelineStepDefinition, inputs: Record<string, any>): Promise<any> {
+    if (!step.agent) {
+      throw new Error(`Agent step ${step.id} missing agent specification (agent name).`);
+    }
+    if (!this.agentService) {
+        throw new Error(`AgentService not available in PipelineExecutor for step ${step.id}.`);
+    }
+
+    this.logger.info('PipelineExecutor', `Executing agent step: ${step.agent}`, {
+      stepId: step.id,
+      inputs: Object.keys(inputs)
+    });
+
+    const agentInstance = await this.agentService.get(step.agent);
+    if (!agentInstance) {
+        throw new Error(`Agent named "${step.agent}" not found for step ${step.id}.`);
+    }
+
+    // Assuming the primary input for an agent is a 'task' string
+    // The inputMap in the pipeline definition should prepare this.
+    const task = inputs.task || inputs.prompt || inputs.query;
+    if (typeof task !== 'string') {
+        throw new Error(`Input for agent step ${step.id} must include a string 'task', 'prompt', or 'query'. Received: ${JSON.stringify(inputs)}`);
+    }
+
+    const agentRunResult = await agentInstance.run(task);
+    // The result from agentInstance.run() is already an AgentResult (which includes {success, result, error, metrics})
+    // The pipeline step output mapping will then extract from agentRunResult.result.toolsExecuted[0].result.codeOutput etc.
+    return agentRunResult; 
+  }
+
+  private async executeTeamStep(step: PipelineStepDefinition, inputs: Record<string, any>): Promise<any> {
+    if (!step.team) {
+      throw new Error(`Team step ${step.id} missing team specification (team name).`);
+    }
+    if (!this.teamService) {
+        throw new Error(`TeamService not available in PipelineExecutor for step ${step.id}.`);
+    }
+    this.logger.warn('PipelineExecutor', `Executing team step: ${step.team} - (Assumed Placeholder Implementation)`, { 
+        stepId: step.id, 
+        inputs: Object.keys(inputs) 
+    });
+    // Placeholder: In a real implementation, you would fetch and run the team.
+    // const teamInstance = await this.teamService.get(step.team);
+    // if (!teamInstance) {
+    //     throw new Error(`Team named "${step.team}" not found for step ${step.id}.`);
+    // }
+    // const teamRunResult = await teamInstance.run(inputs); // Inputs need to be shaped for the team
+    // return teamRunResult;
+    this.logger.info('PipelineExecutor', `Placeholder: Team step ${step.team} would run here.`);
+    return { success: true, result: { message: `Team ${step.team} executed with inputs: ${JSON.stringify(inputs)}` }, error: undefined };
   }
 
   private async executeConditionStep(step: PipelineStepDefinition, inputs: Record<string, any>): Promise<any> {
@@ -541,22 +617,54 @@ export class PipelineExecutor {
     return resolved;
   }
 
-  private async processOutputs(outputSpec: Record<string, string>, result: any): Promise<Record<string, any>> {
+  private getNestedValue(obj: any, path: string): any {
+    if (!path) return obj;
+    const keys = path.split('.');
+    let current = obj;
+    for (const key of keys) {
+        if (current === null || typeof current !== 'object') return undefined;
+        // Handle array indexing like path[0].property
+        const R = /^(.*)\[(\d+)\]$/;
+        const match = key.match(R);
+        if (match) {
+            const R_key = match[1];
+            const R_index = parseInt(match[2], 10);
+            if (R_key) { // Access property then index
+                 current = current[R_key];
+                 if (!Array.isArray(current) || R_index >= current.length) return undefined;
+                 current = current[R_index];
+            } else { // Direct array index like [0]
+                 if (!Array.isArray(current) || R_index >= current.length) return undefined;
+                 current = current[R_index];
+            }
+        } else {
+            current = current[key];
+        }
+        if (current === undefined) return undefined;
+    }
+    return current;
+  }
+
+  private async processOutputs(outputSpec: Record<string, string>, stepExecutionResult: any): Promise<Record<string, any>> {
     const outputs: Record<string, any> = {};
+    // stepExecutionResult is the raw result from the step execution (e.g., from tool.handler or agent.run())
 
     for (const [key, expression] of Object.entries(outputSpec)) {
-      // Simple output extraction
       if (expression === '.') {
-        outputs[key] = result;
+        outputs[key] = stepExecutionResult;
       } else if (expression.startsWith('.')) {
-        // Extract property from result
-        const property = expression.substring(1);
-        outputs[key] = result?.[property];
+        // The expression is relative to the core 'result' part of an agent/tool execution if applicable
+        // For agent steps, result.result is the agent's output object.
+        // For tool steps, result.result is the tool's output object.
+        const baseObject = stepExecutionResult?.result || stepExecutionResult; 
+        outputs[key] = this.getNestedValue(baseObject, expression.substring(1));
       } else {
-        outputs[key] = expression;
+        // If not starting with '.', it's treated as a literal string or a complex expression (not supported yet)
+        // For now, assume it might be a direct key in the result if not a path
+        outputs[key] = this.getNestedValue(stepExecutionResult, expression); 
       }
     }
-
+    this.logger.debug('PipelineExecutor', `Processed outputs for step:`, { outputSpec, stepExecutionResult, generatedOutputs: outputs });
     return outputs;
   }
 

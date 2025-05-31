@@ -3,6 +3,7 @@ import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
 import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
 import { IDatabaseService } from '../../db/types';
+import { LLMFunctionDefinition } from '../../types/sdk';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
@@ -171,13 +172,22 @@ export class ToolRegistry {
                 };
             }
 
+            // Ensure the tool has a handler
+            if (!tool.handler) {
+                this.logger.error('ToolRegistry', `Tool ${toolName} does not have a handler function defined directly on the tool object.`);
+                return {
+                    success: false,
+                    error: `Tool ${toolName} is not executable (no direct handler).`
+                };
+            }
+
             this.logger.info('ToolRegistry', `Executing tool: ${toolName}`, {
                 params: params,
                 toolType: tool.type
             });
 
             const startTime = Date.now();
-            const result = await tool.config.handler(params);
+            const result = await tool.handler(params);
             const duration = Date.now() - startTime;
 
             this.logger.info('ToolRegistry', `Tool execution completed: ${toolName}`, {
@@ -304,7 +314,7 @@ export class ToolRegistry {
                 parameters: this.extractToolParameters(tool),
                 capabilities: tool.capabilities || [],
                 timeout: tool.timeout,
-                hasHandler: !!tool.config.handler
+                hasHandler: !!tool.handler
             };
         }
         
@@ -321,6 +331,57 @@ export class ToolRegistry {
         }
         
         return metadata;
+    }
+
+    /**
+     * Converts a tool's input parameters into a JSON schema compatible with LLM function definitions.
+     */
+    private toolParamsToJSONSchema(tool: ToolConfig): { type: 'object'; properties: Record<string, any>; required?: string[] } {
+        const details = this.extractToolParameters(tool);
+        const properties: Record<string, any> = {};
+        const required: string[] = [];
+
+        details.inputs.forEach(input => {
+            properties[input.name] = {
+                type: input.type || 'string', // Default to string if not specified
+                description: input.description || `Parameter for ${input.name}` // Add description if available
+            };
+            if (input.required) {
+                required.push(input.name);
+            }
+        });
+
+        return {
+            type: 'object',
+            properties,
+            ...(required.length > 0 && { required })
+        };
+    }
+
+    /**
+     * Get the LLMFunctionDefinition for a single tool.
+     */
+    getLLMFunctionDefinition(toolName: string): LLMFunctionDefinition | null {
+        const tool = this.tools.get(toolName);
+        if (!tool) {
+            this.logger.warn('ToolRegistry', `Tool not found for LLMFunctionDefinition: ${toolName}`);
+            return null;
+        }
+
+        return {
+            name: toolName,
+            description: tool.description || `Executes the ${toolName} tool.`,
+            parameters: this.toolParamsToJSONSchema(tool)
+        };
+    }
+
+    /**
+     * Get LLMFunctionDefinitions for a list of tools.
+     */
+    getAllLLMFunctionDefinitions(toolNames: string[]): LLMFunctionDefinition[] {
+        return toolNames
+            .map(toolName => this.getLLMFunctionDefinition(toolName))
+            .filter(def => def !== null) as LLMFunctionDefinition[];
     }
 
     /**

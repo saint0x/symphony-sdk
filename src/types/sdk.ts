@@ -72,19 +72,22 @@ export interface MonitoringConfig {
     };
 }
 
-// Agent types
-export type LLMConfig = {
-    model: string;
-    apiKey?: string;
-    provider?: string;
-} | string;
+// Base LLM configuration used in AgentConfig and TeamConfig
+export interface LLMBaseConfig {
+    model: string;         // LLM model (e.g., gpt-4, claude-2)
+    provider?: string;      // Optional: LLM provider (e.g., openai, anthropic)
+    apiKey?: string;        // Optional: API key (can be set globally)
+    temperature?: number;
+    maxTokens?: number;
+    useFunctionCalling?: boolean; // Added here
+}
 
 export interface AgentConfig {
     name: string;
     description: string;
     task: string;
     tools: string[];
-    llm: LLMConfig | string;
+    llm: LLMBaseConfig | string; // Changed to LLMBaseConfig for the object form
     directives?: string;
     systemPrompt?: string;
     maxCalls?: number;
@@ -300,6 +303,7 @@ export interface Pipeline {
     state: ToolLifecycleState;
     steps: PipelineStep[];
     run(input: any): Promise<any>;
+    getStatus(): any;
 }
 
 // Result types

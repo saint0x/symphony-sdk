@@ -1,6 +1,7 @@
 import { TeamConfig, TeamResult, AgentConfig, ToolLifecycleState } from '../types/sdk';
 import { Logger } from '../utils/logger';
 import { AgentExecutor } from '../agents/executor';
+import { ToolRegistry } from '../tools/standard/registry';
 
 export interface TeamMember {
   id: string;
@@ -125,8 +126,9 @@ export class TeamCoordinator {
   private state: ToolLifecycleState;
   private taskQueue: TaskAssignment[];
   private activeExecutions: Map<string, Promise<any>>;
+  private toolRegistry: ToolRegistry;
 
-  constructor(config: TeamConfig) {
+  constructor(config: TeamConfig, toolRegistry: ToolRegistry) {
     this.teamId = `team_${Date.now()}`;
     this.config = config;
     this.members = new Map();
@@ -134,6 +136,7 @@ export class TeamCoordinator {
     this.activeExecutions = new Map();
     this.state = ToolLifecycleState.PENDING;
     this.logger = Logger.getInstance(`TeamCoordinator:${config.name}`);
+    this.toolRegistry = toolRegistry;
 
     this.sharedContext = {
       teamId: this.teamId,
@@ -167,33 +170,68 @@ export class TeamCoordinator {
   }
 
   private async initializeTeamMembers(): Promise<void> {
+    // Get context tools and all available tools from registry
+    const contextTools = this.toolRegistry.getContextTools();
+    const availableTools = this.toolRegistry.getAvailableTools();
+    
+    // Filter out context tools from general available tools to get standard + custom tools
+    const nonContextTools = availableTools.filter(tool => !contextTools.includes(tool));
+    
+    // If team config specifies tools, use those as the base set
+    const teamTools = (this.config as any).tools || nonContextTools;
+    
     for (const agentDef of this.config.agents) {
       try {
         let agentConfig: AgentConfig;
         
         if (typeof agentDef === 'string') {
-          // Simple agent reference - create basic config
+          // Simple agent reference - use team tools or all available tools
           agentConfig = {
             name: agentDef,
             description: `Agent ${agentDef} in team ${this.config.name}`,
             task: 'Team coordination and task execution',
-            tools: ['webSearch', 'writeFile', 'readFile', 'ponder'],
+            tools: teamTools, // Use team tools or all available tools from registry
             llm: 'gpt-4o-mini'
           };
         } else {
           // Full agent configuration
           agentConfig = agentDef;
+          
+          // If agent doesn't specify tools, use team tools
+          if (!agentConfig.tools || agentConfig.tools.length === 0) {
+            agentConfig = {
+              ...agentConfig,
+              tools: teamTools
+            };
+          }
         }
 
-        // Create agent executor
-        const executor = new AgentExecutor(agentConfig);
+        // Ensure requested tools exist in registry
+        const validTools = agentConfig.tools.filter(tool => availableTools.includes(tool));
+        if (validTools.length < agentConfig.tools.length) {
+          const missingTools = agentConfig.tools.filter(tool => !availableTools.includes(tool));
+          this.logger.warn('TeamCoordinator', `Some tools not found in registry for ${agentConfig.name}`, {
+            requested: agentConfig.tools,
+            valid: validTools,
+            missing: missingTools
+          });
+        }
+
+        // Add context tools to the agent's tool list (like AgentService does)
+        const enhancedConfig = {
+          ...agentConfig,
+          tools: [...validTools, ...contextTools]
+        };
+
+        // Create agent executor with shared registry
+        const executor = new AgentExecutor(enhancedConfig, this.toolRegistry);
         
         // Create team member
         const member: TeamMember = {
           id: `${this.teamId}_${agentConfig.name}`,
           name: agentConfig.name,
           executor,
-          config: agentConfig,
+          config: enhancedConfig, // Use enhanced config with context tools
           capabilities: agentConfig.capabilities || [],
           currentLoad: 0,
           status: 'idle',
@@ -204,7 +242,9 @@ export class TeamCoordinator {
         
         this.logger.info('TeamCoordinator', `Initialized team member: ${member.name}`, {
           capabilities: member.capabilities,
-          tools: agentConfig.tools
+          tools: enhancedConfig.tools,
+          totalTools: enhancedConfig.tools.length,
+          hasCustomTools: enhancedConfig.tools.some(t => !['readFile', 'writeFile', 'webSearch', 'parseDocument', 'writeCode', 'createPlan', 'ponder'].includes(t) && !contextTools.includes(t))
         });
 
       } catch (error) {
@@ -843,7 +883,9 @@ export class TeamCoordinator {
       status: member.status,
       currentLoad: member.currentLoad,
       capabilities: member.capabilities,
-      lastActivity: member.lastActivity
+      lastActivity: member.lastActivity,
+      config: member.config,
+      tools: member.config.tools
     }));
 
     return {

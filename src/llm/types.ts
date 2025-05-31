@@ -8,6 +8,7 @@ export interface LLMConfig {
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
+    useFunctionCalling?: boolean; // Feature flag for function calling
 }
 
 // Configuration that can be passed in requests (no API key)
@@ -16,12 +17,22 @@ export interface LLMRequestConfig {
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
+    useFunctionCalling?: boolean; // Feature flag for function calling
 }
 
 export interface LLMMessage {
-    role: 'system' | 'user' | 'assistant' | 'function';
-    content: string;
-    name?: string;
+    role: 'system' | 'user' | 'assistant' | 'function' | 'tool';
+    content: string | null;
+    name?: string; // Used for role: 'function' (legacy) AND role: 'tool' (name of the function that was called)
+    tool_call_id?: string; // Used for role: 'tool'
+    tool_calls?: {
+        id: string;
+        type: 'function';
+        function: {
+            name: string;
+            arguments: string;
+        };
+    }[];
 }
 
 export interface LLMFunctionDefinition {
@@ -39,8 +50,9 @@ export interface LLMRequest {
     functions?: LLMFunctionDefinition[];
     functionCall?: {
         name: string;
-        arguments: any;
-    };
+    } | "auto" | "none";
+    tool_choice?: "none" | "auto" | { type: "function"; function: { name: string } };
+    response_format?: { type: "text" | "json_object" };
     temperature?: number;
     maxTokens?: number;
     stream?: boolean;
@@ -49,13 +61,22 @@ export interface LLMRequest {
 }
 
 export interface LLMResponse {
-    content: string;
+    content: string | null;
     model: string;
     role: 'assistant';
     functionCall?: {
+        id?: string;
         name: string;
         arguments: string;
     };
+    tool_calls?: {
+        id: string;
+        type: 'function';
+        function: {
+            name: string;
+            arguments: string;
+        };
+    }[];
     usage: {
         prompt_tokens: number;
         completion_tokens: number;

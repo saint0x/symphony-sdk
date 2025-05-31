@@ -2,6 +2,7 @@ import { ToolLifecycleState } from './sdk';
 import { LLMHandler } from '../llm/handler';
 import { Logger } from '../utils/logger';
 import { IDatabaseService, DatabaseConfig } from '../db/types';
+import { LLMConfig as RichLLMConfig } from '../llm/types';
 
 export interface SymphonyConfig {
     name?: string;
@@ -11,11 +12,7 @@ export interface SymphonyConfig {
         level?: 'debug' | 'info' | 'warn' | 'error';
         format?: 'json' | 'simple';
     };
-    llm?: {
-        apiKey?: string;
-        model?: string;
-        baseURL?: string;
-    };
+    llm?: RichLLMConfig;
     db?: DatabaseConfig;
     serviceRegistry: {
         enabled: boolean;

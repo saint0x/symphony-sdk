@@ -1,27 +1,26 @@
 import { ISymphony, SymphonyConfig, IMetricsAPI } from './types/symphony';
-import { ToolLifecycleState } from './types/sdk';
+import { ToolLifecycleState, AgentConfig, TeamConfig, PipelineConfig, Pipeline } from './types/sdk';
 import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
-import { AgentExecutor } from './agents/executor';
-import { TeamCoordinator } from './teams/coordinator';
-import { PipelineExecutor, PipelineDefinition } from './pipelines/executor';
-import { DatabaseService } from './db/service';
+// @ts-ignore
+import { LLMConfig as RichLLMConfig, LLMFunctionDefinition } from './llm/types';
 import { IDatabaseService } from './db/types';
-import { 
-    CacheIntelligenceService, 
-    IntelligenceOptions, 
-    IntelligenceResult,
-    Cache
-} from './cache';
-import { MemoryService, MemoryConfig, MemoryEntry, MemoryQuery, MemoryStats, AggregationResult } from './memory/service';
-import { LegacyMemory, Memory } from './memory/index';
+import { DatabaseService } from './db/service';
+import { Cache } from './cache';
+import { IntelligenceOptions, IntelligenceResult, CacheIntelligenceService } from './cache/service';
+import { MemoryService, MemoryQuery, MemoryEntry, AggregationResult, MemoryStats, MemoryConfig as InternalMemoryConfig } from './memory/service';
+import { Memory, LegacyMemory } from './memory';
 import { StreamingService, StreamingConfig, ProgressUpdate, StreamOptions, StreamingStats } from './streaming/service';
 import { ToolRegistry } from './tools/standard/registry';
+import { PipelineExecutor, PipelineDefinition, PipelineStepDefinition } from './pipelines/executor';
+import { TeamCoordinator } from './teams/coordinator';
+import { AgentExecutor } from './agents/executor';
+// import { envConfig } from './utils/env';
 
 // Simple service interfaces
 interface IToolService {
-    create(config: any): Promise<any>; // Returns tool object with run() method
-    execute(toolName: string, params: any): Promise<any>; // Legacy support
+    create(config: any): Promise<any>;
+    execute(toolName: string, params: any): Promise<any>;
     getAvailable(): string[];
     getInfo(toolName: string): any;
     register(name: string, tool: any): void;
@@ -30,17 +29,19 @@ interface IToolService {
 }
 
 interface IAgentService {
-    create(config: any): Promise<any>;
+    create(config: AgentConfig): Promise<AgentExecutor>;
     initialize(): Promise<void>;
+    get(name: string): Promise<AgentExecutor | undefined>;
 }
 
 interface ITeamService {
-    create(config: any): Promise<any>;
+    create(config: TeamConfig): Promise<TeamCoordinator>;
     initialize(): Promise<void>;
+    get(name: string): Promise<TeamCoordinator | undefined>;
 }
 
 interface IPipelineService {
-    create(config: any): Promise<any>;
+    create(config: PipelineConfig): Promise<Pipeline>;
     initialize(): Promise<void>;
 }
 
@@ -50,14 +51,11 @@ interface IDatabaseServiceWrapper {
 }
 
 interface ICacheService {
-    // Legacy cache interface for backward compatibility
     get(key: string, namespace?: string): Promise<any>;
     set(key: string, value: any, ttl?: number, namespace?: string): Promise<void>;
     delete(key: string, namespace?: string): Promise<void>;
     has(key: string, namespace?: string): Promise<boolean>;
     clear(namespace?: string): Promise<void>;
-    
-    // Cache intelligence interface
     getIntelligence(userInput: string, options?: IntelligenceOptions): Promise<IntelligenceResult>;
     recordToolExecution(
         sessionId: string,
@@ -68,17 +66,12 @@ interface ICacheService {
         executionTime: number,
         patternId?: string
     ): Promise<void>;
-    
-    // Analytics and monitoring
     getPatternAnalytics(): Promise<any>;
     getContextAnalytics(): Promise<any>;
     getGlobalStats(): any;
     getSessionIntelligence(sessionId: string): any;
-    
-    // Utility methods
     clearCaches(): void;
     healthCheck(): Promise<any>;
-    
     initialize(options?: IntelligenceOptions): Promise<void>;
 }
 
@@ -88,37 +81,25 @@ interface IValidationManager {
 }
 
 interface IMemoryService {
-    // Legacy memory interface for backward compatibility
     store(key: string, value: any, type?: 'short_term' | 'long_term', options?: any): Promise<void>;
     retrieve(key: string, type?: 'short_term' | 'long_term', options?: any): Promise<any>;
     search(query: MemoryQuery): Promise<MemoryEntry[]>;
     delete(key: string, type?: 'short_term' | 'long_term', namespace?: string): Promise<boolean>;
     clear(type?: 'short_term' | 'long_term', namespace?: string): Promise<number>;
-    
-    // Aggregation and analytics
     aggregate(query: MemoryQuery): Promise<AggregationResult>;
     getStats(): Promise<MemoryStats>;
     getOperationalStats(): any;
-    
-    // Utility methods
     healthCheck(): Promise<any>;
-    initialize(config?: MemoryConfig): Promise<void>;
-    
-    // Legacy compatibility
+    initialize(config?: InternalMemoryConfig): Promise<void>;
     createMemoryInstance(sessionId?: string, namespace?: string): Memory;
 }
 
 interface IStreamingService {
-    // Stream lifecycle management
     createStream(options: StreamOptions): string;
     updateProgress(streamId: string, progress: Partial<ProgressUpdate>): void;
     completeStream(streamId: string, finalData?: any): void;
     errorStream(streamId: string, error: Error): void;
-    
-    // Subscription management
     subscribe(streamId: string, callback: (update: ProgressUpdate) => void): () => void;
-    
-    // Utility methods
     getActiveStreams(): string[];
     getStreamStatus(streamId: string): any;
     getStats(): StreamingStats;
@@ -204,12 +185,13 @@ class ToolService implements IToolService {
 
 class AgentService implements IAgentService {
     private toolRegistry: ToolRegistry;
+    private agents: Map<string, AgentExecutor> = new Map();
 
     constructor(toolRegistry: ToolRegistry) {
         this.toolRegistry = toolRegistry;
     }
 
-    async create(config: any): Promise<any> {
+    async create(config: AgentConfig): Promise<AgentExecutor> {
         // Auto-add context management tools to all agents
         const contextTools = this.toolRegistry.getContextTools();
         const enhancedConfig = {
@@ -220,43 +202,38 @@ class AgentService implements IAgentService {
         // Create an actual AgentExecutor instance with LLM capabilities and the correct ToolRegistry
         const agentExecutor = new AgentExecutor(enhancedConfig, this.toolRegistry);
         
-        return {
-            name: config.name,
-            capabilities: config.capabilities,
-            tools: enhancedConfig.tools, // Return enhanced tool list
-            run: async (task: string) => {
-                // Use the AgentExecutor's executeTask method which includes LLM integration
-                return await agentExecutor.executeTask(task);
-            },
-            selectTool: async (task: string) => {
-                // Use the AgentExecutor's intelligent tool selection
-                return await agentExecutor.executeToolSelection(task);
-            },
-            executor: agentExecutor // Expose the executor for advanced usage
-        };
+        this.agents.set(agentExecutor.name, agentExecutor);
+        
+        return agentExecutor;
     }
     
     async initialize(): Promise<void> {
         // Simple initialization
+    }
+
+    async get(name: string): Promise<AgentExecutor | undefined> {
+        return this.agents.get(name);
     }
 }
 
 class TeamService implements ITeamService {
     private teams: Map<string, TeamCoordinator> = new Map();
     private logger: Logger;
+    private toolRegistry: ToolRegistry;
 
-    constructor() {
+    constructor(toolRegistry: ToolRegistry) {
         this.logger = Logger.getInstance('TeamService');
+        this.toolRegistry = toolRegistry;
     }
 
-    async create(config: any): Promise<any> {
+    async create(config: TeamConfig): Promise<TeamCoordinator> {
         this.logger.info('TeamService', `Creating team: ${config.name}`, {
             agentCount: config.agents?.length || 0,
             strategy: config.strategy?.name || 'default'
         });
 
-        // Create TeamCoordinator instance
-        const teamCoordinator = new TeamCoordinator(config);
+        // Create TeamCoordinator instance with shared ToolRegistry
+        const teamCoordinator = new TeamCoordinator(config, this.toolRegistry);
         
         // Initialize the team
         await teamCoordinator.initialize();
@@ -264,21 +241,15 @@ class TeamService implements ITeamService {
         // Store for management
         this.teams.set(config.name, teamCoordinator);
 
-        // Return team interface compatible with existing API
-        return {
-            name: config.name,
-            run: async (task: string, options?: any) => {
-                this.logger.info('TeamService', `Team ${config.name} executing task: ${task}`);
-                return await teamCoordinator.executeTask(task, options);
-            },
-            getStatus: () => teamCoordinator.getTeamStatus(),
-            getContext: () => teamCoordinator.getContext(),
-            coordinator: teamCoordinator // Expose coordinator for advanced usage
-        };
+        return teamCoordinator;
     }
     
     async initialize(): Promise<void> {
         this.logger.info('TeamService', 'Team service initialized');
+    }
+
+    async get(name: string): Promise<TeamCoordinator | undefined> {
+        return this.teams.get(name);
     }
 
     async shutdown(): Promise<void> {
@@ -294,47 +265,82 @@ class TeamService implements ITeamService {
     getTeams(): string[] {
         return Array.from(this.teams.keys());
     }
-
-    getTeam(name: string): TeamCoordinator | undefined {
-        return this.teams.get(name);
-    }
 }
 
 class PipelineService implements IPipelineService {
     private pipelines: Map<string, PipelineExecutor> = new Map();
     private logger: Logger;
+    private agentService: IAgentService;
+    private teamService: ITeamService;
 
-    constructor() {
+    constructor(agentService: IAgentService, teamService: ITeamService) {
         this.logger = Logger.getInstance('PipelineService');
+        this.agentService = agentService;
+        this.teamService = teamService;
     }
 
-    async create(config: any): Promise<any> {
+    async create(config: PipelineConfig): Promise<Pipeline> {
         this.logger.info('PipelineService', `Creating pipeline: ${config.name}`, {
             stepCount: config.steps?.length || 0,
-            version: config.version || '1.0.0'
+            version: (config as any).version || '1.0.0'
         });
 
-        // Convert config to PipelineDefinition
+        // DIAGNOSTIC LOG: Log the source agent steps from PipelineConfig
+        config.steps.forEach((sourceStep, index) => {
+            if (sourceStep.type === 'agent') {
+                this.logger.debug('PipelineService', `Source PipelineConfig step [${index}] (${sourceStep.name}):`, {
+                    name: sourceStep.name,
+                    type: sourceStep.type,
+                    agent: sourceStep.agent,
+                    tool: sourceStep.tool,
+                    inputMapIsFunction: typeof sourceStep.inputMap === 'function',
+                    rawAgentPropType: typeof sourceStep.agent
+                });
+            }
+        });
+
         const definition: PipelineDefinition = {
-            id: config.id || `pipeline_${Date.now()}`,
+            id: (config as any).id || `pipeline_${Date.now()}`,
             name: config.name,
             description: config.description || `Pipeline: ${config.name}`,
-            version: config.version || '1.0.0',
-            steps: config.steps || [],
-            variables: config.variables,
-            errorHandling: config.errorHandling,
-            concurrency: config.concurrency
+            version: (config as any).version || '1.0.0',
+            steps: config.steps.map((step, index) => {
+                const mappedStep = {
+                    ...step,
+                    id: step.name
+                };
+                this.logger.debug('PipelineService', `Intermediate mapped step [${index}] (${mappedStep.id}) for PipelineDefinition (after spread):`, {
+                    id: mappedStep.id,
+                    name: mappedStep.name,
+                    type: mappedStep.type,
+                    agent: mappedStep.agent,
+                    tool: mappedStep.tool,
+                    inputMapIsFunction: typeof mappedStep.inputMap === 'function',
+                    originalStepAgent: step.agent,
+                    mappedStepAgentPropType: typeof mappedStep.agent
+                });
+                return mappedStep;
+            }) as PipelineStepDefinition[],
+            variables: (config as any).variables,
+            errorHandling: (config as any).errorHandling,
+            concurrency: (config as any).concurrency
         };
 
-        // Create PipelineExecutor instance
-        const pipelineExecutor = new PipelineExecutor(definition);
+        this.logger.debug('PipelineService', 'Final PipelineDefinition steps for PipelineExecutor:', {
+            pipelineId: definition.id,
+            pipelineName: definition.name,
+            steps: definition.steps.map(s => ({ id: s.id, type: s.type, agent: s.agent, tool: s.tool, name: s.name, inputMapIsFunction: typeof s.inputMap === 'function' }))
+        });
+
+        const pipelineExecutor = new PipelineExecutor(definition, this.agentService, this.teamService);
         
-        // Store for management
         this.pipelines.set(config.name, pipelineExecutor);
 
-        // Return pipeline interface compatible with existing API
         return {
             name: config.name,
+            description: config.description || '',
+            state: ToolLifecycleState.READY,
+            steps: config.steps,
             run: async (input?: any) => {
                 this.logger.info('PipelineService', `Pipeline ${config.name} executing with input`, {
                     hasInput: !!input,
@@ -343,8 +349,8 @@ class PipelineService implements IPipelineService {
                 return await pipelineExecutor.execute(input);
             },
             getStatus: () => pipelineExecutor.getPipelineStatus(),
-            executor: pipelineExecutor // Expose executor for advanced usage
-        };
+            executor: pipelineExecutor
+        } as Pipeline;
     }
     
     async initialize(): Promise<void> {
@@ -353,7 +359,6 @@ class PipelineService implements IPipelineService {
 
     async shutdown(): Promise<void> {
         this.logger.info('PipelineService', `Shutting down ${this.pipelines.size} pipelines`);
-        // Pipelines don't need special shutdown logic currently
         this.pipelines.clear();
         this.logger.info('PipelineService', 'All pipelines shut down successfully');
     }
@@ -784,16 +789,15 @@ class MemoryServiceWrapper implements IMemoryService {
         }
     }
 
-    async initialize(config?: MemoryConfig): Promise<void> {
+    async initialize(config?: InternalMemoryConfig): Promise<void> {
         if (this.initialized) return;
 
         this.logger.info('MemoryServiceWrapper', 'Initializing memory service');
 
         try {
-            // Default configuration
-            const defaultConfig: MemoryConfig = {
-                shortTerm: { ttl: 3600, maxEntries: 1000 },      // 1 hour, 1K entries
-                longTerm: { ttl: 2592000, maxEntries: 10000 },   // 30 days, 10K entries
+            const defaultConfig: InternalMemoryConfig = {
+                shortTerm: { ttl: 3600, maxEntries: 1000 },
+                longTerm: { ttl: 2592000, maxEntries: 10000 },
                 enableAggregation: true,
                 enableGlobalAccess: true,
                 ...config
@@ -809,18 +813,14 @@ class MemoryServiceWrapper implements IMemoryService {
             });
         } catch (error) {
             this.logger.error('MemoryServiceWrapper', 'Failed to initialize memory service', { error });
-            // Don't throw - allow Symphony to continue with degraded memory functionality
         }
     }
 
-    // Legacy compatibility method
     createMemoryInstance(sessionId?: string, namespace?: string): Memory {
         if (!this.initialized) {
-            // Fallback to simple in-memory implementation
             const { createMemory } = require('./memory/index');
             return createMemory({ type: 'short_term' });
         }
-
         return new LegacyMemory(this.memoryService, { sessionId, namespace });
     }
 
@@ -1054,13 +1054,12 @@ export class Symphony implements Partial<ISymphony> {
     readonly initialized = false;
     readonly isInitialized = false;
     
-    // Services
     readonly tool: IToolService;
     readonly agent: IAgentService;
     readonly team: ITeamService;
     readonly pipeline: IPipelineService;
     readonly validation: IValidationManager;
-    readonly validationManager: IValidationManager;
+    // readonly validationManager: IValidationManager;
     
     readonly types = {
         CapabilityBuilder: {
@@ -1087,20 +1086,22 @@ export class Symphony implements Partial<ISymphony> {
         this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
         this._streamingService = new StreamingServiceWrapper();
         
-        // Initialize tool registry with context intelligence integration
-        const sharedToolRegistry = new ToolRegistry();
-        
-        // Initialize context intelligence integration
+        const sharedToolRegistry = ToolRegistry.getInstance();
         sharedToolRegistry.initializeContextIntegration(this._databaseService.getService());
         
-        // Initialize services with enhanced registry
-        this.tool = new ToolService(sharedToolRegistry);
-        this.agent = new AgentService(sharedToolRegistry);
-        this.team = new TeamService();
-        this.pipeline = new PipelineService();
-        this.validation = new ValidationService();
-        this.validationManager = this.validation;
-        
+        const toolServiceInstance = new ToolService(sharedToolRegistry);
+        const agentServiceInstance = new AgentService(sharedToolRegistry);
+        const teamServiceInstance = new TeamService(sharedToolRegistry);
+        const pipelineServiceInstance = new PipelineService(agentServiceInstance, teamServiceInstance);
+        const validationServiceInstance = new ValidationService();
+
+        this.tool = toolServiceInstance;
+        this.agent = agentServiceInstance;
+        this.team = teamServiceInstance;
+        this.pipeline = pipelineServiceInstance;
+        this.validation = validationServiceInstance;
+        // this.validationManager = validationServiceInstance;
+
         this._logger.info('Symphony', 'Context intelligence integration enabled', {
             contextTools: sharedToolRegistry.getContextTools(),
             totalTools: sharedToolRegistry.getAvailableTools().length
