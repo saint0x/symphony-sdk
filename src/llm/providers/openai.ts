@@ -1,7 +1,9 @@
 import { logger, LogCategory } from '../../utils/logger';
-import { LLMConfig, LLMRequest, LLMResponse, LLMProvider, LLMFunctionDefinition } from '../types';
+import { LLMConfig, LLMRequest, LLMResponse, LLMProvider } from '../types';
 import { createMetricsTracker } from '../../utils/metrics';
-import { LLMHandler } from '../handler';
+import { Logger } from '../../utils/logger';
+import { envConfig } from '../../utils/env';
+import OpenAI from 'openai';
 
 interface OpenAICompletion {
     content: string | null;
@@ -26,22 +28,23 @@ interface OpenAICompletion {
 }
 
 export class OpenAIProvider implements LLMProvider {
-    name = 'openai';
-    supportsStreaming = true;
+    readonly name = 'openai';
+    readonly supportsStreaming = true;
+    private client: OpenAI;
     private config: LLMConfig;
+    private logger: Logger;
     private model: string;
 
-    constructor(config: LLMConfig) {
-        if (!config.apiKey) {
-            throw new Error('OpenAI API key is required in config');
+    constructor(config?: LLMConfig) {
+        const openAIKey = config?.apiKey || envConfig.openaiApiKey;
+        if (!openAIKey) {
+            throw new Error('OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable or provide it in config.');
         }
-        logger.info(LogCategory.AI, 'Initializing OpenAI provider with effective config:', {
-            model: config.model || 'gpt-3.5-turbo',
-            useFunctionCalling: config.useFunctionCalling,
-            temperature: config.temperature
-        });
-        this.config = config;
-        this.model = config.model || 'gpt-3.5-turbo';
+        this.client = new OpenAI({ apiKey: openAIKey });
+        this.config = { provider: 'openai', apiKey: openAIKey, ...config };
+        this.logger = Logger.getInstance('OpenAIProvider');
+        this.logger.info('OpenAIProvider', 'OpenAIProvider initialized', { model: this.config.model });
+        this.model = this.config.model || 'gpt-3.5-turbo';
     }
 
     async initialize(): Promise<void> {
@@ -50,102 +53,75 @@ export class OpenAIProvider implements LLMProvider {
 
     async complete(request: LLMRequest): Promise<LLMResponse> {
         const metrics = createMetricsTracker();
-        const llmHandler = LLMHandler.getInstance();
-        const cache = llmHandler.getCacheService();
+        // Caching logic is simplified for now, assuming it's handled by LLMHandler or CacheServiceWrapper if available.
 
         try {
             metrics.trackOperation('request_preparation');
-            const cacheKeyParts = ['openai', this.model, JSON.stringify(request.messages)];
-            if (request.functions) {
-                cacheKeyParts.push(JSON.stringify(request.functions));
-            }
-            const cacheKey = cacheKeyParts.join(':');
             
-            if (cache) {
-                const cached = await cache.get(cacheKey);
-                if (cached && this.isOpenAICompletion(cached)) {
-                    return this.formatResponse(cached);
-                }
-            }
+            const effectiveUseFunctionCalling = this.config.useFunctionCalling === true;
 
-            const apiKey = this.config.apiKey;
-            if (!apiKey) {
-                throw new Error('OpenAI API key not found in provider config');
-            }
-
-            const effectiveUseFunctionCalling = this.config.useFunctionCalling === true; // This flag now means "expect structured JSON output"
-            // The request.response_format will specifically trigger OpenAI JSON mode.
-
-            logger.info(LogCategory.AI, 'Making OpenAI API request with effective config:', {
+            this.logger.info('OpenAIProvider', 'Making OpenAI API request via SDK client with effective config:', {
                 model: this.model,
                 temperature: this.config.temperature,
                 maxTokens: this.config.maxTokens,
-                useFunctionCalling: effectiveUseFunctionCalling,
+                useFunctionCalling: effectiveUseFunctionCalling, // Retained for logging, actual mechanism via request.response_format
                 numMessages: request.messages.length,
-                numFunctions: request.functions?.length || 0
+                // numFunctions: request.functions?.length || 0 // functions are not directly passed in this model
             });
 
-            const body: any = {
+            const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
                 model: this.model,
-                messages: request.messages,
+                messages: request.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[], // Cast to SDK type
                 temperature: this.config.temperature ?? 0.7,
-                max_tokens: this.config.maxTokens ?? 2000
+                max_tokens: this.config.maxTokens ?? 2000,
             };
 
-            // Check if JSON mode is requested
             if (request.response_format?.type === 'json_object') {
-                body.response_format = { type: 'json_object' };
-                logger.info(LogCategory.AI, 'OpenAI request: JSON mode enabled via response_format.');
-                // When in JSON mode, 'tools' and 'tool_choice' are not sent.
+                completionParams.response_format = { type: 'json_object' };
+                this.logger.info('OpenAIProvider', 'OpenAI request: JSON mode enabled via response_format.');
+            } else if (effectiveUseFunctionCalling && request.functions && request.functions.length > 0) {
+                // This branch is for the legacy function calling if needed, though JSON mode is preferred.
+                // The current AgentExecutor logic leans towards JSON mode output.
+                // For true OpenAI tool/function calling, this would be different.
+                // completionParams.tools = request.functions as any[]; // SDK type is OpenAI.Chat.Completions.ChatCompletionToolParam[]
+                // completionParams.tool_choice = request.tool_choice || 'auto';
+                 this.logger.warn('OpenAIProvider', 'Legacy function calling requested but JSON mode is primary. Review useFunctionCalling flag.');
             }
 
             metrics.trackOperation('api_request');
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(body)
-            });
+            const response: OpenAI.Chat.Completions.ChatCompletion = await this.client.chat.completions.create(completionParams);
 
             metrics.trackOperation('response_processing');
-            if (!response.ok) {
-                const errorText = await response.text();
-                this.logger.error(LogCategory.AI, 'OpenAI API error response:', { status: response.status, errorText });
-                try {
-                    const errorJson = JSON.parse(errorText);
-                    throw new Error(`OpenAI API error (${response.status}): ${errorJson.error?.message || errorText}`);
-                } catch (e) {
-                    throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
-                }
-            }
+            
+            const rawMessage = response.choices[0].message;
+            const usage = response.usage;
 
-            const data = await response.json();
-            const rawMessage = data.choices[0].message;
-
-            const completion: OpenAICompletion = {
-                content: rawMessage.content, // In JSON mode, this content IS the JSON string.
-                usage: data.usage,
-                functionCall: undefined, // No longer attempting to populate this from tool_calls
-                tool_calls: rawMessage.tool_calls // This will likely be null/empty in JSON mode, store whatever OpenAI sends
+            const llmCompletion: OpenAICompletion = {
+                content: rawMessage.content,
+                usage: {
+                    prompt_tokens: usage?.prompt_tokens || 0,
+                    completion_tokens: usage?.completion_tokens || 0,
+                    total_tokens: usage?.total_tokens || 0,
+                },
+                // functionCall and tool_calls from rawMessage if needed for consistency with old format
+                functionCall: rawMessage.function_call ? { name: rawMessage.function_call.name!, arguments: rawMessage.function_call.arguments } : undefined,
+                tool_calls: rawMessage.tool_calls as any, // Cast if SDK types differ slightly but structure is compatible
             };
 
-            // If using JSON mode, tool_calls won't be populated by OpenAI in the same way.
-            // The content itself is the JSON. We no longer need to derive simplified functionCall from tool_calls here.
             if (request.response_format?.type === 'json_object') {
-                logger.info(LogCategory.AI, 'OpenAI response in JSON mode. Content is the JSON payload.', { content: rawMessage.content });
+                this.logger.info('OpenAIProvider', 'OpenAI response in JSON mode. Content is the JSON payload.', { content: rawMessage.content });
             }
+            
+            // Caching (if re-introduced) would happen here using a proper cache service.
 
-            if (cache) {
-                await cache.set(cacheKey, completion);
-            }
-
-            return this.formatResponse(completion);
+            return this.formatResponse(llmCompletion);
         } catch (error) {
-            logger.error(LogCategory.AI, 'OpenAI API complete method error', {
+            this.logger.error('OpenAIProvider', 'OpenAI API complete method error (SDK client)', {
                 error: error instanceof Error ? error.message : String(error)
             });
+            if (error instanceof OpenAI.APIError) {
+                throw new Error(`OpenAI API error (${error.status}): ${error.message} (Type: ${error.type})`);
+            }
             throw error;
         }
     }
@@ -263,14 +239,5 @@ export class OpenAIProvider implements LLMProvider {
             });
             throw error;
         }
-    }
-
-    private isOpenAICompletion(obj: any): obj is OpenAICompletion {
-        return obj && 
-               (typeof obj.content === 'string' || obj.content === null) && 
-               obj.usage && 
-               typeof obj.usage.prompt_tokens === 'number' &&
-               typeof obj.usage.completion_tokens === 'number' &&
-               typeof obj.usage.total_tokens === 'number';
     }
 }

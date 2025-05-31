@@ -1,5 +1,6 @@
 import { ISymphony, SymphonyConfig, IMetricsAPI } from './types/symphony';
 import { ToolLifecycleState, AgentConfig, TeamConfig, PipelineConfig, Pipeline } from './types/sdk';
+import { IToolService, IAgentService, ITeamService, IPipelineService, IValidationManager } from './types/interfaces';
 import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
 // @ts-ignore
@@ -17,40 +18,13 @@ import { TeamCoordinator } from './teams/coordinator';
 import { AgentExecutor } from './agents/executor';
 // import { envConfig } from './utils/env';
 
-// Simple service interfaces
-interface IToolService {
-    create(config: any): Promise<any>;
-    execute(toolName: string, params: any): Promise<any>;
-    getAvailable(): string[];
-    getInfo(toolName: string): any;
-    register(name: string, tool: any): void;
-    get registry(): ToolRegistry;
-    initialize(): Promise<void>;
-}
-
-interface IAgentService {
-    create(config: AgentConfig): Promise<AgentExecutor>;
-    initialize(): Promise<void>;
-    get(name: string): Promise<AgentExecutor | undefined>;
-}
-
-interface ITeamService {
-    create(config: TeamConfig): Promise<TeamCoordinator>;
-    initialize(): Promise<void>;
-    get(name: string): Promise<TeamCoordinator | undefined>;
-}
-
-interface IPipelineService {
-    create(config: PipelineConfig): Promise<Pipeline>;
-    initialize(): Promise<void>;
-}
-
-interface IDatabaseServiceWrapper {
+// Service wrapper interfaces for internal services that don't need to extend IService
+export interface IDatabaseServiceWrapper {
     create(config: any): Promise<any>;
     initialize(): Promise<void>;
 }
 
-interface ICacheService {
+export interface ICacheService {
     get(key: string, namespace?: string): Promise<any>;
     set(key: string, value: any, ttl?: number, namespace?: string): Promise<void>;
     delete(key: string, namespace?: string): Promise<void>;
@@ -75,12 +49,7 @@ interface ICacheService {
     initialize(options?: IntelligenceOptions): Promise<void>;
 }
 
-interface IValidationManager {
-    validate(config: any, type: string): Promise<{ isValid: boolean; errors: string[] }>;
-    initialize(): Promise<void>;
-}
-
-interface IMemoryService {
+export interface IMemoryService {
     store(key: string, value: any, type?: 'short_term' | 'long_term', options?: any): Promise<void>;
     retrieve(key: string, type?: 'short_term' | 'long_term', options?: any): Promise<any>;
     search(query: MemoryQuery): Promise<MemoryEntry[]>;
@@ -94,7 +63,7 @@ interface IMemoryService {
     createMemoryInstance(sessionId?: string, namespace?: string): Memory;
 }
 
-interface IStreamingService {
+export interface IStreamingService {
     createStream(options: StreamOptions): string;
     updateProgress(streamId: string, progress: Partial<ProgressUpdate>): void;
     completeStream(streamId: string, finalData?: any): void;
@@ -107,14 +76,23 @@ interface IStreamingService {
     initialize(config?: StreamingConfig): Promise<void>;
 }
 
-// Simple implementations
+// Service implementations
 class ToolService implements IToolService {
     private toolRegistry: ToolRegistry;
     private logger: Logger;
+    private _state: ToolLifecycleState = ToolLifecycleState.READY;
 
     constructor(toolRegistry: ToolRegistry) {
         this.toolRegistry = toolRegistry;
         this.logger = Logger.getInstance('ToolService');
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return ['ToolRegistry'];
     }
 
     async create(config: any): Promise<any> {
@@ -186,9 +164,18 @@ class ToolService implements IToolService {
 class AgentService implements IAgentService {
     private toolRegistry: ToolRegistry;
     private agents: Map<string, AgentExecutor> = new Map();
+    private _state: ToolLifecycleState = ToolLifecycleState.READY;
 
     constructor(toolRegistry: ToolRegistry) {
         this.toolRegistry = toolRegistry;
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return ['ToolRegistry'];
     }
 
     async create(config: AgentConfig): Promise<AgentExecutor> {
@@ -220,10 +207,19 @@ class TeamService implements ITeamService {
     private teams: Map<string, TeamCoordinator> = new Map();
     private logger: Logger;
     private toolRegistry: ToolRegistry;
+    private _state: ToolLifecycleState = ToolLifecycleState.READY;
 
     constructor(toolRegistry: ToolRegistry) {
         this.logger = Logger.getInstance('TeamService');
         this.toolRegistry = toolRegistry;
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return ['ToolRegistry'];
     }
 
     async create(config: TeamConfig): Promise<TeamCoordinator> {
@@ -272,11 +268,20 @@ class PipelineService implements IPipelineService {
     private logger: Logger;
     private agentService: IAgentService;
     private teamService: ITeamService;
+    private _state: ToolLifecycleState = ToolLifecycleState.READY;
 
     constructor(agentService: IAgentService, teamService: ITeamService) {
         this.logger = Logger.getInstance('PipelineService');
         this.agentService = agentService;
         this.teamService = teamService;
+    }
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return ['AgentService', 'TeamService'];
     }
 
     async create(config: PipelineConfig): Promise<Pipeline> {
@@ -373,6 +378,16 @@ class PipelineService implements IPipelineService {
 }
 
 class ValidationService implements IValidationManager {
+    private _state: ToolLifecycleState = ToolLifecycleState.READY;
+
+    get state(): ToolLifecycleState {
+        return this._state;
+    }
+
+    getDependencies(): string[] {
+        return [];
+    }
+
     async validate(config: any, _type: string): Promise<{ isValid: boolean; errors: string[] }> {
         // Simple validation - just check if config has a name
         if (!config || !config.name) {

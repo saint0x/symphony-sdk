@@ -1,9 +1,9 @@
-import { PipelineResult, PipelineStepResult, AgentConfig, TeamConfig } from '../types/sdk';
+import { PipelineResult, PipelineStepResult } from '../types/sdk';
 import { Logger } from '../utils/logger';
 import { ChainExecutor, ToolChain } from '../tools/executor';
 import { ToolRegistry } from '../tools/standard/registry';
 import { PipelineIntelligence, PipelinePerformanceProfile, OptimizationRecommendation } from './service';
-import { IAgentService, ITeamService } from '../services';
+import { IAgentService, ITeamService } from '../types/interfaces';
 
 // Re-export PipelineStepResult for use by other pipeline modules
 export type { PipelineStepResult };

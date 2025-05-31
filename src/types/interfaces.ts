@@ -1,6 +1,9 @@
 import { ToolLifecycleState } from './lifecycle';
-import { Tool, ToolConfig, Agent, AgentConfig, Team, TeamConfig, Pipeline, PipelineConfig } from './sdk';
+import { ToolConfig, AgentConfig, TeamConfig, Pipeline, PipelineConfig, ToolResult } from './sdk';
 import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from './metadata';
+import { AgentExecutor } from '../agents/executor';
+import { TeamCoordinator } from '../teams/coordinator';
+import { ToolRegistry } from '../tools/standard/registry';
 
 export interface IService {
     readonly state: ToolLifecycleState;
@@ -8,27 +11,30 @@ export interface IService {
 }
 
 export interface IToolService extends IService {
-    createTool(name: string, config: ToolConfig): Promise<Tool>;
-    getTool(name: string): Promise<Tool>;
-    listTools(): Promise<string[]>;
+    create(config: ToolConfig): Promise<any>;
+    execute(toolName: string, params: any): Promise<ToolResult>;
+    getAvailable(): string[];
+    getInfo(toolName: string): any;
+    register(name: string, tool: any): void;
+    get registry(): ToolRegistry;
+    initialize(): Promise<void>;
 }
 
 export interface IAgentService extends IService {
-    createAgent(name: string, config: AgentConfig): Promise<Agent>;
-    getAgent(name: string): Promise<Agent>;
-    listAgents(): Promise<string[]>;
+    create(config: AgentConfig): Promise<AgentExecutor>;
+    get(name: string): Promise<AgentExecutor | undefined>;
+    initialize(): Promise<void>;
 }
 
 export interface ITeamService extends IService {
-    createTeam(name: string, config: TeamConfig): Promise<Team>;
-    getTeam(name: string): Promise<Team>;
-    listTeams(): Promise<string[]>;
+    create(config: TeamConfig): Promise<TeamCoordinator>;
+    get(name: string): Promise<TeamCoordinator | undefined>;
+    initialize(): Promise<void>;
 }
 
 export interface IPipelineService extends IService {
-    createPipeline(name: string, config: PipelineConfig): Promise<Pipeline>;
-    getPipeline(name: string): Promise<Pipeline>;
-    listPipelines(): Promise<string[]>;
+    create(config: PipelineConfig): Promise<Pipeline>;
+    initialize(): Promise<void>;
 }
 
 export interface IComponentService extends IService {
@@ -51,14 +57,9 @@ export interface IMetricsService extends IService {
     getAll(): Record<string, any>;
 }
 
-export interface IValidationManager extends IValidationService {
-    initialized: boolean;
-    dependencies: string[];
-    symphony: any;
-    name: string;
-    addSchema(name: string, schema: any): void;
-    removeSchema(name: string): void;
-    listSchemas(): string[];
+export interface IValidationManager extends IService {
+    validate(config: any, type: string): Promise<{ isValid: boolean; errors: string[] }>;
+    initialize(): Promise<void>;
 }
 
 export interface IRegistryService extends IService {

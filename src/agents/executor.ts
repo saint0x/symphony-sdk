@@ -3,7 +3,7 @@ import { AgentConfig, ToolResult, ToolChain } from '../types/sdk';
 import { SystemPromptService } from './sysprompt';
 import { ToolRegistry } from '../tools/standard/registry';
 import { ChainExecutor } from '../tools/executor';
-import { LLMRequest, LLMMessage, LLMFunctionDefinition, LLMConfig as RichLLMAgentConfig } from '../llm/types';
+import { LLMRequest, LLMMessage, LLMConfig as RichLLMAgentConfig } from '../llm/types'; // Commented out LLMFunctionDefinition
 
 export class AgentExecutor extends BaseAgent {
     public readonly name: string;

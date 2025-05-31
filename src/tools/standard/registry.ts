@@ -3,7 +3,7 @@ import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
 import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
 import { IDatabaseService } from '../../db/types';
-import { LLMFunctionDefinition } from '../../types/sdk';
+import { LLMFunctionDefinition } from '../../llm/types';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
@@ -343,8 +343,8 @@ export class ToolRegistry {
 
         details.inputs.forEach(input => {
             properties[input.name] = {
-                type: input.type || 'string', // Default to string if not specified
-                description: input.description || `Parameter for ${input.name}` // Add description if available
+                type: input.type || 'string',
+                description: `Parameter for ${input.name}`
             };
             if (input.required) {
                 required.push(input.name);

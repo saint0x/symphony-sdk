@@ -7,25 +7,29 @@ import * as path from 'path';
 dotenv.config();
 
 async function testTeamParallelPipeline() {
+    console.time('Overall testTeamParallelPipeline'); // Overall timer
     console.log('=== Team Parallel Pipeline Test ===\\n');
 
     // Temporarily set global log level to debug for this test
     // Logger.setGlobalLevel('debug');
 
     // Initialize Symphony
+    console.time('Symphony Initialization');
     console.log('[Symphony] Initializing...');
     const symphony = new Symphony({
         llm: { provider: 'openai', model: 'gpt-4o-mini', apiKey: process.env.OPENAI_API_KEY || 'test-key', useFunctionCalling: true, temperature: 0.1 },
         db: { enabled: false }, // Pipeline state might be in-memory for this test if DB not used by pipeline runner
-        logging: { level: 'debug' },
+        logging: { level: 'info' }, // Reverted to info, debug for pipeline internals is less needed now
         serviceRegistry: { enabled: false, maxRetries: 0, retryDelay: 0 },
-        metrics: { enabled: false, detailed: false }
+        metrics: { enabled: true, detailed: true } // Ensure metrics are enabled for pipeline reporting
     });
 
     try {
         await symphony.initialize();
+        console.timeEnd('Symphony Initialization');
         console.log('✓ [Symphony] Initialized successfully.\\n');
     } catch (error) {
+        console.timeEnd('Symphony Initialization');
         console.error('✗ [Symphony] Initialization failed:', error);
         process.exit(1);
     }
@@ -60,7 +64,7 @@ async function testTeamParallelPipeline() {
         outputs: ['integrationReport'],
         config: {},
         handler: async (params: { frontendCode: string, backendCode: string, mainFeatureName: string }): Promise<ToolResult> => {
-            const report = `Integration complete for feature \\\"${params.mainFeatureName}\\\". Frontend component (starts: \\\"${params.frontendCode.substring(0, 20)}...\\\") and Backend component (starts: \\\"${params.backendCode.substring(0, 20)}...\\\") integrated.`;
+            const report = `Integration complete for feature \"${params.mainFeatureName}\". Frontend component (starts: \"${params.frontendCode.substring(0, 20)}...\") and Backend component (starts: \"${params.backendCode.substring(0, 20)}...\") integrated.`;
             console.log(`[Tool Handler - integrateFeaturesTool] Integration report generated for feature: ${params.mainFeatureName}.`);
             return { success: true, result: { integrationReport: report } };
         }
@@ -72,6 +76,7 @@ async function testTeamParallelPipeline() {
 
     // --- Agent Definitions for Pipeline ---
     const createDeveloperAgent = async (agentName: string, devFocus: string) => {
+        console.time(`Agent Creation: ${agentName}`);
         const agentLLMConfig = { model: 'gpt-4o-mini', useFunctionCalling: true, temperature: 0.1 };
         const systemPrompt = `You are ${agentName}, a ${devFocus} Developer.\\nRespond with a JSON object: { \"tool_name\": \"developFeatureTool\", \"parameters\": { \"featureDescription\": \"<description_of_${devFocus}_part_of_main_feature>\" } }.\\nUser will provide the main feature name. Your task is to describe the ${devFocus} part of it for the 'developFeatureTool'.`;
         
@@ -84,6 +89,7 @@ async function testTeamParallelPipeline() {
             systemPrompt
         };
         const agent = await symphony.agent.create(config);
+        console.timeEnd(`Agent Creation: ${agentName}`);
         console.log(`✓ [Agent] ${agent.name} created successfully.`);
         return agent;
     };
@@ -91,6 +97,7 @@ async function testTeamParallelPipeline() {
     const frontendDevAgent = await createDeveloperAgent('FrontendDevAgent', 'frontend');
     const backendDevAgent = await createDeveloperAgent('BackendDevAgent', 'backend');
 
+    console.time('Agent Creation: ProjectManagerAgent');
     const projectManagerAgentConfig: AgentConfig = {
         name: 'ProjectManagerAgent',
         description: 'Orchestrates feature integration.',
@@ -100,6 +107,7 @@ async function testTeamParallelPipeline() {
         systemPrompt: `You are a Project Manager. You will receive a user message containing the main feature name, frontend code, and backend code.\\nYour task is to integrate these components using the 'integrateFeaturesTool'.\\nExtract the mainFeatureName, frontendCode, and backendCode from the user message.\\nRespond with ONLY a JSON object:\\n{\\n  \"tool_name\": \"integrateFeaturesTool\",\\n  \"parameters\": {\\n    \"frontendCode\": \"<extracted_frontend_code>\",\\n    \"backendCode\": \"<extracted_backend_code>\",\\n    \"mainFeatureName\": \"<extracted_main_feature_name>\"\\n  }\\n}`
     };
     const projectManagerAgent = await symphony.agent.create(projectManagerAgentConfig);
+    console.timeEnd('Agent Creation: ProjectManagerAgent');
     console.log(`✓ [Agent] ${projectManagerAgent.name} created successfully.\\n`);
 
 
@@ -150,7 +158,9 @@ async function testTeamParallelPipeline() {
     };
 
     try {
+        console.time('Pipeline Creation');
         const pipeline = await symphony.pipeline.create(pipelineConfig);
+        console.timeEnd('Pipeline Creation');
         console.log(`✓ [Pipeline] "${pipeline.name}" created successfully.\\n`);
 
         const mainFeature = "User Authentication System";
@@ -159,12 +169,25 @@ async function testTeamParallelPipeline() {
         // Input for the pipeline (accessible via context.initialInput in inputMap)
         const pipelineInput = { mainFeatureName: mainFeature };
         
+        console.time('Pipeline Run');
         const pipelineResult = await pipeline.run(pipelineInput);
+        console.timeEnd('Pipeline Run');
 
         console.log('\\n✓ [Pipeline Run] Execution completed.');
         console.log('  Success:', pipelineResult.success);
         console.log('  Final Result (Integration Report):', pipelineResult.result?.output?.variables?.finalReport);
         
+        // Log detailed step metrics if available
+        if (pipelineResult.result?.performanceProfile?.stepMetrics) {
+            console.log('  Pipeline Step Durations:');
+            pipelineResult.result.performanceProfile.stepMetrics.forEach((stepMetric: any) => {
+                console.log(`    - Step '${stepMetric.stepId}': ${stepMetric.duration}ms`);
+            });
+        }
+        if (pipelineResult.metrics?.duration) {
+            console.log(`  Overall Pipeline Execution time (from metrics): ${pipelineResult.metrics.duration}ms`);
+        }
+
         if (!pipelineResult.success) {
             console.error('  Pipeline Errors:', pipelineResult.error, pipelineResult.metrics?.stepResults);
             throw new Error(`Pipeline execution failed. Full result: ${JSON.stringify(pipelineResult)}`);
@@ -182,9 +205,12 @@ async function testTeamParallelPipeline() {
     }
 
     console.log('\\n=== Team Parallel Pipeline Test Complete ===');
+    console.timeEnd('Overall testTeamParallelPipeline');
+    process.exit(0); // Ensure graceful exit on success
 }
 
 testTeamParallelPipeline().catch(error => {
     console.error('Unhandled error during team parallel pipeline test execution:', error);
+    console.timeEnd('Overall testTeamParallelPipeline'); // Ensure timer ends on error too
     process.exit(1);
 }); 

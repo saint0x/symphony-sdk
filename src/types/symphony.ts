@@ -3,6 +3,7 @@ import { LLMHandler } from '../llm/handler';
 import { Logger } from '../utils/logger';
 import { IDatabaseService, DatabaseConfig } from '../db/types';
 import { LLMConfig as RichLLMConfig } from '../llm/types';
+import { IToolService, IAgentService, ITeamService, IPipelineService, IValidationManager } from './interfaces';
 
 export interface SymphonyConfig {
     name?: string;
@@ -40,13 +41,12 @@ export interface ISymphony {
     readonly initialized: boolean;
     readonly isInitialized: boolean;
     readonly state: ToolLifecycleState;
-    readonly tool: any;
-    readonly agent: any;
-    readonly team: any;
-    readonly pipeline: any;
+    readonly tool: IToolService;
+    readonly agent: IAgentService;
+    readonly team: ITeamService;
+    readonly pipeline: IPipelineService;
     readonly db: IDatabaseService;
-    readonly validation: any;
-    readonly validationManager: any;
+    readonly validation: IValidationManager;
     readonly llm: LLMHandler;
     readonly logger: Logger;
     readonly metrics: IMetricsAPI;

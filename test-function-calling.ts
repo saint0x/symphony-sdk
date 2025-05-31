@@ -10,9 +10,11 @@ const TEST_FILE_DIR = path.join(__dirname, 'test_outputs');
 const TEST_FILE_PATH = path.join(TEST_FILE_DIR, 'function_call_test.txt');
 
 async function testFunctionCalling() {
+    console.time('Overall testFunctionCalling'); // Overall timer
     console.log('=== Function Calling Test ===\n');
 
     // Ensure test output directory exists
+    console.time('Test File Setup');
     try {
         await fs.mkdir(TEST_FILE_DIR, { recursive: true });
     } catch (e) { /* ignore if exists */ }
@@ -22,22 +24,24 @@ async function testFunctionCalling() {
         await fs.unlink(TEST_FILE_PATH);
         console.log('[Setup] Cleaned up previous test file.');
     } catch (e) { /* ignore if not exists */ }
+    console.timeEnd('Test File Setup');
 
     // Initialize Symphony with detailed logging
+    console.time('Symphony Initialization FC');
     console.log('[Symphony] Initializing...');
     const symphony = new Symphony({
         llm: {
             provider: 'openai',
-            model: 'gpt-4o-mini', // Ensure this model supports function calling well
+            model: 'gpt-4o-mini',
             apiKey: process.env.OPENAI_API_KEY || 'test-key',
-            useFunctionCalling: true, // Explicitly enable function calling for the main LLM config
-            temperature: 0.1 // Low temp for predictability
+            useFunctionCalling: true,
+            temperature: 0.1
         },
         db: {
-            enabled: false // No DB needed for this test
+            enabled: false
         },
         logging: {
-            level: 'debug' // Enable debug logging for detailed output
+            level: 'info' // Reverted to info
         },
         serviceRegistry: {
             enabled: false,
@@ -45,15 +49,17 @@ async function testFunctionCalling() {
             retryDelay: 0
         },
         metrics: {
-            enabled: false,
-            detailed: false
+            enabled: true, // Enable metrics
+            detailed: true
         }
     });
 
     try {
         await symphony.initialize();
+        console.timeEnd('Symphony Initialization FC');
         console.log('✓ [Symphony] Initialized successfully.\n');
     } catch (error) {
+        console.timeEnd('Symphony Initialization FC');
         console.error('✗ [Symphony] Initialization failed:', error);
         process.exit(1);
     }
@@ -96,6 +102,7 @@ async function testFunctionCalling() {
     console.log('✓ [Tool] customWriteFile tool registered.\n');
 
     // 2. Create an Agent Configured for Function Calling
+    console.time('Agent Creation FC');
     console.log('[Agent] Creating function-calling agent...');
     const agentConfig = {
         name: 'FunctionCallerAgent',
@@ -140,8 +147,10 @@ User's request will follow. Analyze it and respond ONLY with the JSON object as 
     let agent;
     try {
         agent = await symphony.agent.create(agentConfig);
+        console.timeEnd('Agent Creation FC');
         console.log(`✓ [Agent] Agent "${agent.name}" created successfully.\n`);
     } catch (error) {
+        console.timeEnd('Agent Creation FC');
         console.error('✗ [Agent] Agent creation failed:', error);
         process.exit(1);
     }
@@ -151,8 +160,10 @@ User's request will follow. Analyze it and respond ONLY with the JSON object as 
     console.log(`[Task] Attempting to execute: "${taskDescription}"\n`);
 
     let agentResult;
+    console.time('Agent Run FC');
     try {
         agentResult = await agent.run(taskDescription);
+        console.timeEnd('Agent Run FC');
         console.log('\n✓ [Task] Agent execution completed.');
         console.log('  Success:', agentResult.success);
         console.log('  Agent Response:', agentResult.result?.response);
@@ -161,13 +172,18 @@ User's request will follow. Analyze it and respond ONLY with the JSON object as 
         } else {
             console.log('  No tools reported as executed by agent.result.toolsExecuted.');
         }
+        if (agentResult.metrics?.duration) {
+            console.log(`  Agent Run Duration (from metrics): ${agentResult.metrics.duration}ms`);
+        }
 
     } catch (error) {
+        console.timeEnd('Agent Run FC');
         console.error('✗ [Task] Agent execution failed:', error);
         process.exit(1);
     }
 
     // 4. Verify File Creation
+    console.time('File Verification FC');
     console.log('\n[Verification] Checking if file was created...');
     try {
         const fileContent = await fs.readFile(TEST_FILE_PATH, 'utf-8');
@@ -182,18 +198,24 @@ User's request will follow. Analyze it and respond ONLY with the JSON object as 
         console.error(`✗ [Verification] Failed to read file at ${TEST_FILE_PATH}:`, error);
         console.error('  This indicates the function call likely did not execute correctly or the file was not written as expected.');
     }
+    console.timeEnd('File Verification FC');
 
     // Cleanup test file
+    console.time('Test File Cleanup');
     try {
         await fs.unlink(TEST_FILE_PATH);
         console.log('\n[Cleanup] Test file deleted.');
     } catch (e) { /* ignore */ }
+    console.timeEnd('Test File Cleanup');
 
     console.log('\n=== Function Calling Test Complete ===');
+    console.timeEnd('Overall testFunctionCalling');
+    process.exit(0); // Ensure graceful exit on success
 }
 
 // Run the test
 testFunctionCalling().catch(error => {
     console.error('Unhandled error during test execution:', error);
+    console.timeEnd('Overall testFunctionCalling'); // Ensure timer ends on error too
     process.exit(1);
 }); 
