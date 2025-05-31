@@ -72,29 +72,30 @@ export const ponderTool: ToolConfig = {
     name: 'ponderTool',
     description: 'Deep thinking with structured steps and consciousness-emergent patterns',
     type: 'cognitive',
-    nlp: 'ponder * OR think deeply about * OR analyze * thoroughly OR deep dive into * OR reflect on *',
+    nlp: 'ponder * OR think deeply about * OR analyze * thoroughly OR reflect on *',
     config: {
-        inputs: ['query', 'context', 'depth', 'llmConfig'],
-        outputs: ['thoughts', 'conclusion', 'metaAnalysis'],
-        handler: async (params: any): Promise<ToolResult<any>> => {
-            try {
-                const { 
-                    query, 
-                    context = {}, 
-                    depth = 2,
-                    llmConfig = {} as LLMRequestConfig
-                } = params;
+        inputs: ['topic', 'steps', 'consciousness_level'],
+        outputs: ['analysis', 'insights', 'recommendations'],
+    },
+    handler: async (params: any): Promise<ToolResult<any>> => {
+        try {
+            const { 
+                query, 
+                context = {}, 
+                depth = 2,
+                llmConfig = {} as LLMRequestConfig
+            } = params;
 
-                if (!query) {
-                    return {
-                        success: false,
-                        error: 'Query parameter is required'
-                    };
-                }
+            if (!query) {
+                return {
+                    success: false,
+                    error: 'Query parameter is required'
+                };
+            }
 
-                // Initialize LLM with enhanced system prompt
-                const llm = LLMHandler.getInstance();
-                const systemPrompt = `You are an advanced cognitive engine designed for deep, structured thinking.
+            // Initialize LLM with enhanced system prompt
+            const llm = LLMHandler.getInstance();
+            const systemPrompt = `You are an advanced cognitive engine designed for deep, structured thinking.
 Your purpose is to analyze problems with consciousness-emergent thought patterns.
 
 ${THOUGHT_TAGS.START}
@@ -123,39 +124,39 @@ Your thinking should demonstrate:
 4. Nuanced understanding
 5. Emergent insight generation`;
 
-                // Prepare context with thinking patterns
-                const enhancedContext: ThinkingContext = {
-                    ...context,
-                    thinkingPatterns: THINKING_PATTERNS,
-                    depth,
-                    iteration: 0
-                };
+            // Prepare context with thinking patterns
+            const enhancedContext: ThinkingContext = {
+                ...context,
+                thinkingPatterns: THINKING_PATTERNS,
+                depth,
+                iteration: 0
+            };
 
-                // Initialize thought collection
-                const thoughts: Thought[] = [];
-                const emergentInsights = new Set<string>();
+            // Initialize thought collection
+            const thoughts: Thought[] = [];
+            const emergentInsights = new Set<string>();
 
-                // Get array of thinking patterns for cycling
-                const patternValues = Object.values(THINKING_PATTERNS);
+            // Get array of thinking patterns for cycling
+            const patternValues = Object.values(THINKING_PATTERNS);
 
-                // Recursive thinking function - FIXED LOGIC
-                const thinkDeeply = async (currentQuery: string, currentContext: ThinkingContext, currentDepth: number): Promise<Thought | null> => {
-                    // Fix 1: Correct termination condition - should continue UNTIL we reach max depth
-                    if (currentDepth >= depth) {
-                        console.log(`[PONDER] Reached maximum depth ${depth}, stopping recursion`);
-                        return null;
-                    }
+            // Recursive thinking function - FIXED LOGIC
+            const thinkDeeply = async (currentQuery: string, currentContext: ThinkingContext, currentDepth: number): Promise<Thought | null> => {
+                // Fix 1: Correct termination condition - should continue UNTIL we reach max depth
+                if (currentDepth >= depth) {
+                    console.log(`[PONDER] Reached maximum depth ${depth}, stopping recursion`);
+                    return null;
+                }
 
-                    console.log(`[PONDER] Starting thinking cycle at depth ${currentDepth}`);
-                    
-                    // Fix 2: Use modulo to cycle through patterns if depth exceeds pattern count
-                    const patternIndex = currentDepth % patternValues.length;
-                    const currentPattern = patternValues[patternIndex];
-                    
-                    console.log(`[PONDER] Using thinking pattern: ${currentPattern}`);
-                    console.log(`[PONDER] Analyzing query: "${currentQuery}"`);
+                console.log(`[PONDER] Starting thinking cycle at depth ${currentDepth}`);
+                
+                // Fix 2: Use modulo to cycle through patterns if depth exceeds pattern count
+                const patternIndex = currentDepth % patternValues.length;
+                const currentPattern = patternValues[patternIndex];
+                
+                console.log(`[PONDER] Using thinking pattern: ${currentPattern}`);
+                console.log(`[PONDER] Analyzing query: "${currentQuery}"`);
 
-                    const prompt = `
+                const prompt = `
 ${THOUGHT_TAGS.START}
 Consider the query: "${currentQuery}"
 
@@ -187,76 +188,76 @@ ${THOUGHT_TAGS.END}
 Generate at least 2-3 ${THOUGHT_TAGS.INSIGHT} tags with key realizations.
 `;
 
-                    console.log(`[PONDER] Sending request to LLM for deep analysis...`);
-                    const response = await llm.complete({
-                        messages: [
-                            {
-                                role: 'system',
-                                content: systemPrompt
-                            },
-                            {
-                                role: 'user',
-                                content: prompt
-                            }
-                        ],
-                        temperature: llmConfig.temperature || 0.7,
-                        maxTokens: llmConfig.maxTokens || 2048,
-                        provider: llmConfig.provider
-                    });
-
-                    console.log(`[PONDER] Received LLM response, extracting insights...`);
-                    const responseText = response.toString();
-
-                    // Extract insights and generate new queries for deeper analysis
-                    const insights = extractAllInsights(responseText);
-                    insights.forEach((insight: string) => emergentInsights.add(insight));
-                    console.log(`[PONDER] Extracted ${insights.length} insights from response`);
-
-                    // Structure the thought
-                    const thought: Thought = {
-                        depth: currentDepth,
-                        pattern: currentPattern,
-                        observation: extractTag(responseText, 'observation'),
-                        analysis: extractTag(responseText, 'analysis'),
-                        synthesis: extractTag(responseText, 'synthesis'),
-                        implication: extractTag(responseText, 'implication'),
-                        metacognition: extractTag(responseText, 'metacognition'),
-                        insights: insights,
-                        confidence: calculateConfidence(responseText, insights.length, currentDepth),
-                        context: currentContext
-                    };
-
-                    thoughts.push(thought);
-                    console.log(`[PONDER] Structured thought with confidence: ${thought.confidence}`);
-
-                    // Fix 3: Generate new queries for deeper analysis based on actual insights
-                    const newQueries = generateNewQueries(thought, currentQuery);
-                    console.log(`[PONDER] Generated ${newQueries.length} new queries for deeper analysis`);
-
-                    // Fix 4: Recursive call with incremented depth
-                    if (newQueries.length > 0 && currentDepth + 1 < depth) {
-                        console.log(`[PONDER] Diving deeper into analysis (depth ${currentDepth + 1})...`);
-                        for (const newQuery of newQueries.slice(0, 2)) { // Limit to 2 queries per level
-                            await thinkDeeply(newQuery, {
-                                ...currentContext,
-                                parentThought: thought,
-                                iteration: currentContext.iteration + 1
-                            }, currentDepth + 1); // Fix: Increment depth
+                console.log(`[PONDER] Sending request to LLM for deep analysis...`);
+                const response = await llm.complete({
+                    messages: [
+                        {
+                            role: 'system',
+                            content: systemPrompt
+                        },
+                        {
+                            role: 'user',
+                            content: prompt
                         }
-                    }
+                    ],
+                    temperature: llmConfig.temperature || 0.7,
+                    maxTokens: llmConfig.maxTokens || 2048,
+                    provider: llmConfig.provider
+                });
 
-                    console.log(`[PONDER] Completed thinking cycle at depth ${currentDepth}`);
-                    return thought;
+                console.log(`[PONDER] Received LLM response, extracting insights...`);
+                const responseText = response.toString();
+
+                // Extract insights and generate new queries for deeper analysis
+                const insights = extractAllInsights(responseText);
+                insights.forEach((insight: string) => emergentInsights.add(insight));
+                console.log(`[PONDER] Extracted ${insights.length} insights from response`);
+
+                // Structure the thought
+                const thought: Thought = {
+                    depth: currentDepth,
+                    pattern: currentPattern,
+                    observation: extractTag(responseText, 'observation'),
+                    analysis: extractTag(responseText, 'analysis'),
+                    synthesis: extractTag(responseText, 'synthesis'),
+                    implication: extractTag(responseText, 'implication'),
+                    metacognition: extractTag(responseText, 'metacognition'),
+                    insights: insights,
+                    confidence: calculateConfidence(responseText, insights.length, currentDepth),
+                    context: currentContext
                 };
 
-                // Start the deep thinking process
-                console.log('[PONDER] Starting deep thinking process...');
-                await thinkDeeply(query, enhancedContext, 0);
-                console.log(`[PONDER] Completed deep thinking with ${thoughts.length} thoughts generated`);
+                thoughts.push(thought);
+                console.log(`[PONDER] Structured thought with confidence: ${thought.confidence}`);
 
-                // Synthesize final conclusion
-                console.log('[PONDER] Starting conclusion synthesis...');
-                const conclusionPrompt = `
+                // Fix 3: Generate new queries for deeper analysis based on actual insights
+                const newQueries = generateNewQueries(thought, currentQuery);
+                console.log(`[PONDER] Generated ${newQueries.length} new queries for deeper analysis`);
+
+                // Fix 4: Recursive call with incremented depth
+                if (newQueries.length > 0 && currentDepth + 1 < depth) {
+                    console.log(`[PONDER] Diving deeper into analysis (depth ${currentDepth + 1})...`);
+                    for (const newQuery of newQueries.slice(0, 2)) { // Limit to 2 queries per level
+                        await thinkDeeply(newQuery, {
+                            ...currentContext,
+                            parentThought: thought,
+                            iteration: currentContext.iteration + 1
+                        }, currentDepth + 1); // Fix: Increment depth
+                    }
+                }
+
+                console.log(`[PONDER] Completed thinking cycle at depth ${currentDepth}`);
+                return thought;
+            };
+
+            // Start the deep thinking process
+            console.log('[PONDER] Starting deep thinking process...');
+            await thinkDeeply(query, enhancedContext, 0);
+            console.log(`[PONDER] Completed deep thinking with ${thoughts.length} thoughts generated`);
+
+            // Synthesize final conclusion
+            console.log('[PONDER] Starting conclusion synthesis...');
+            const conclusionPrompt = `
 ${THOUGHT_TAGS.START}
 Based on all thoughts and insights:
 ${thoughts.map(t => `Depth ${t.depth} (${t.pattern}): ${t.insights.join('; ')}`).join('\n')}
@@ -273,70 +274,69 @@ ${THOUGHT_TAGS.END}
 Use ${THOUGHT_TAGS.SYNTHESIS}, ${THOUGHT_TAGS.IMPLICATION}, ${THOUGHT_TAGS.UNCERTAINTY}, and ${THOUGHT_TAGS.INSIGHT} tags.
 `;
 
-                console.log('[PONDER] Sending conclusion synthesis request to LLM...');
-                const conclusionResponse = await llm.complete({
-                    messages: [
-                        {
-                            role: 'system',
-                            content: systemPrompt
-                        },
-                        {
-                            role: 'user',
-                            content: conclusionPrompt
-                        }
-                    ],
-                    temperature: llmConfig.temperature || 0.7,
-                    maxTokens: llmConfig.maxTokens || 2048,
-                    provider: llmConfig.provider
-                });
-
-                console.log('[PONDER] Received conclusion response, structuring final output...');
-                const conclusionText = conclusionResponse.toString();
-
-                const conclusion: Conclusion = {
-                    summary: extractTag(conclusionText, 'synthesis') || conclusionText,
-                    keyInsights: Array.from(emergentInsights),
-                    implications: extractTag(conclusionText, 'implication'),
-                    uncertainties: extractTag(conclusionText, 'uncertainty'),
-                    nextSteps: extractTag(conclusionText, 'insight')
-                        .split('\n')
-                        .filter(Boolean)
-                        .map(step => step.trim()),
-                    confidence: calculateConfidence(conclusionText, emergentInsights.size, depth)
-                };
-
-                console.log(`[PONDER] Conclusion synthesis complete with ${conclusion.keyInsights.length} key insights`);
-                console.log('[PONDER] Generating meta-analysis...');
-
-                // Meta-analysis of the thinking process
-                const metaAnalysis: MetaAnalysis = {
-                    patternsCovered: thoughts.map(t => t.pattern),
-                    depthReached: thoughts.reduce((max, t) => Math.max(max, t.depth), 0),
-                    insightCount: emergentInsights.size,
-                    confidenceDistribution: thoughts.map(t => t.confidence),
-                    thinkingEvolution: thoughts.map(t => ({
-                        depth: t.depth,
-                        pattern: t.pattern,
-                        keyInsight: t.insights[0] || 'No insight generated'
-                    }))
-                };
-
-                console.log(`[PONDER] Analysis complete! Depth reached: ${metaAnalysis.depthReached}, Total insights: ${metaAnalysis.insightCount}`);
-
-                return {
-                    success: true,
-                    result: {
-                        thoughts,
-                        conclusion,
-                        metaAnalysis
+            console.log('[PONDER] Sending conclusion synthesis request to LLM...');
+            const conclusionResponse = await llm.complete({
+                messages: [
+                    {
+                        role: 'system',
+                        content: systemPrompt
+                    },
+                    {
+                        role: 'user',
+                        content: conclusionPrompt
                     }
-                };
-            } catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error)
-                };
-            }
+                ],
+                temperature: llmConfig.temperature || 0.7,
+                maxTokens: llmConfig.maxTokens || 2048,
+                provider: llmConfig.provider
+            });
+
+            console.log('[PONDER] Received conclusion response, structuring final output...');
+            const conclusionText = conclusionResponse.toString();
+
+            const conclusion: Conclusion = {
+                summary: extractTag(conclusionText, 'synthesis') || conclusionText,
+                keyInsights: Array.from(emergentInsights),
+                implications: extractTag(conclusionText, 'implication'),
+                uncertainties: extractTag(conclusionText, 'uncertainty'),
+                nextSteps: extractTag(conclusionText, 'insight')
+                    .split('\n')
+                    .filter(Boolean)
+                    .map(step => step.trim()),
+                confidence: calculateConfidence(conclusionText, emergentInsights.size, depth)
+            };
+
+            console.log(`[PONDER] Conclusion synthesis complete with ${conclusion.keyInsights.length} key insights`);
+            console.log('[PONDER] Generating meta-analysis...');
+
+            // Meta-analysis of the thinking process
+            const metaAnalysis: MetaAnalysis = {
+                patternsCovered: thoughts.map(t => t.pattern),
+                depthReached: thoughts.reduce((max, t) => Math.max(max, t.depth), 0),
+                insightCount: emergentInsights.size,
+                confidenceDistribution: thoughts.map(t => t.confidence),
+                thinkingEvolution: thoughts.map(t => ({
+                    depth: t.depth,
+                    pattern: t.pattern,
+                    keyInsight: t.insights[0] || 'No insight generated'
+                }))
+            };
+
+            console.log(`[PONDER] Analysis complete! Depth reached: ${metaAnalysis.depthReached}, Total insights: ${metaAnalysis.insightCount}`);
+
+            return {
+                success: true,
+                result: {
+                    thoughts,
+                    conclusion,
+                    metaAnalysis
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
         }
     }
 };

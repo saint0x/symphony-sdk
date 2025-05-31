@@ -9,34 +9,34 @@ export const readFileTool: ToolConfig = {
     config: {
         inputs: ['path'],
         outputs: ['content', 'metadata'],
-        handler: async (params: any): Promise<ToolResult<any>> => {
-            try {
-                const { path } = params;
-                if (!path) {
-                    throw new Error('Path parameter is required');
-                }
-
-                const content = await fs.readFile(path, 'utf-8');
-                const stats = await fs.stat(path);
-
-                return {
-                    success: true,
-                    result: {
-                        content,
-                        metadata: {
-                            format: params.format || path.split('.').pop()?.toLowerCase() || '',
-                            size: stats.size,
-                            path,
-                            type: 'file'
-                        }
-                    }
-                };
-            } catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error)
-                };
+    },
+    handler: async (params: any): Promise<ToolResult<any>> => {
+        try {
+            const { path } = params;
+            if (!path) {
+                throw new Error('Path parameter is required');
             }
+
+            const content = await fs.readFile(path, 'utf-8');
+            const stats = await fs.stat(path);
+
+            return {
+                success: true,
+                result: {
+                    content,
+                    metadata: {
+                        format: params.format || path.split('.').pop()?.toLowerCase() || '',
+                        size: stats.size,
+                        path,
+                        type: 'file'
+                    }
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
         }
     }
 }; 

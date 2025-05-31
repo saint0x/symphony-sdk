@@ -121,13 +121,13 @@ export class ToolRegistry {
             'webSearch': standardTools.find(t => t.name === 'webSearchTool')!,
             
             // Document Tools
-            'parseDocument': standardTools.find(t => t.name === 'parseDocument')!,
+            'parseDocument': standardTools.find(t => t.name === 'parseDocumentTool')!,
             
             // Code Tools
-            'writeCode': standardTools.find(t => t.name === 'writeCode')!,
+            'writeCode': standardTools.find(t => t.name === 'writeCodeTool')!,
             
             // Planning Tools
-            'createPlan': standardTools.find(t => t.name === 'createPlan')!,
+            'createPlan': standardTools.find(t => t.name === 'createPlanTool')!,
             
             // Cognitive Tools
             'ponder': standardTools.find(t => t.name === 'ponderTool')!,
@@ -136,9 +136,9 @@ export class ToolRegistry {
             'readFileTool': standardTools.find(t => t.name === 'readFileTool')!,
             'writeFileTool': standardTools.find(t => t.name === 'writeFileTool')!,
             'webSearchTool': standardTools.find(t => t.name === 'webSearchTool')!,
-            'parseDocumentTool': standardTools.find(t => t.name === 'parseDocument')!,
-            'writeCodeTool': standardTools.find(t => t.name === 'writeCode')!,
-            'createPlanTool': standardTools.find(t => t.name === 'createPlan')!,
+            'parseDocumentTool': standardTools.find(t => t.name === 'parseDocumentTool')!,
+            'writeCodeTool': standardTools.find(t => t.name === 'writeCodeTool')!,
+            'createPlanTool': standardTools.find(t => t.name === 'createPlanTool')!,
             'ponderTool': standardTools.find(t => t.name === 'ponderTool')!
         };
 
