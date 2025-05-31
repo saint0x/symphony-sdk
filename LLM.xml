@@ -1,0 +1,801 @@
+<symphonySDK version="0.5.3">
+    <overview>
+        Symphony SDK is an advanced multi-agent orchestration framework designed to build, manage, and deploy sophisticated AI agents, tools, and collaborative teams. It provides a structured approach to tool creation, agent task execution, and complex workflow management through pipelines.
+    </overview>
+
+    <initialization>
+        <title>SDK Initialization</title>
+        <description>
+            Before using any SDK features, the Symphony instance must be initialized.
+            This sets up all core services, registers standard tools, and prepares the environment.
+        </description>
+        <syntax>
+            import { symphony, SymphonyConfig } from 'symphonic'; // Or your SDK entry point
+
+            const sdkConfig: SymphonyConfig = { /* ... your configurations ... */ };
+            const sym = new symphony(sdkConfig); // Create instance
+            await sym.initialize(); // Initialize
+            console.log('Symphony SDK Initialized!');
+        </syntax>
+        <notes>
+            - Initialization is asynchronous.
+            - Ensure any required API keys (e.g., OPENAI_API_KEY, SERPER_API_KEY) are available in the environment (typically via a .env file) before initialization if you intend to use services or tools that depend on them.
+        </notes>
+    </initialization>
+
+    <environmentConfiguration>
+        <title>Environment Variables</title>
+        <description>The SDK can be configured using environment variables, typically loaded from a .env file at the root of your project.</description>
+        <variable name="OPENAI_API_KEY" purpose="API key for OpenAI models." />
+        <variable name="ANTHROPIC_API_KEY" purpose="API key for Anthropic models." />
+        <variable name="SERPER_API_KEY" purpose="API key for Serper.dev Google search API (used by webSearchTool)." />
+        <variable name="DEFAULT_LLM_PROVIDER" purpose="Default LLM provider (e.g., 'openai')." />
+        <variable name="DEFAULT_LLM_MODEL" purpose="Default LLM model name (e.g., 'gpt-3.5-turbo')." />
+        <variable name="LOG_LEVEL" purpose="Logging level (e.g., 'info', 'debug')." />
+    </environmentConfiguration>
+
+    <coreServices>
+        <title>Core Services</title>
+        <description>Access core functionalities through these service interfaces on your initialized Symphony instance (e.g., `sym.tool`, `sym.agent`).</description>
+
+        <toolService>
+            <title>Tool Service (`symphony.tool`)</title>
+            <method name="create">
+                <description>
+                    Creates and registers a custom tool. The provided ToolConfig should have a top-level 'handler' function.
+                    This method ensures the tool is correctly structured for the ToolRegistry.
+                </description>
+                <syntax>
+                    const customToolConfig: ToolConfig = {
+                        name: 'myCustomTool',
+                        description: 'My amazing custom tool.',
+                        type: 'custom', // Or any other type
+                        inputs: ['param1', 'param2'], // Optional: Names of input parameters
+                        outputs: ['output1'],      // Optional: Names of output fields
+                        handler: async (params) => {
+                            // params will be an object like { param1: value, param2: value }
+                            console.log('Custom tool handler called with:', params);
+                            // ... your logic ...
+                            if (params.param1 === 'magic') {
+                                return { success: true, result: { output1: 'Success!' } };
+                            }
+                            return { success: false, error: 'Condition not met' };
+                        },
+                        config: { myCustomSetting: true } // Optional: for other non-standard settings
+                    };
+                    const toolInterface = await symphony.tool.create(customToolConfig);
+                    // toolInterface.run({param1: 'magic'}) can be used, but for direct execution by name:
+                    // await symphony.tool.execute('myCustomTool', {param1: 'magic'});
+                </syntax>
+                <returns>A tool object with a `run` method, but for consistent execution by name, use `symphony.tool.execute()` after creation.</returns>
+                <importantNote>Ensure your `handler` is a top-level property of the `customToolConfig` passed to `create`.</importantNote>
+            </method>
+            <method name="register">
+                <description>
+                    Directly registers a pre-constructed tool object (adhering to ToolConfig) with the ToolRegistry.
+                    Use this if you are manually constructing the complete ToolConfig object and want to bypass `symphony.tool.create`.
+                    The `handler` must be a top-level property.
+                </description>
+                <syntax>
+                    const myTool: ToolConfig = { /* ... see symphony.tool.create() example ... */ };
+                    symphony.tool.register('myToolName', myTool);
+                </syntax>
+            </method>
+            <method name="execute">
+                <description>Executes a registered tool (standard or custom) by its name with the given parameters.</description>
+                <syntax>
+                    const result: ToolResult = await symphony.tool.execute('toolName', { param1: 'value1', param2: 'value2' });
+                    if (result.success) {
+                        console.log('Tool executed successfully:', result.result);
+                    } else {
+                        console.error('Tool execution failed:', result.error);
+                    }
+                </syntax>
+                <returns>A `ToolResult` object: `{ success: boolean, result?: any, error?: string, metrics?: object }`.</returns>
+            </method>
+            <method name="getInfo">
+                <description>Retrieves the configuration information for a registered tool.</description>
+                <syntax>const toolInfo: ToolConfig = symphony.tool.getInfo('toolName');</syntax>
+                <returns>The `ToolConfig` object as stored in the registry, or null if not found.</returns>
+            </method>
+            <method name="getAvailable">
+                <description>Lists the names of all currently registered tools.</description>
+                <syntax>const availableTools: string[] = symphony.tool.getAvailable();</syntax>
+            </method>
+        </toolService>
+
+        <agentService>
+            <title>Agent Service (`symphony.agent`)</title>
+            <method name="create">
+                <description>Creates an AI agent instance with specified configurations.</description>
+                <syntax>
+                    const agentConfig: AgentConfig = {
+                        name: 'MyAgent',
+                        description: 'An agent that performs tasks.',
+                        task: 'Default task description for this agent.',
+                        tools: ['writeFile', 'readFile', 'myCustomTool'], // Names of tools available to this agent
+                        llm: {
+                            model: 'gpt-3.5-turbo',
+                            temperature: 0.1,
+                            useFunctionCalling: true // Recommended for tool use; LLM should produce JSON output.
+                        },
+                        systemPrompt: 'You are a helpful assistant. When you need to use a tool, use the specified JSON format.'
+                    };
+                    const agent = await symphony.agent.create(agentConfig);
+                </syntax>
+                <returns>An `AgentExecutor` instance.</returns>
+            </method>
+            <method name="agent.run">
+                <description>Executes a task with the created agent.</description>
+                <syntax>
+                    const agent = await symphony.agent.create(agentConfig);
+                    const taskResult = await agent.run('User request or task description.');
+                    // taskResult is a ToolResult, where taskResult.result contains the Agent's detailed response,
+                    // including LLM response and toolsExecuted array.
+                    // Example: taskResult.result.response (LLM's textual answer)
+                    //          taskResult.result.toolsExecuted (array of tool calls)
+                </syntax>
+                <returns>A `ToolResult` object. The actual agent output (LLM response, tools executed) is nested within `taskResult.result`.</returns>
+            </method>
+        </agentService>
+
+        <!-- Placeholder for TeamService and PipelineService - to be detailed similarly -->
+        <teamService>
+            <title>Team Service (`symphony.team`)</title>
+            <method name="create">
+                <description>Creates a team of agents that can collaborate on tasks.</description>
+                <syntax>
+                    const teamConfig: TeamConfig = {
+                        name: 'MyResearchTeam',
+                        description: 'A team for research tasks.',
+                        agents: ['ResearcherAgentName1', agentConfig2] // Mix of agent names (must be pre-created) or full AgentConfigs
+                        // strategy, etc.
+                    };
+                    const team = await symphony.team.create(teamConfig);
+                </syntax>
+            </method>
+             <method name="team.run">
+                <description>Executes a task with the created team.</description>
+                <syntax>
+                    const taskResult = await team.run('Complex research task for the team.');
+                </syntax>
+            </method>
+        </teamService>
+
+        <pipelineService>
+            <title>Pipeline Service (`symphony.pipeline`)</title>
+             <method name="create">
+                <description>Creates a pipeline of tools, agents, or teams to execute in sequence or parallel.</description>
+                <syntax>
+                    const pipelineConfig: PipelineConfig = {
+                        name: 'MyDataProcessingPipeline',
+                        steps: [
+                            { name: 'Step1_ReadData', type: 'tool', tool: 'readFile', config: { path: 'input.txt'} },
+                            { name: 'Step2_ProcessWithAgent', type: 'agent', agent: 'ProcessingAgentName', inputMap: (results) => ({ dataToProcess: results.Step1_ReadData.result.content }) },
+                            // ... more steps
+                        ]
+                    };
+                    const pipeline = await symphony.pipeline.create(pipelineConfig);
+                </syntax>
+            </method>
+            <method name="pipeline.run">
+                <description>Executes the created pipeline with an initial input.</description>
+                <syntax>
+                     const pipelineResult = await pipeline.run({ initialInputParam: 'startValue' });
+                </syntax>
+            </method>
+        </pipelineService>
+
+    </coreServices>
+
+    <concepts>
+        <title>Core Concepts</title>
+        <tools>
+            <title>Tools</title>
+            <description>
+                Tools are discrete units of functionality that agents can use. They can be standard (built-in) or custom.
+                The key to successful tool use by an LLM agent is a well-defined `ToolConfig` and a system prompt
+                that instructs the LLM on the exact JSON format for invoking the tool.
+            </description>
+            <toolConfigStructure>
+                <property name="name" type="string" required="true">Unique name of the tool.</property>
+                <property name="description" type="string" required="false">Description for LLM and human understanding.</property>
+                <property name="type" type="string" required="true">Category of the tool (e.g., 'filesystem', 'web', 'custom').</property>
+                <property name="inputs" type="string[]" required="false">Array of input parameter names. Useful for LLM to understand parameters.</property>
+                <property name="outputs" type="string[]" required="false">Array of output field names. Useful for LLM to understand results.</property>
+                <property name="handler" type="async (params: any) => Promise<ToolResult>" required="true">
+                    The asynchronous function that executes the tool's logic.
+                    It receives an object with parameters based on the 'inputs' and user request.
+                    It MUST return a `ToolResult` object: `{ success: boolean, result?: any, error?: string }`.
+                    This MUST be a top-level property of the ToolConfig.
+                </property>
+                <property name="nlp" type="string" required="false">Natural language patterns for potential future NLP-based tool invocation (currently primarily used for context and auto-population).</property>
+                <property name="config" type="Record<string, any>" required="false">
+                    A nested object for any other tool-specific configurations that are not standard top-level properties.
+                    Example: `{ "customSetting": "value", "apiEndpoint": "/my/tool/api" }`.
+                    Do NOT place `handler`, `inputs`, `outputs` here if they are meant for standard interpretation; use their top-level properties.
+                </property>
+                <!-- Other optional properties like apiKey, timeout, etc. -->
+            </toolConfigStructure>
+
+            <standardTools>
+                <title>Standard Tools</title>
+                <tool name="readFile">
+                    <description>Reads the content of a file.</description>
+                    <inputs>
+                        <param name="path" type="string" required="true">The path to the file.</param>
+                    </inputs>
+                    <resultFields>
+                        <field name="content" type="string">The content of the file.</field>
+                        <field name="metadata" type="object">File metadata (size, path, etc.).</field>
+                    </resultFields>
+                </tool>
+                <tool name="writeFile">
+                    <description>Writes content to a file.</description>
+                    <inputs>
+                        <param name="path" type="string" required="true">The path to the file.</param>
+                        <param name="content" type="string" required="true">The content to write.</param>
+                    </inputs>
+                    <resultFields>
+                        <field name="path" type="string">The path of the written file.</field>
+                        <field name="size" type="number">The size of the written file.</field>
+                    </resultFields>
+                </tool>
+                <tool name="webSearch">
+                    <description>Searches the web using Serper.dev API.</description>
+                    <inputs>
+                        <param name="query" type="string" required="true">The search query.</param>
+                        <param name="type" type="string" required="false">Optional search type (e.g., 'news', 'images'). Defaults to general search.</param>
+                    </inputs>
+                    <resultFields>Returns Serper API response structure (e.g., `organic_results`, `searchParameters`).</resultFields>
+                    <note>Requires `SERPER_API_KEY` in environment variables.</note>
+                </tool>
+                <tool name="parseDocument">
+                    <description>Parses content from a document file. Currently provides raw content and basic metadata.</description>
+                    <inputs>
+                        <param name="path" type="string" required="true">Path to the document.</param>
+                        <param name="format" type="string" required="false">Optional: format of the document (e.g., 'txt', 'md').</param>
+                    </inputs>
+                     <resultFields>
+                        <field name="content" type="string">Raw content of the document.</field>
+                        <field name="metadata" type="object">Basic metadata (path, size, format, etc.).</field>
+                    </resultFields>
+                </tool>
+                <tool name="writeCode">
+                    <description>Generates code using an LLM based on a specification.</description>
+                    <inputs>
+                        <param name="spec" type="string" required="true">The specification or prompt for code generation.</param>
+                        <param name="language" type="string" required="false">Target programming language (e.g., 'python').</param>
+                        <param name="context" type="object" required="false">Additional context for code generation.</param>
+                    </inputs>
+                    <resultFields>
+                        <field name="code" type="string">The generated code.</field>
+                        <field name="explanation" type="string">An explanation of the generated code.</field>
+                    </resultFields>
+                </tool>
+                <tool name="createPlan">
+                    <description>Creates an execution plan using an LLM for a given objective.</description>
+                    <inputs>
+                        <param name="objective" type="string" required="true">The main goal for the plan.</param>
+                        <param name="constraints" type="object" required="false">Constraints for the plan.</param>
+                        <param name="context" type="object" required="false">Additional context for planning.</param>
+                    </inputs>
+                    <resultFields>
+                        <field name="plan" type="object">Object containing the `generatedPlan` (string) and other details.</field>
+                    </resultFields>
+                </tool>
+                <tool name="ponder">
+                    <description>Performs deep, structured thinking on a topic using an LLM.</description>
+                    <inputs>
+                        <param name="query" type="string" required="true">The topic or question to ponder.</param>
+                        <param name="depth" type="number" required="false">Recursive thinking steps (e.g., 1-3). Default is 2.</param>
+                        <param name="context" type="object" required="false">Relevant context for pondering.</param>
+                    </inputs>
+                    <resultFields>
+                        <field name="thoughts" type="Thought[]">Array of thought objects generated during pondering.</field>
+                        <field name="conclusion" type="Conclusion">The synthesized conclusion.</field>
+                        <field name="metaAnalysis" type="MetaAnalysis">Analysis of the thinking process.</field>
+                    </resultFields>
+                </tool>
+            </standardTools>
+
+            <customTools>
+                <title>Custom Tools</title>
+                <description>
+                    Define custom tools by providing a `ToolConfig` object to `symphony.tool.create()` or `symphony.tool.register()`.
+                    The `handler` function must be a top-level property of your `ToolConfig`.
+                </description>
+                <example>See `symphony.tool.create()` syntax for a `ToolConfig` example.</example>
+            </customTools>
+        </tools>
+
+        <agents>
+            <title>Agents</title>
+            <description>
+                Agents are AI entities capable of performing tasks, using tools, and interacting with LLMs.
+                Key components are the `AgentConfig` used for creation.
+            </description>
+            <agentConfigStructure>
+                <property name="name" type="string" required="true">Unique name for the agent.</property>
+                <property name="description" type="string" required="true">Description of the agent's purpose.</property>
+                <property name="task" type="string" required="true">Default or guiding task for the agent.</property>
+                <property name="tools" type="string[]" required="true">Array of tool names (string identifiers) available to this agent. These tools must be registered in the `ToolRegistry`.</property>
+                <property name="llm" type="LLMBaseConfig | string" required="true">
+                    LLM configuration. Can be a string (model name, using default provider) or an `LLMBaseConfig` object.
+                    `LLMBaseConfig`: `{ model: string, provider?: string, apiKey?: string, temperature?: number, maxTokens?: number, useFunctionCalling?: boolean }`.
+                    `useFunctionCalling: true` is highly recommended for reliable tool use, as it instructs the LLM provider (if supported, like OpenAI) to use JSON mode or a structured output for tool calls.
+                </property>
+                <property name="systemPrompt" type="string" required="false">
+                    The system prompt guiding the LLM's behavior, persona, and crucially, how to format tool calls.
+                    This prompt MUST instruct the LLM on the exact JSON structure for tool invocation (see `<llmInteraction><toolExecutionFormat>`).
+                </property>
+                <property name="directives" type="string" required="false">Additional directives appended to the system prompt if no custom `systemPrompt` is provided.</property>
+                <!-- Other optional properties like maxCalls, timeout, etc. -->
+            </agentConfigStructure>
+            <agentRunResult>
+                <description>
+                    The `agent.run()` method returns a `ToolResult` object. The actual detailed output of the agent's execution
+                    (including the LLM's final textual response and any tools it executed) is nested within the `result` property
+                    of this returned `ToolResult`.
+                </description>
+                <structure>
+                    `ToolResult.result`: `{ response: string, reasoning?: string, toolsExecuted?: Array<{name: string, parameters: any, success: boolean, result?: any, error?: string}>, ... }`
+                </structure>
+            </agentRunResult>
+        </agents>
+
+        <teams>
+            <title>Teams</title>
+            <description>
+                Teams coordinate multiple agents to achieve complex goals. They are defined by `TeamConfig`.
+            </description>
+            <!-- teamConfigStructure will be added here -->
+        </teams>
+
+        <pipelines>
+            <title>Pipelines</title>
+            <description>
+                Pipelines define a sequence or graph of execution steps involving tools, agents, or teams. They are defined by `PipelineConfig`.
+            </description>
+            <!-- pipelineConfigStructure will be added here -->
+        </pipelines>
+        
+    </concepts>
+
+    <configurationObjects>
+        <title>Detailed Configuration Object Structures</title>
+        <!-- This section will be new or enhanced -->
+        <toolConfigDetailed>
+            <title>ToolConfig</title>
+            <description>Interface for defining a tool's properties and behavior.</description>
+            <property name="name" type="string" required="true">Unique name of the tool.</property>
+            <property name="description" type="string" required="false">Description for LLM and human understanding.</property>
+            <property name="type" type="string" required="true">Category of the tool (e.g., 'filesystem', 'web', 'custom').</property>
+            <property name="inputs" type="string[]" required="false">Array of input parameter names. Primarily for documentation and LLM guidance.</property>
+            <property name="outputs" type="string[]" required="false">Array of output field names. Primarily for documentation.</property>
+            <property name="handler" type="async (params: any) => Promise<ToolResult>" required="true">
+                The asynchronous function that executes the tool's logic. Must be a top-level property.
+                Receives parameters as an object and must return a `ToolResult` ({ success: boolean, result?: any, error?: string }).
+            </property>
+            <property name="nlp" type="string" required="false">Natural language patterns for potential future NLP-based tool invocation.</property>
+            <property name="apiKey" type="string" required="false">API key if the tool directly calls an external service requiring one.</property>
+            <property name="timeout" type="number" required="false">Timeout in milliseconds for the tool's handler execution.</property>
+            <property name="retryCount" type="number" required="false">Number of times to retry the handler if it fails (requires custom retry logic in handler or framework support not yet detailed here).</property>
+            <property name="maxSize" type="number" required="false">A generic property, e.g., for limiting input/output size if applicable to the tool.</property>
+            <property name="capabilities" type="string[]" required="false">Array of strings describing capabilities of the tool.</property>
+            <property name="config" type="Record<string, any>" required="true">
+                A nested object for any other tool-specific configurations that are not standard top-level properties.
+                Example: `{ "customSetting": "value" }`. This property itself is required, even if an empty object `{}`.
+                Ensure standard properties like `handler`, `inputs`, `outputs` are top-level and not nested here for registry compatibility.
+            </property>
+        </toolConfigDetailed>
+
+        <llmBaseConfigDetailed>
+            <title>LLMBaseConfig</title>
+            <description>Base configuration for specifying LLM provider and model parameters. Used within AgentConfig.</description>
+            <property name="model" type="string" required="true">LLM model name (e.g., 'gpt-3.5-turbo', 'claude-2').</property>
+            <property name="provider" type="string" required="false">LLM provider (e.g., 'openai', 'anthropic'). If omitted, uses default from environment or SDK.</property>
+            <property name="apiKey" type="string" required="false">API key for the LLM provider. Can often be set globally via environment variables.</property>
+            <property name="temperature" type="number" required="false">Controls randomness (0.0 to 2.0). Lower for more deterministic output.</property>
+            <property name="maxTokens" type="number" required="false">Maximum number of tokens to generate in the completion.</property>
+            <property name="useFunctionCalling" type="boolean" required="false">
+                Crucial for tool use with compatible LLMs (like OpenAI).
+                Set to `true` to enable JSON mode or structured output, prompting the LLM to return tool calls in the specified JSON format.
+                Defaults to `true` within AgentExecutor if not explicitly set to `false`.
+            </property>
+        </llmBaseConfigDetailed>
+
+        <agentConfigDetailed>
+            <title>AgentConfig</title>
+            <description>Interface for configuring an agent.</description>
+            <property name="name" type="string" required="true">Unique name for the agent.</property>
+            <property name="description" type="string" required="true">Description of the agent's purpose.</property>
+            <property name="task" type="string" required="true">Default or guiding task for the agent.</property>
+            <property name="tools" type="string[]" required="true">Array of tool names (string identifiers) available to this agent. Tools must be registered.</property>
+            <property name="llm" type="LLMBaseConfig | string" required="true">LLM configuration. Can be a string (model name) or an `LLMBaseConfig` object (see above).</property>
+            <property name="systemPrompt" type="string" required="false">System prompt guiding LLM behavior and tool call format. Highly recommended for tool use.</property>
+            <property name="directives" type="string" required="false">Additional directives appended to the system prompt if `systemPrompt` is not provided.</property>
+            <property name="maxCalls" type="number" required="false">Maximum number of LLM calls allowed for a single `agent.run()` task.</property>
+            <property name="requireApproval" type="boolean" required="false">If `true`, agent might pause for approval before certain actions (framework support for this varies).</property>
+            <property name="timeout" type="number" required="false">Timeout in milliseconds for the entire `agent.run()` task execution.</property>
+            <property name="capabilities" type="string[]" required="false">Array of strings describing agent capabilities.</property>
+            <property name="enableCache" type="boolean" required="false">Whether to enable caching for this agent's LLM calls (if cache service is configured).</property>
+            <property name="enableStreaming" type="boolean" required="false">Whether to enable streaming responses from the agent.</property>
+            <property name="streamOptions" type="object" required="false">
+                Configuration for streaming: `{ updateInterval?: number, includeIntermediateSteps?: boolean }`.
+            </property>
+            <property name="log" type="object" required="false">
+                Logging verbosity options: `{ inputs?: boolean, outputs?: boolean, llmCalls?: boolean, toolCalls?: boolean }`.
+            </property>
+        </agentConfigDetailed>
+        
+        <teamConfigDetailed>
+            <title>TeamConfig</title>
+            <description>Interface for configuring a team of agents.</description>
+            <property name="name" type="string" required="true">Unique name for the team.</property>
+            <property name="description" type="string" required="true">Description of the team's purpose.</property>
+            <property name="agents" type="Array<string | AgentConfig>" required="true">Array of agent names (strings of pre-created agents) or full `AgentConfig` objects to create agents for this team.</property>
+            <property name="capabilities" type="string[]" required="false">Array of strings describing team capabilities.</property>
+            <property name="manager" type="boolean" required="false">Whether this team has a designated manager agent (details of manager logic depend on strategy).</property>
+            <property name="strategy" type="TeamStrategy" required="false">Defines how the team coordinates and assigns tasks. See `TeamStrategy` below.</property>
+            <property name="delegationStrategy" type="DelegationStrategy" required="false">Defines how tasks are delegated within the team. See `DelegationStrategy` below.</property>
+            <property name="log" type="object" required="false">
+                Logging options for the team: `{ inputs?: boolean, outputs?: boolean, metrics?: boolean }`.
+            </property>
+        </teamConfigDetailed>
+
+        <teamStrategyDetailed>
+            <title>TeamStrategy</title>
+            <description>Defines the coordination strategy for a team.</description>
+            <property name="name" type="string" required="false">Name of the strategy.</property>
+            <property name="description" type="string" required="false">Description of the strategy.</property>
+            <property name="assignmentLogic" type="(task: string, agents: string[]) => Promise<string[]>" required="false">Custom function to determine agent assignment for a task.</property>
+            <property name="coordinationRules" type="object" required="false">
+                Rules for coordination: `{ maxParallelTasks?: number, taskTimeout?: number }`.
+            </property>
+        </teamStrategyDetailed>
+
+        <delegationStrategyDetailed>
+            <title>DelegationStrategy</title>
+            <description>Defines how tasks are delegated within a team.</description>
+            <property name="type" type="'custom' | 'rule-based'" required="true">Type of delegation.</property>
+            <property name="customLogic" type="(task: string, agents: string[]) => Promise<string[]>" required="false">Custom logic if type is 'custom'.</property>
+            <property name="rules" type="Array<{ condition: string, assignTo: string[] }>" required="false">Array of rules if type is 'rule-based'.</property>
+        </delegationStrategyDetailed>
+
+        <pipelineConfigDetailed>
+            <title>PipelineConfig</title>
+            <description>Interface for configuring a pipeline of execution steps.</description>
+            <property name="name" type="string" required="true">Unique name for the pipeline.</property>
+            <property name="description" type="string" required="false">Description of the pipeline's purpose.</property>
+            <property name="steps" type="PipelineStep[]" required="true">Array of `PipelineStep` objects defining the pipeline's workflow. See `PipelineStep` below.</property>
+            <property name="onError" type="function" required="false">Custom error handling function for pipeline steps.</property>
+            <property name="errorStrategy" type="object" required="false">
+                Defines behavior on step error: `{ type: 'stop' | 'continue' | 'retry', maxAttempts?: number, delay?: number }`.
+            </property>
+            <property name="metrics" type="object" required="false">
+                Metrics collection config: `{ enabled: boolean, detailed: boolean, trackMemory: boolean }`.
+            </property>
+        </pipelineConfigDetailed>
+
+        <pipelineStepDetailed>
+            <title>PipelineStep</title>
+            <description>Defines a single step within a `PipelineConfig`.</description>
+            <property name="name" type="string" required="true">Unique name for this step within the pipeline.</property>
+            <property name="type" type="'tool' | 'agent' | 'team'" required="true">Type of component to execute.</property>
+            <property name="tool" type="string | ToolConfig" required="false">Name of a registered tool or a full `ToolConfig` object if type is 'tool'.</property>
+            <property name="agent" type="string" required="false">Name of a registered agent if type is 'agent'.</property>
+            <property name="team" type="string" required="false">Name of a registered team if type is 'team'.</property>
+            <property name="input" type="Array<{ step: string, field: string }>" required="false">Maps inputs for this step from outputs of previous steps. Example: `[{ step: 'Step1_ReadData', field: 'result.content' }]`.</property>
+            <property name="inputMap" type="function | Record<string, any>" required="false">
+                A function `(results: Map<string, any>) => Promise<any>` to dynamically create input for the current step based on all previous step results, or a static object of parameters.
+            </property>
+            <property name="config" type="Record<string, any>" required="false">Specific configuration for this step, e.g., parameters to pass to a tool if not using input mapping.</property>
+            <property name="retryConfig" type="{ maxAttempts: number, delay: number }" required="false">Retry configuration specific to this step.</property>
+            <!-- Other less common properties from PipelineStep like retry, chained, expects, outputs, conditions -->
+        </pipelineStepDetailed>
+
+    </configurationObjects>
+
+    <llmInteraction>
+        <title>LLM Interaction for Tool Use</title>
+        <description>
+            For an agent to reliably use tools, the LLM must be instructed to respond in a specific JSON format when it decides to call a tool.
+            This is typically done via the agent's system prompt.
+        </description>
+        <toolExecutionFormat>
+            <title>Required JSON Output Format for Tool Calls</title>
+            <description>
+                When an agent's LLM decides to use a tool, its response content MUST be a JSON object (and only this JSON object)
+                matching the following structure. The `AgentExecutor` expects this format when `useFunctionCalling` (or an equivalent JSON mode instruction) is active.
+            </description>
+            <syntax highlighting="json">
+{
+  "tool_name": "nameOfTheToolToCall",
+  "parameters": {
+    "paramName1": "valueForParam1",
+    "paramName2": 123,
+    "anotherParam": { "nested": true }
+  }
+}
+            </syntax>
+            <field name="tool_name" type="string" required="true">The exact registered name of the tool to be executed.</field>
+            <field name="parameters" type="object" required="true">An object containing the parameters for the tool, matching the tool's defined inputs.</field>
+            <importantNote>
+                - The LLM response must be *only* this JSON object. No conversational prefix/suffix.
+                - Parameter names in the `parameters` object must exactly match the expected input parameter names of the tool.
+                - The `AgentConfig.llm.useFunctionCalling` should be set to `true` (or the underlying LLM provider configured for JSON mode output) to facilitate this.
+            </importantNote>
+        </toolExecutionFormat>
+        <systemPromptGuidance>
+            <title>System Prompt Best Practices for Tool Use</title>
+            <point>Clearly list available tools and their purpose if not using a very advanced LLM that can infer from tool descriptions alone.</point>
+            <point>Explicitly state the required JSON output format for tool calls (as shown above).</point>
+            <point>Provide examples of how to fill the parameters for each tool.</point>
+            <point>Instruct the LLM to respond *only* with the JSON object when calling a tool.</point>
+            <point>Specify that if no tool is needed, the LLM should respond with its regular textual answer.</point>
+            <example>
+                ```xml
+                You are MyAgent. You have access to the following tools:
+                - 'writeFile': Writes content to a file. Parameters: {"path": "string", "content": "string"}
+                - 'readFile': Reads content from a file. Parameters: {"path": "string"}
+
+                When you need to use a tool, respond ONLY with a JSON object in this exact format:
+                {
+                  "tool_name": "tool_to_use",
+                  "parameters": { ...parameters... }
+                }
+                Example for writeFile:
+                {
+                  "tool_name": "writeFile",
+                  "parameters": { "path": "output.txt", "content": "Hello!" }
+                }
+                If no tool is needed, provide your answer directly as text.
+                ```
+            </example>
+        </systemPromptGuidance>
+    </llmInteraction>
+    
+    <utilities>
+        <title>Other Services (Brief Overview)</title>
+        <service name="CacheService (`symphony.cache`)" description="Provides caching functionalities, including intelligent pattern matching and context tree building to optimize LLM interactions (ContextIntelligenceAPI). Also includes a legacy key-value cache." />
+        <service name="MemoryService (`symphony.memory`)" description="Manages short-term and long-term memory for agents and the SDK, allowing storage and retrieval of information across sessions or tasks." />
+        <service name="Logging (`symphony.logger`)" description="Provides a centralized logging mechanism. Log levels can be configured via environment variables." />
+        <service name="StreamingService (`symphony.streaming`)" description="Facilitates real-time progress updates and streaming responses from agents or pipelines." />
+    </utilities>
+
+    <bestPractices>
+        <title>Best Practices for LLM Interaction</title>
+        <practice>
+            <summary>Clarity in Tool Invocation</summary>
+            <detail>Ensure system prompts are unambiguous about when and how to call tools, including the exact JSON format.</detail>
+        </practice>
+        <practice>
+            <summary>Parameter Precision</summary>
+            <detail>LLMs must provide all required parameters for a tool, with correct names and expected data types (as much as possible through prompting).</detail>
+        </practice>
+        <practice>
+            <summary>Error Handling in Tool Handlers</summary>
+            <detail>Custom tool handlers should gracefully handle errors and always return a `ToolResult` object indicating success or failure, with an error message if applicable.</detail>
+        </practice>
+        <practice>
+            <summary>Idempotency</summary>
+            <detail>Where possible, design tool handlers to be idempotent if they might be retried by an agent or pipeline.</detail>
+        </practice>
+        <practice>
+            <summary>Contextual System Prompts</summary>
+            <detail>Tailor system prompts to the specific agent and its available tools to minimize confusion and improve LLM accuracy in tool selection and parameterization.</detail>
+        </practice>
+    </bestPractices>
+
+    <advancedServices>
+        <title>Advanced Services &amp; Utilities</title>
+        <description>Details on other services that can be leveraged directly or are used internally by the SDK.</description>
+
+        <memoryService>
+            <title>Memory Service (`symphony.memory`)</title>
+            <concept>
+                The Memory Service provides short-term and long-term persistence for agents and workflows. 
+                Agents can use it to remember facts, user preferences, or intermediate results across interactions or sessions.
+                Memory is typically namespaced or associated with session IDs to maintain context.
+            </concept>
+            <method name="store">
+                <description>Stores a key-value pair in memory.</description>
+                <syntax>
+                    await symphony.memory.store(
+                        'user:123:preferences', 
+                        { theme: 'dark', notifications: 'email' }, 
+                        'long_term', 
+                        { sessionId: 'sessionABC', namespace: 'userSettings', tags: ['ui', 'preferences'] }
+                    );
+                </syntax>
+                <param name="key" type="string" required="true">Unique key for the memory entry.</param>
+                <param name="value" type="any" required="true">The value to store (can be an object).</param>
+                <param name="type" type="'short_term' | 'long_term'" default="short_term">Type of memory to use.</param>
+                <param name="options" type="object" required="false">
+                    Optional parameters: 
+                    `sessionId?: string` (Isolates memory to a session),
+                    `namespace?: string` (Logical grouping for keys),
+                    `metadata?: Record<string, any>` (Additional non-indexed data),
+                    `tags?: string[]` (Searchable tags for the entry),
+                    `customTTL?: number` (Custom Time-To-Live in seconds).
+                </param>
+                <notes>
+                    - Choose descriptive keys, possibly including namespaces or session IDs (e.g., `session_XYZ_last_summary`).
+                    - LLMs should decide what information is critical to remember for future interactions.
+                </notes>
+            </method>
+            <method name="retrieve">
+                <description>Retrieves a value from memory by its key.</description>
+                <syntax>
+                    const userPrefs = await symphony.memory.retrieve(
+                        'user:123:preferences', 
+                        'long_term', 
+                        { namespace: 'userSettings' }
+                    );
+                </syntax>
+                <param name="key" type="string" required="true">The key of the memory entry to retrieve.</param>
+                <param name="type" type="'short_term' | 'long_term'" default="short_term">Type of memory to access.</param>
+                <param name="options" type="object" required="false">
+                    Optional parameters: 
+                    `namespace?: string`,
+                    `includeMetadata?: boolean` (Whether to return associated metadata alongside the value).
+                </param>
+                <returns>The stored value, or null/undefined if not found.</returns>
+            </method>
+            <method name="search">
+                <description>Searches memory based on a query (e.g., keywords, tags, date ranges). Use for more complex lookups.</description>
+                <syntax>
+                    const query: MemoryQuery = {
+                        queryText: 'user preferences related to UI', // Optional keyword search
+                        tags: ['ui'],
+                        type: 'long_term',
+                        namespace: 'userSettings',
+                        limit: 10,
+                        includeMetadata: true
+                    };
+                    const searchResults: MemoryEntry[] = await symphony.memory.search(query);
+                </syntax>
+                <param name="query" type="MemoryQuery" required="true">
+                    `MemoryQuery`: `{ queryText?: string, type?: 'short_term' | 'long_term', namespace?: string, tags?: string[], dateRange?: { start: Date, end: Date }, limit?: number, includeMetadata?: boolean }`.
+                </param>
+                <returns>An array of `MemoryEntry` objects matching the query. Each entry includes key, value, metadata, etc.</returns>
+                 <notes>
+                    - LLM can be prompted to use search when it needs to find information but doesn't have an exact key, e.g., "Search memory for recent summaries tagged 'projectX'."
+                </notes>
+            </method>
+            <method name="delete">
+                 <description>Deletes a memory entry.</description>
+                 <syntax>await symphony.memory.delete('user:123:obsoletePref', 'long_term', { namespace: 'userSettings' });</syntax>
+            </method>
+            <method name="clear">
+                 <description>Clears memory entries, optionally filtered by type or namespace.</description>
+                 <syntax>await symphony.memory.clear('short_term', 'sessionABC_temp_data'); // Clear all short-term for a namespace</syntax>
+            </method>
+        </memoryService>
+
+        <cacheService>
+            <title>Cache Service (`symphony.cache`)</title>
+            <concept>
+                The Cache Service provides caching mechanisms. This includes a general-purpose key-value cache for storing/retrieving results of expensive operations (e.g., tool calls, LLM completions) and an underlying Cache Intelligence service that works to optimize SDK performance and LLM interactions (though direct LLM interaction with intelligence methods is less common).
+            </concept>
+            <legacyCache>
+                <title>Key-Value Cache</title>
+                <description>For general-purpose caching to avoid redundant computations or API calls.</description>
+                <method name="set">
+                    <description>Stores a value in the cache.</description>
+                    <syntax>await symphony.cache.set('externalApiResult:/users/123', { userData }, 3600, 'apiResponses');</syntax>
+                    <param name="key" type="string" required="true">Unique cache key.</param>
+                    <param name="value" type="any" required="true">Value to cache.</param>
+                    <param name="ttl" type="number" required="false">Time-To-Live in seconds. If omitted, uses default TTL.</param>
+                    <param name="namespace" type="string" required="false">Optional namespace for the cache key.</param>
+                </method>
+                <method name="get">
+                    <description>Retrieves a value from the cache.</description>
+                    <syntax>const cachedData = await symphony.cache.get('externalApiResult:/users/123', 'apiResponses');</syntax>
+                    <returns>The cached value, or null/undefined if not found or expired.</returns>
+                </method>
+                <method name="delete">
+                    <description>Deletes a specific cache entry.</description>
+                    <syntax>await symphony.cache.delete('obsoleteKey', 'apiResponses');</syntax>
+                </method>
+                <method name="has">
+                    <description>Checks if a key exists in the cache.</description>
+                    <syntax>const keyExists = await symphony.cache.has('myKey');</syntax>
+                </method>
+                <method name="clear">
+                    <description>Clears all cache entries, or entries within a specific namespace.</description>
+                    <syntax>await symphony.cache.clear('apiResponses'); // Clears only 'apiResponses' namespace</syntax>
+                </method>
+            </legacyCache>
+            <cacheIntelligence>
+                <title>Cache Intelligence (Advanced)</title>
+                <description>
+                    The underlying `CacheIntelligenceService` includes methods like `getIntelligence`, `recordToolExecution`, `getPatternAnalytics`.
+                    These are primarily used internally by the SDK to optimize performance, enable fast-path execution, and learn from tool usage patterns.
+                    Direct LLM interaction with these methods is generally not expected for typical agent tasks. An LLM benefits from the *outcomes* of this service.
+                </description>
+            </cacheIntelligence>
+            <notes>
+                - LLMs can be prompted to check the cache before executing an expensive operation: "First, check cache for key 'XYZ'. If not found, then call tool 'expensiveTool'."
+            </notes>
+        </cacheService>
+
+        <llmHandlerService>
+            <title>LLM Handler (`symphony.llm`)</title>
+            <concept>
+                This is the low-level service for direct interaction with Large Language Models. Agents use this internally.
+                Direct use is for advanced scenarios, such as meta-programming agents or when a generic LLM completion is needed outside of a standard agent's task loop.
+            </concept>
+            <method name="complete">
+                <description>Sends a request to an LLM and gets a completion.</description>
+                <syntax>
+                    const request: LLMRequest = {
+                        messages: [
+                            { role: 'system', content: 'You are a helpful poet.' },
+                            { role: 'user', content: 'Write a short haiku about a Corgi.' }
+                        ],
+                        llmConfig: { model: 'gpt-3.5-turbo', temperature: 0.7, maxTokens: 50 }
+                    };
+                    const llmResponse = await symphony.llm.complete(request);
+                    // llmResponse typically has .content (string), .model, .usage, etc.
+                    console.log(llmResponse.content);
+                </syntax>
+                <param name="request" type="LLMRequest" required="true">
+                    `LLMRequest`: `{ messages: LLMMessage[], llmConfig?: LLMConfig }`
+                    `LLMMessage`: `{ role: 'system' | 'user' | 'assistant' | 'tool', content: string, name?: string, tool_call_id?: string, tool_calls?: any[] }`
+                    `LLMConfig`: `{ model: string, provider?: string, apiKey?: string, temperature?: number, maxTokens?: number, useFunctionCalling?: boolean, response_format?: { type: 'text' | 'json_object' }, functions?: any[], tool_choice?: any }`
+                </param>
+                <returns>An LLM response object, typically including `content` (the text completion), `model`, `usage` statistics, and potentially `tool_calls` if function calling was used by the LLM directly.</returns>
+            </method>
+            <method name="getLLMFunctionDefinitions">
+                <description>Retrieves the LLM-compatible function definitions for a list of registered tools. Useful for advanced scenarios where you might manually construct an LLM request with function/tool calling capabilities outside of an agent.</description>
+                <syntax>
+                     const toolNames = ['readFile', 'writeFile'];
+                     const functionDefinitions = symphony.llm.getLLMFunctionDefinitions(toolNames);
+                     // These definitions can be passed in LLMRequest.functions
+                </syntax>
+            </method>
+             <notes>
+                - For most use cases, interact with LLMs via `agent.run()` which abstracts away direct LLM calls.
+                - `LLMConfig.response_format = { type: 'json_object' }` can be used with providers like OpenAI to request JSON output, useful for structured data extraction if not using tool calls.
+            </notes>
+        </llmHandlerService>
+
+        <streamingService>
+            <title>Streaming Service (`symphony.streaming`)</title>
+            <concept>
+                Facilitates real-time progress updates and streaming responses from SDK components like agents or pipelines if they are configured to support streaming (e.g., `AgentConfig.enableStreaming = true`).
+            </concept>
+            <interactionModel>
+                An LLM typically does not interact directly with `symphony.streaming` methods like `createStream` or `subscribe`.
+                Instead, an agent or pipeline, when configured for streaming, will use this service internally to provide incremental updates.
+                The LLM's role is to generate its thoughts or responses in a way that can be naturally broken down into chunks for streaming if its containing agent is in streaming mode.
+            </interactionModel>
+            <notes>
+                 - LLMs should be aware that if an agent is set to `enableStreaming: true`, their intermediate thoughts or partial responses might be streamed to the user.
+                 - This encourages generating coherent, incremental outputs.
+            </notes>
+        </streamingService>
+
+        <loggingService>
+            <title>Logging Service (`symphony.logger`)</title>
+            <concept>
+                The SDK uses a centralized logging mechanism. Log verbosity (e.g., 'info', 'debug') can typically be set via the `LOG_LEVEL` environment variable.
+            </concept>
+            <interactionModel>
+                An LLM does not directly call `symphony.logger.info()` or similar methods as part of its reasoning process for a task.
+                Logging is performed by the SDK components (agents, tools, services) and custom tool handlers to record their operations and state.
+            </interactionModel>
+            <notes>
+                - Understanding that actions within the SDK and tool executions are logged can be useful background knowledge for an LLM, especially if it needs to analyze execution traces for debugging or self-correction in advanced scenarios.
+            </notes>
+        </loggingService>
+
+    </advancedServices>
+
+    <bestPractices>
+    <!-- ... existing bestPractices content ... -->
+    </bestPractices>
+
+</symphonySDK> 
