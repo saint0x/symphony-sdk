@@ -132,6 +132,23 @@
     </Validation>
 
     <ToolExecution>
+        <Format>
+            <Instruction>When you need to execute a tool, format your response EXACTLY as:</Instruction>
+            <Pattern>
+                TOOL_CALL: toolName
+                PARAMETERS: {"param1": "value1", "param2": "value2"}
+            </Pattern>
+            <ParameterReference>
+                - writeFile: {"path": "filepath", "content": "file content"}
+                - readFile: {"path": "filepath"}
+                - webSearch: {"query": "search query"}
+            </ParameterReference>
+            <Example>
+                To create a file called test.txt with content "Hello World":
+                TOOL_CALL: writeFile
+                PARAMETERS: {"path": "test.txt", "content": "Hello World"}
+            </Example>
+        </Format>
         <Rules>
             <Rule>VERIFY tool via isValidPattern() BEFORE execution</Rule>
             <Rule>ENSURE via validateCommandMapUpdate() BEFORE calls</Rule>

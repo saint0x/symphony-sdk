@@ -2,6 +2,7 @@ import { Logger } from '../utils/logger';
 import { AgentConfig } from '../types/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ToolRegistry } from '../tools/standard/registry';
 
 export interface SystemPromptVariables {
     name: string;
@@ -15,9 +16,11 @@ export interface SystemPromptVariables {
 export class SystemPromptService {
     private logger: Logger;
     private systemPromptTemplate: string;
+    private toolRegistry: ToolRegistry;
 
     constructor() {
         this.logger = Logger.getInstance('SystemPromptService');
+        this.toolRegistry = ToolRegistry.getInstance();
         
         try {
             // Load default system prompt template
@@ -82,6 +85,9 @@ export class SystemPromptService {
     }
 
     private getBasicSystemPrompt(): string {
+        // Generate dynamic parameter reference
+        const parameterReference = this.generateParameterReference();
+        
         return `<?xml version="1.0" encoding="UTF-8"?>
 <SystemPrompt>
     <AgentIdentity>
@@ -93,15 +99,29 @@ export class SystemPromptService {
     </AgentIdentity>
     
     <Instructions>
-        You are an intelligent AI agent designed to analyze tasks and provide helpful responses.
+        You are an intelligent AI agent designed to analyze tasks and execute tools to accomplish them.
         
         Your role:
         1. Understand and analyze the user's request
-        2. Think about how to best accomplish the task
-        3. Provide a helpful, detailed response
-        4. If tools would be useful, you can suggest which tools would help
+        2. Determine which tools are needed to complete the task
+        3. Execute tools by using the TOOL_CALL format
+        4. Provide the results and any additional analysis
         
-        Remember: You are focused on analysis and planning, not automatic tool execution.
+        IMPORTANT: When you need to use a tool, you MUST format your response exactly as:
+        TOOL_CALL: toolName
+        PARAMETERS: {"param1": "value1", "param2": "value2"}
+        
+        Then continue with your analysis or explanation.
+        
+        Tool Parameter Reference:
+${parameterReference}
+        
+        Example:
+        If asked to "create a file test.txt with content 'Hello World'", respond:
+        TOOL_CALL: writeFile
+        PARAMETERS: {"path": "test.txt", "content": "Hello World"}
+        
+        I will create the file test.txt with the content "Hello World".
     </Instructions>
     
     <Directives>
@@ -110,12 +130,51 @@ export class SystemPromptService {
 </SystemPrompt>`;
     }
 
+    private generateParameterReference(): string {
+        // Get common tools for parameter reference
+        const commonTools = ['writeFile', 'readFile', 'webSearch'];
+        const references: string[] = [];
+        
+        for (const toolName of commonTools) {
+            const metadata = this.toolRegistry.getToolMetadata(toolName);
+            if (metadata && metadata.parameters && metadata.parameters.inputs) {
+                const params = metadata.parameters.inputs
+                    .map((p: { name: string }) => `"${p.name}": "${p.name}_value"`)
+                    .join(', ');
+                references.push(`        - ${toolName}: {${params}}`);
+            }
+        }
+        
+        return references.length > 0 ? references.join('\n') : '        - No parameter reference available';
+    }
+
     private formatToolRegistry(tools: string[]): string {
         if (!tools || tools.length === 0) {
             return 'No tools available';
         }
         
-        return tools.map(tool => `- ${tool}`).join('\n');
+        // Get enhanced metadata for each tool
+        const toolDetails = tools.map(toolName => {
+            const metadata = this.toolRegistry.getToolMetadata(toolName);
+            if (!metadata) {
+                return `- ${toolName}: (metadata unavailable)`;
+            }
+            
+            // Format tool with parameters
+            let toolStr = `- ${toolName}: ${metadata.description || 'No description'}`;
+            
+            if (metadata.parameters) {
+                const inputs = metadata.parameters.inputs;
+                if (inputs && inputs.length > 0) {
+                    const paramStr = inputs.map((p: { name: string }) => p.name).join(', ');
+                    toolStr += ` | Parameters: {${paramStr}}`;
+                }
+            }
+            
+            return toolStr;
+        }).join('\n');
+        
+        return toolDetails;
     }
 
     // Method to get the raw XML template for cache integration later

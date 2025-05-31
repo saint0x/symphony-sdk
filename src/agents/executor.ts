@@ -171,7 +171,7 @@ export class AgentExecutor extends BaseAgent {
             messages: [
                 {
                     role: 'system',
-                    content: systemPrompt
+                    content: systemPrompt + '\n\nWhen you need to use a tool, respond with exactly:\nTOOL_CALL: toolName\nPARAMETERS: {json parameters}\n\nYou can make multiple tool calls in a single response.'
                 },
                 {
                     role: 'user',
@@ -188,13 +188,66 @@ export class AgentExecutor extends BaseAgent {
         this.logger.info('AgentExecutor', 'Analyzing and executing task with LLM');
         const llmResponse = await this.llm.complete(llmRequest);
         
+        // Parse the response for tool calls (now supports multiple)
+        const toolCallPattern = /TOOL_CALL:\s*(\w+)\s*\nPARAMETERS:\s*({[^}]+})/g;
+        const matches = Array.from(llmResponse.content.matchAll(toolCallPattern));
+        
+        const toolResults: any[] = [];
+        let actualResponse = llmResponse.content;
+        
+        for (const match of matches) {
+            const toolName = match[1];
+            const parametersStr = match[2];
+            
+            try {
+                const parameters = JSON.parse(parametersStr);
+                this.logger.info('AgentExecutor', `Executing tool: ${toolName}`, { parameters });
+                
+                // Execute the tool through the registry
+                const toolResult = await this.registry.executeTool(toolName, parameters);
+                toolResults.push({
+                    name: toolName,
+                    success: toolResult.success,
+                    result: toolResult.result,
+                    error: toolResult.error
+                });
+                
+                if (toolResult.success) {
+                    // Replace the tool call pattern with actual results
+                    actualResponse = actualResponse.replace(
+                        match[0],
+                        `Tool Executed: ${toolName}\nResult: ${JSON.stringify(toolResult.result, null, 2)}`
+                    );
+                } else {
+                    actualResponse = actualResponse.replace(
+                        match[0],
+                        `Tool Execution Failed: ${toolName}\nError: ${toolResult.error}`
+                    );
+                }
+            } catch (error) {
+                this.logger.error('AgentExecutor', 'Failed to parse or execute tool', { error, toolName });
+                actualResponse = actualResponse.replace(
+                    match[0],
+                    `Tool Execution Error: ${error instanceof Error ? error.message : String(error)}`
+                );
+                toolResults.push({
+                    name: toolName,
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+        
         return {
-            response: llmResponse.content,
-            reasoning: 'Task analyzed and executed with context intelligence',
+            response: actualResponse,
+            reasoning: toolResults.length > 0 ? 
+                `Task executed with ${toolResults.length} tool${toolResults.length > 1 ? 's' : ''}` : 
+                'Task analyzed and executed with context intelligence',
             agent: this.config.name,
             timestamp: new Date().toISOString(),
             model: llmResponse.model,
-            tokenUsage: llmResponse.usage
+            tokenUsage: llmResponse.usage,
+            toolsExecuted: toolResults.length > 0 ? toolResults : undefined
         };
     }
 

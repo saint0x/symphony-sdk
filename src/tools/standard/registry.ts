@@ -28,7 +28,7 @@ export class ToolRegistry {
     initializeContextIntegration(database: IDatabaseService): void {
         this.contextAPI = new ContextIntelligenceAPI(database);
         this.registerContextTools();
-        this.logger.info('ToolRegistry', 'Context intelligence integration initialized');
+        this.logger.info('ToolRegistry', 'ToolRegistry initialized');
     }
 
     /**
@@ -236,7 +236,91 @@ export class ToolRegistry {
     }
 
     getToolInfo(toolName: string): ToolConfig | null {
-        return this.tools.get(toolName) || null;
+        const tool = this.tools.get(toolName);
+        if (!tool) return null;
+        
+        // Return the original tool config (no modifications)
+        return tool;
+    }
+
+    /**
+     * Get detailed tool information including parameter metadata
+     * Use this for agent intelligence and reflection
+     */
+    getToolDetails(toolName: string): { 
+        config: ToolConfig; 
+        parameters: {
+            inputs: Array<{ name: string; required?: boolean; type?: string }>;
+            outputs: Array<{ name: string; type?: string }>;
+        };
+    } | null {
+        const tool = this.tools.get(toolName);
+        if (!tool) return null;
+        
+        return {
+            config: tool,
+            parameters: this.extractToolParameters(tool)
+        };
+    }
+
+    /**
+     * Extract tool parameters from config for agent intelligence
+     */
+    private extractToolParameters(tool: ToolConfig): {
+        inputs: Array<{ name: string; required?: boolean; type?: string }>;
+        outputs: Array<{ name: string; type?: string }>;
+    } {
+        const inputs = tool.config.inputs || tool.inputs || [];
+        const outputs = tool.config.outputs || tool.outputs || [];
+        
+        // Convert string arrays to structured format
+        return {
+            inputs: inputs.map((input: string) => ({
+                name: input,
+                required: true, // Default to required unless specified otherwise
+                type: 'string' // Default type, could be enhanced with schema
+            })),
+            outputs: outputs.map((output: string) => ({
+                name: output,
+                type: 'any'
+            }))
+        };
+    }
+
+    /**
+     * Get tool metadata optimized for agent reflection
+     * This provides instant access to all tool parameters without parsing
+     */
+    getToolMetadata(toolName?: string): Record<string, any> | any {
+        if (toolName) {
+            const tool = this.tools.get(toolName);
+            if (!tool) return null;
+            
+            return {
+                name: toolName,
+                description: tool.description,
+                type: tool.type,
+                nlp: tool.nlp,
+                parameters: this.extractToolParameters(tool),
+                capabilities: tool.capabilities || [],
+                timeout: tool.timeout,
+                hasHandler: !!tool.config.handler
+            };
+        }
+        
+        // Return all tools metadata for agent reflection
+        const metadata: Record<string, any> = {};
+        for (const [name, tool] of this.tools.entries()) {
+            metadata[name] = {
+                description: tool.description,
+                type: tool.type,
+                nlp: tool.nlp,
+                parameters: this.extractToolParameters(tool),
+                capabilities: tool.capabilities || []
+            };
+        }
+        
+        return metadata;
     }
 
     /**
@@ -300,10 +384,18 @@ export class ToolRegistry {
     /**
      * Get Enhanced Tool List with Full Metadata
      */
-    getEnhancedToolList(): Array<ToolConfig & { name: string; registeredAt?: string }> {
+    getEnhancedToolList(): Array<ToolConfig & { 
+        name: string; 
+        registeredAt?: string;
+        parameters?: {
+            inputs: Array<{ name: string; required?: boolean; type?: string }>;
+            outputs: Array<{ name: string; type?: string }>;
+        };
+    }> {
         return Array.from(this.tools.entries()).map(([name, tool]) => ({
             ...tool,
             name,
+            parameters: this.extractToolParameters(tool),
             registeredAt: new Date().toISOString() // Could track actual registration time
         }));
     }
