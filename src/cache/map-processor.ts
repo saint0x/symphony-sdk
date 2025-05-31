@@ -70,6 +70,11 @@ export class CommandMapProcessor {
     static getInstance(database: IDatabaseService): CommandMapProcessor {
         if (!CommandMapProcessor.instance) {
             CommandMapProcessor.instance = new CommandMapProcessor(database);
+        } else if (CommandMapProcessor.instance.database !== database) {
+            // If a different database is provided, update the instance
+            CommandMapProcessor.instance.logger.info('CommandMapProcessor', 'Updating database reference');
+            CommandMapProcessor.instance.database = database;
+            CommandMapProcessor.instance.initialized = false; // Force re-initialization
         }
         return CommandMapProcessor.instance;
     }

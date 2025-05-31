@@ -73,6 +73,12 @@ export class ContextTreeBuilder {
     static getInstance(database: IDatabaseService): ContextTreeBuilder {
         if (!ContextTreeBuilder.instance) {
             ContextTreeBuilder.instance = new ContextTreeBuilder(database);
+        } else if (ContextTreeBuilder.instance.database !== database) {
+            // If a different database is provided, update the instance
+            ContextTreeBuilder.instance.logger.info('ContextTreeBuilder', 'Updating database reference');
+            ContextTreeBuilder.instance.database = database;
+            ContextTreeBuilder.instance.initialized = false; // Force re-initialization
+            ContextTreeBuilder.instance.clearCache(); // Clear cache with old database data
         }
         return ContextTreeBuilder.instance;
     }

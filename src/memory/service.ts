@@ -102,6 +102,11 @@ export class MemoryService {
     static getInstance(database: IDatabaseService): MemoryService {
         if (!MemoryService.instance) {
             MemoryService.instance = new MemoryService(database);
+        } else if (MemoryService.instance.database !== database) {
+            // If a different database is provided, update the instance
+            MemoryService.instance.logger.info('MemoryService', 'Updating database reference');
+            MemoryService.instance.database = database;
+            MemoryService.instance.initialized = false; // Force re-initialization
         }
         return MemoryService.instance;
     }

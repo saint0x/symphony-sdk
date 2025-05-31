@@ -94,6 +94,14 @@ export class CacheIntelligenceService {
     static getInstance(database: IDatabaseService): CacheIntelligenceService {
         if (!CacheIntelligenceService.instance) {
             CacheIntelligenceService.instance = new CacheIntelligenceService(database);
+        } else if (CacheIntelligenceService.instance.database !== database) {
+            // If a different database is provided, update all references
+            CacheIntelligenceService.instance.logger.info('CacheIntelligenceService', 'Updating database reference');
+            CacheIntelligenceService.instance.database = database;
+            // Update sub-services with new database
+            CacheIntelligenceService.instance.commandMapProcessor = CommandMapProcessor.getInstance(database);
+            CacheIntelligenceService.instance.contextTreeBuilder = ContextTreeBuilder.getInstance(database);
+            CacheIntelligenceService.instance.initialized = false; // Force re-initialization
         }
         return CacheIntelligenceService.instance;
     }
