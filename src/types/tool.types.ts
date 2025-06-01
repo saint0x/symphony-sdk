@@ -1,3 +1,5 @@
+import { ParameterSchema } from '../utils/verification';
+
 /**
  * Represents the result of a tool execution.
  */
@@ -5,6 +7,7 @@ export interface ToolResult {
     success: boolean;
     result?: any;
     error?: string;
+    details?: any; // Added to hold validation errors or other details
     metrics?: {
         duration: number;
         startTime: number;
@@ -20,6 +23,7 @@ export interface ToolConfig {
     name: string;
     description?: string;
     type: string; // e.g., 'filesystem', 'web', 'custom'
+    inputSchema?: { [paramName: string]: ParameterSchema }; // Added for input validation
     inputs?: string[]; // Names of input parameters
     outputs?: string[]; // Names of output fields
     handler?: (params: any) => Promise<ToolResult>;

@@ -2,6 +2,7 @@ import { TeamConfig, TeamResult, AgentConfig, ToolLifecycleState } from '../type
 import { Logger } from '../utils/logger';
 import { AgentExecutor } from '../agents/executor';
 import { ToolRegistry } from '../tools/standard/registry';
+import { ToolUsageVerifier, ParameterSchema } from '../utils/verification';
 
 export interface TeamMember {
   id: string;
@@ -116,6 +117,21 @@ export interface TeamContext {
   lastUpdated: number;
   contextVersion: string;
 }
+
+// Define what the teamTaskPayload looks like if it's an object
+interface TeamTaskPayload {
+    id: string;
+    title: string;
+    description?: string;
+    // other properties as needed
+}
+
+// Schema for validating TeamTaskPayload
+const teamTaskPayloadSchema: { [key: string]: ParameterSchema } = {
+    id: { type: 'string', required: true },
+    title: { type: 'string', required: true, minLength: 1 },
+    description: { type: 'string', required: false },
+};
 
 export class TeamCoordinator {
   private teamId: string;
@@ -270,7 +286,7 @@ export class TeamCoordinator {
     this.logger.info('TeamCoordinator', `Using coordination strategy: ${this.config.strategy.name}`);
   }
 
-  async executeTask(task: string, options?: {
+  async executeTask(taskInput: string | TeamTaskPayload, options?: {
     strategy?: TeamExecutionStrategy;
     priority?: number;
     timeout?: number;
@@ -278,83 +294,152 @@ export class TeamCoordinator {
   }): Promise<TeamResult> {
     const startTime = Date.now();
     const taskId = `task_${startTime}`;
+
+    let taskStringForProcessing: string;
+    const originalTaskForReporting: string | TeamTaskPayload = taskInput;
+
+    if (typeof taskInput === 'string') {
+        taskStringForProcessing = taskInput;
+        // Optional: Validate simple string task if needed, e.g., ensure it's not empty
+        const stringTaskSchema = { task: { type: 'string' as 'string', required: true, minLength: 1 }};
+        const stringValidation = ToolUsageVerifier.verifyData({ task: taskStringForProcessing }, stringTaskSchema);
+        if (!stringValidation.isValid) {
+            this.logger.error('TeamCoordinator', `Invalid string task input for taskId: ${taskId}`, { errors: stringValidation.errors });
+            return {
+                success: false,
+                error: `Invalid task string: ${stringValidation.errors.map(e => e.message).join(', ')}`,
+                metrics: { duration: Date.now() - startTime, startTime, endTime: Date.now(), agentCalls: 0 }
+            };
+        }
+    } else if (typeof taskInput === 'object' && taskInput !== null) {
+        const validation = ToolUsageVerifier.verifyData(taskInput, teamTaskPayloadSchema, 'teamTaskPayload');
+        if (!validation.isValid) {
+            this.logger.error('TeamCoordinator', `Invalid task object payload for taskId: ${taskId}`, { errors: validation.errors });
+            return {
+                success: false,
+                error: `Invalid task payload: ${validation.errors.map(e => e.message).join(', ')}`,
+                metrics: { duration: Date.now() - startTime, startTime, endTime: Date.now(), agentCalls: 0 }
+            };
+        }
+        taskStringForProcessing = taskInput.title; // Use title for internal processing that expects a string
+    } else {
+        this.logger.error('TeamCoordinator', `Invalid task input type for taskId: ${taskId}`, { taskInput });
+        return {
+            success: false,
+            error: 'Invalid task input type provided.',
+            metrics: { duration: Date.now() - startTime, startTime, endTime: Date.now(), agentCalls: 0 }
+        };
+    }
     
-    this.logger.info('TeamCoordinator', `Executing team task: ${task}`, {
+    this.logger.info('TeamCoordinator', `Executing team task (processed as string): "${taskStringForProcessing}"`, {
       taskId,
       strategy: options?.strategy || 'auto',
-      teamSize: this.members.size
+      teamSize: this.members.size,
+      originalInputType: typeof taskInput
     });
 
     try {
-      // Determine execution strategy
-      const strategy = options?.strategy || await this.determineOptimalStrategy(task, options);
+      // Determine execution strategy using the processed string
+      const strategy = options?.strategy || await this.determineOptimalStrategy(taskStringForProcessing, options);
       
       // Execute based on strategy
-      let result;
+      let strategyResult;
       switch (strategy) {
         case TeamExecutionStrategy.PARALLEL:
-          result = await this.executeParallel(taskId, task, options);
+          strategyResult = await this.executeParallel(taskId, taskStringForProcessing, options);
           break;
         case TeamExecutionStrategy.SEQUENTIAL:
-          result = await this.executeSequential(taskId, task, options);
+          strategyResult = await this.executeSequential(taskId, taskStringForProcessing, options);
           break;
         case TeamExecutionStrategy.PIPELINE:
-          result = await this.executePipeline(taskId, task, options);
+          strategyResult = await this.executePipeline(taskId, taskStringForProcessing, options);
           break;
         case TeamExecutionStrategy.COLLABORATIVE:
-          result = await this.executeCollaborative(taskId, task, options);
+          strategyResult = await this.executeCollaborative(taskId, taskStringForProcessing, options);
           break;
         case TeamExecutionStrategy.ROLE_BASED:
-          result = await this.executeRoleBased(taskId, task, options);
+          strategyResult = await this.executeRoleBased(taskId, taskStringForProcessing, options);
           break;
         default:
-          result = await this.executeCollaborative(taskId, task, options);
+          // Fallback or error for unknown strategy if not caught by determineOptimalStrategy
+          this.logger.warn('TeamCoordinator', `Unknown strategy determined: ${strategy}, defaulting to collaborative for taskId: ${taskId}`);
+          strategyResult = await this.executeCollaborative(taskId, taskStringForProcessing, options);
       }
 
       const endTime = Date.now();
       const duration = endTime - startTime;
 
-      // Update shared context
+      // Update shared context (remains the same)
       this.sharedContext.taskHistory.push({
         taskId,
-        agentId: 'team_coordination',
-        task,
+        agentId: 'team_coordination', // Or derive more specifically if needed
+        task: taskStringForProcessing, // Log the processed string task
         priority: options?.priority || 1,
         assignedAt: startTime
       });
 
-      this.logger.info('TeamCoordinator', `Team task completed successfully`, {
-        taskId,
+      // **** Crucial: Verify overall task success using ToolUsageVerifier ****
+      const overallSuccessCheck = ToolUsageVerifier.verifyTeamTaskOverallSuccess(strategyResult, strategy);
+
+      if (!overallSuccessCheck.overallSuccess) {
+        this.logger.error('TeamCoordinator', `Team task FAILED (verified) for taskId: ${taskId}`, {
+          duration,
+          strategy,
+          reason: overallSuccessCheck.reason,
+          // executionDetails: strategyResult // Will be part of the returned object
+        });
+        return {
+          success: false, // Set by our verifier!
+          error: overallSuccessCheck.reason || `Overall task failed due to agent errors during ${strategy} execution. Review executionDetails.`,
+          result: {
+            task: originalTaskForReporting, // Report the original input
+            strategy,
+            executionDetails: strategyResult,
+            sharedContext: this.serializeContext(),
+            participatingAgents: strategyResult?.participatingAgents || [],
+            delegations: (strategyResult as any)?.delegations || []
+          },
+          metrics: {
+            duration,
+            startTime,
+            endTime,
+            agentCalls: strategyResult?.participatingAgents?.length || 0 // Or more accurately from strategyResult if available
+          }
+        };
+      }
+
+      // If overallSuccessCheck.overallSuccess is true:
+      this.logger.info('TeamCoordinator', `Team task COMPLETED SUCCESSFULLY (verified) for taskId: ${taskId}`, {
         duration,
         strategy,
-        participatingAgents: result.participatingAgents?.length || 0
+        participatingAgents: strategyResult.participatingAgents?.length || 0
       });
 
       return {
-        success: true,
+        success: true, // This 'true' is now more reliable
         result: {
-          task,
+          task: originalTaskForReporting, // Report the original input
           strategy,
-          executionDetails: result,
+          executionDetails: strategyResult,
           sharedContext: this.serializeContext(),
-          participatingAgents: result.participatingAgents || [],
-          delegations: (result as any).delegations || []  // Type assertion since only collaborative has delegations
+          participatingAgents: strategyResult.participatingAgents || [],
+          delegations: (strategyResult as any).delegations || []
         },
         metrics: {
           duration,
           startTime,
           endTime,
-          agentCalls: result.participatingAgents?.length || 0
+          agentCalls: strategyResult.participatingAgents?.length || 0
         }
       };
 
-    } catch (error) {
+    } catch (error: any) { // Catch any unhandled errors from strategies or other operations
       const endTime = Date.now();
       const duration = endTime - startTime;
 
-      this.logger.error('TeamCoordinator', `Team task execution failed`, {
-        taskId,
+      this.logger.error('TeamCoordinator', `Team task execution CRASHED for taskId: ${taskId}`, {
         error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         duration
       });
 
@@ -365,7 +450,7 @@ export class TeamCoordinator {
           duration,
           startTime,
           endTime,
-          agentCalls: 0
+          agentCalls: 0 // Or attempt to get from partially completed strategyResult if applicable
         }
       };
     }
@@ -716,14 +801,21 @@ export class TeamCoordinator {
   private async executeRoleBased(taskId: string, task: string, options?: any) {
     this.logger.info('TeamCoordinator', `Executing role-based strategy for task: ${taskId}`);
     
-    // Select best agent based on capabilities and current load
     const selectedAgent = await this.selectOptimalAgent(options?.requiredCapabilities);
     
     if (!selectedAgent) {
-      throw new Error('No suitable agent available for task');
+      this.logger.error('TeamCoordinator', 'No suitable agent found for role-based task', { taskId });
+      // Return a definitive failure structure that verifyTeamTaskOverallSuccess will interpret as failed.
+      return {
+        strategy: 'role_based',
+        participatingAgents: [],
+        result: { success: false, error: 'No suitable agent found for role-based task' },
+        executionSummary: 'Task failed: No suitable agent found'
+      };
     }
 
     const result = await this.executeAgentTask(selectedAgent, task, taskId);
+    this.logger.debug('TeamCoordinator', 'executeRoleBased got agent result:', { agent: selectedAgent.name, success: result?.success, error: result?.error }); // DEBUG LOG
 
     return {
       strategy: 'role_based',

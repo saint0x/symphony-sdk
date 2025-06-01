@@ -143,17 +143,50 @@ export class AgentExecutor extends BaseAgent {
             // Analyze task with LLM - simplified approach
             const analysisResult = await this.analyzeAndExecuteTask(task, systemPrompt);
             
-            // Store execution data in memory for learning
+            // Determine overall success based on tool executions within analysisResult
+            let overallTaskSuccess = true; // Assume success unless a tool failed or analysisResult indicates issues
+            let primaryError: string | undefined;
+            let finalResponse = analysisResult.response;
+
+            if (analysisResult.toolsExecuted && analysisResult.toolsExecuted.length > 0) {
+                const firstFailedTool = analysisResult.toolsExecuted.find(t => !t.success);
+                if (firstFailedTool) {
+                    overallTaskSuccess = false;
+                    primaryError = `Tool '${firstFailedTool.name}' failed: ${firstFailedTool.error || 'Unknown tool error'}`;
+                    // Optionally, adjust finalResponse if a tool failed critically
+                    // finalResponse = `Agent task failed due to tool error: ${primaryError}`;
+                }
+            } else {
+                // If no tools were executed, the success depends on the LLM's direct response/intention.
+                // This might need more nuanced handling based on `analysisResult.response` or other indicators.
+                // For now, if no tools executed and no explicit error from analyzeAndExecuteTask, assume success of the LLM interaction.
+            }
+            
+            // If analyzeAndExecuteTask itself threw or indicated a problem, that would be caught by the outer try/catch.
+            // The `analysisResult` might also have its own error field if LLM itself failed to produce a response.
+            // For now, we primarily focus on the success of executed tools.
+
             await this.memory.store(`task:${Date.now()}`, {
                 task,
-                result: analysisResult,
+                result: analysisResult, // Log the detailed result from analyzeAndExecuteTask
+                success: overallTaskSuccess, // Log the determined overall success
+                error: primaryError,
                 timestamp: new Date().toISOString(),
                 agent: this.config.name
             });
 
             return {
-                success: true,
-                result: analysisResult
+                success: overallTaskSuccess,
+                result: { // Ensure result has a nested structure if other parts of system expect it
+                    response: finalResponse,
+                    reasoning: analysisResult.reasoning,
+                    agent: analysisResult.agent,
+                    timestamp: analysisResult.timestamp,
+                    model: analysisResult.model,
+                    tokenUsage: analysisResult.tokenUsage,
+                    toolsExecuted: analysisResult.toolsExecuted
+                },
+                error: primaryError
             };
 
         } catch (error) {

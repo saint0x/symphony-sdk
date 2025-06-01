@@ -4,6 +4,7 @@ import { standardTools } from './index';
 import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
 import { IDatabaseService } from '../../db/types';
 import { LLMFunctionDefinition } from '../../llm/types';
+import { ToolUsageVerifier } from '../../utils/verification';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
@@ -177,6 +178,24 @@ export class ToolRegistry {
                     error: `Tool '${toolName}' not found. Available tools: ${Array.from(this.tools.keys()).join(', ')}`
                 };
             }
+
+            // <<< INTEGRATION START: Input Validation >>>
+            if (tool.inputSchema) {
+                const validationResult = ToolUsageVerifier.verifyData(params, tool.inputSchema, `${toolName}.inputParams`);
+                if (!validationResult.isValid) {
+                    this.logger.warn('ToolRegistry', `Input validation failed for tool: ${toolName}`, {
+                        errors: validationResult.errors,
+                        paramsReceived: params
+                    });
+                    return {
+                        success: false,
+                        error: `Input validation failed for ${toolName}: ${validationResult.errors.map(e => `${e.path}: ${e.message}`).join('; ')}`,
+                        details: validationResult.errors // Provide detailed errors
+                    };
+                }
+                this.logger.info('ToolRegistry', `Input validated successfully for tool: ${toolName}`);
+            }
+            // <<< INTEGRATION END: Input Validation >>>
 
             // Ensure the tool has a handler
             if (!tool.handler) {
