@@ -17,6 +17,10 @@ import { PipelineExecutor, PipelineDefinition, PipelineStepDefinition } from './
 import { TeamCoordinator } from './teams/coordinator';
 import { AgentExecutor } from './agents/executor';
 // import { envConfig } from './utils/env';
+import { INlpService, NlpPatternDefinition, ToolConfig as CoreToolConfig } from './types/tool.types';
+import { NlpService } from './nlp/NlpService';
+import { ContextIntelligenceAPI } from './cache/intelligence-api';
+import { IContextIntelligenceAPI } from './api/IContextIntelligenceAPI';
 
 // Service wrapper interfaces for internal services that don't need to extend IService
 export interface IDatabaseServiceWrapper {
@@ -81,9 +85,11 @@ class ToolService implements IToolService {
     private toolRegistry: ToolRegistry;
     private logger: Logger;
     private _state: ToolLifecycleState = ToolLifecycleState.READY;
+    private nlpService: INlpService;
 
-    constructor(toolRegistry: ToolRegistry) {
+    constructor(toolRegistry: ToolRegistry, nlpService: INlpService) {
         this.toolRegistry = toolRegistry;
+        this.nlpService = nlpService;
         this.logger = Logger.getInstance('ToolService');
     }
 
@@ -92,24 +98,19 @@ class ToolService implements IToolService {
     }
 
     getDependencies(): string[] {
-        return ['ToolRegistry'];
+        return ['ToolRegistry', 'NlpService'];
     }
 
-    async create(config: any): Promise<any> {
+    async create(config: CoreToolConfig): Promise<any> {
         this.logger.info('ToolService', `Creating tool: ${config.name}`);
         
         const toolHandler = config.handler || (() => Promise.resolve({ success: true, result: null }));
 
-        // Construct the object to be registered, adhering to ToolConfig structure
-        const toolToRegister = {
+        const toolToRegister: CoreToolConfig = {
             name: config.name,
             description: config.description || '',
             type: config.type || 'custom',
-            
-            // Critical: handler at the top level
             handler: toolHandler,
-
-            // Pass through other standard top-level ToolConfig properties from user input
             nlp: config.nlp,
             apiKey: config.apiKey,
             timeout: config.timeout,
@@ -118,15 +119,40 @@ class ToolService implements IToolService {
             inputs: config.inputs,
             outputs: config.outputs,
             capabilities: config.capabilities,
-
-            // The nested 'config' property should be what the user provided in *their* 'config.config' (if any)
-            // This is for additional/custom settings, not for handler, inputs, outputs etc. if they have top-level spots.
             config: config.config || {}
         };
 
         this.toolRegistry.registerTool(config.name, toolToRegister);
 
-        // Return tool object with consistent API
+        if (toolToRegister.nlp) {
+            const nlpPatternDef: NlpPatternDefinition = {
+                toolName: toolToRegister.name,
+                nlpPattern: toolToRegister.nlp,
+                source: 'tool_config_init'
+            };
+
+            try {
+                await this.nlpService.loadPatternToRuntime(nlpPatternDef);
+                this.logger.info('ToolService', `NLP pattern for '${toolToRegister.name}' loaded into runtime command map.`);
+            } catch (err: any) {
+                this.logger.warn('ToolService', `Failed to load NLP pattern for '${toolToRegister.name}' to runtime: ${err.message}. Tool may not respond to NLP commands in this session unless pattern is seeded separately.`);
+            }
+
+        } else {
+            this.logger.debug('ToolService', `No explicit NLP pattern for tool '${config.name}'. Registering tool name as default runtime NLP trigger.`);
+            const nlpPatternDef: NlpPatternDefinition = {
+                toolName: toolToRegister.name,
+                nlpPattern: toolToRegister.name,
+                source: 'tool_name_default_runtime'
+            };
+            try {
+                await this.nlpService.loadPatternToRuntime(nlpPatternDef);
+                this.logger.info('ToolService', `Tool name '${toolToRegister.name}' registered as default runtime NLP trigger.`);
+            } catch (err: any) {
+                this.logger.warn('ToolService', `Failed to load tool name '${toolToRegister.name}' as default runtime NLP trigger: ${err.message}.`);
+            }
+        }
+
         const toolObject = {
             name: config.name,
             run: async (params: any) => {
@@ -137,8 +163,6 @@ class ToolService implements IToolService {
                 return await this.toolRegistry.executeTool(config.name, params);
             },
             getInfo: () => this.toolRegistry.getToolInfo(config.name),
-            // Expose the original user-provided config structure for transparency, 
-            // even though the registry uses the transformed 'toolToRegister' structure.
             config: config 
         };
 
@@ -159,7 +183,7 @@ class ToolService implements IToolService {
         return this.toolRegistry.getToolInfo(toolName);
     }
 
-    register(name: string, tool: any): void {
+    register(name: string, tool: CoreToolConfig): void {
         this.logger.info('ToolService', `Registering tool: ${name}`);
         this.toolRegistry.registerTool(name, tool);
     }
@@ -1072,11 +1096,15 @@ export class Symphony implements Partial<ISymphony> {
     private _llm: LLMHandler;
     private _config: SymphonyConfig;
     private _metrics: IMetricsAPI;
-    private _databaseService: DatabaseServiceWrapper;
-    private _cacheService: CacheServiceWrapper;
-    private _memoryService: MemoryServiceWrapper;
-    private _streamingService: StreamingServiceWrapper;
+    private _databaseServiceWrapper: DatabaseServiceWrapper;
+    private _cacheServiceWrapper: CacheServiceWrapper;
+    private _memoryServiceWrapper: MemoryServiceWrapper;
+    private _streamingServiceWrapper: StreamingServiceWrapper;
     
+    // New services for NLP
+    private _contextIntelligenceApi: IContextIntelligenceAPI;
+    private _nlpService: INlpService;
+
     readonly name = 'Symphony';
     readonly initialized = false;
     readonly isInitialized = false;
@@ -1086,7 +1114,6 @@ export class Symphony implements Partial<ISymphony> {
     readonly team: ITeamService;
     readonly pipeline: IPipelineService;
     readonly validation: IValidationManager;
-    // readonly validationManager: IValidationManager;
     
     readonly types = {
         CapabilityBuilder: {
@@ -1108,15 +1135,23 @@ export class Symphony implements Partial<ISymphony> {
         this._logger = Logger.getInstance('Symphony');
         this._llm = LLMHandler.getInstance();
         this._metrics = new MetricsService();
-        this._databaseService = new DatabaseServiceWrapper(config);
-        this._cacheService = new CacheServiceWrapper(this._databaseService.getService());
-        this._memoryService = new MemoryServiceWrapper(this._databaseService.getService());
-        this._streamingService = new StreamingServiceWrapper();
+
+        // Initialize core infrastructure services first
+        this._databaseServiceWrapper = new DatabaseServiceWrapper(config);
+        const actualDbService = this._databaseServiceWrapper.getService();
+
+        this._cacheServiceWrapper = new CacheServiceWrapper(actualDbService);
+        this._memoryServiceWrapper = new MemoryServiceWrapper(actualDbService);
+        this._streamingServiceWrapper = new StreamingServiceWrapper();
+
+        // Initialize services needed for NLP and ToolService
+        this._contextIntelligenceApi = new ContextIntelligenceAPI(actualDbService);
+        this._nlpService = new NlpService(actualDbService, this._contextIntelligenceApi);
         
         const sharedToolRegistry = ToolRegistry.getInstance();
-        sharedToolRegistry.initializeContextIntegration(this._databaseService.getService());
+        sharedToolRegistry.initializeContextIntegration(actualDbService);
         
-        const toolServiceInstance = new ToolService(sharedToolRegistry);
+        const toolServiceInstance = new ToolService(sharedToolRegistry, this._nlpService);
         const agentServiceInstance = new AgentService(sharedToolRegistry);
         const teamServiceInstance = new TeamService(sharedToolRegistry);
         const pipelineServiceInstance = new PipelineService(agentServiceInstance, teamServiceInstance);
@@ -1127,120 +1162,81 @@ export class Symphony implements Partial<ISymphony> {
         this.team = teamServiceInstance;
         this.pipeline = pipelineServiceInstance;
         this.validation = validationServiceInstance;
-        // this.validationManager = validationServiceInstance;
 
-        this._logger.info('Symphony', 'Context intelligence integration enabled', {
+        this._logger.info('Symphony', 'Core services instantiated. Context intelligence integration with ToolRegistry prepared.', {
             contextTools: sharedToolRegistry.getContextTools(),
-            totalTools: sharedToolRegistry.getAvailableTools().length
+            totalToolsRegisteredInitially: sharedToolRegistry.getAvailableTools().length
         });
     }
     
-    get state(): ToolLifecycleState {
-        return this._state;
-    }
+    get state(): ToolLifecycleState { return this._state; }
+    get logger(): Logger { return this._logger; }
+    get llm(): LLMHandler { return this._llm; }
+    get metrics(): IMetricsAPI { return this._metrics; }
     
-    get logger(): Logger {
-        return this._logger;
-    }
+    get db(): IDatabaseService { return this._databaseServiceWrapper.getService(); }
+    get databaseService(): DatabaseServiceWrapper { return this._databaseServiceWrapper; }
+    get cache(): CacheServiceWrapper { return this._cacheServiceWrapper; }
+    get memory(): MemoryServiceWrapper { return this._memoryServiceWrapper; }
+    get streaming(): StreamingServiceWrapper { return this._streamingServiceWrapper; }
+    get nlp(): INlpService { return this._nlpService; }
     
-    get llm(): LLMHandler {
-        return this._llm;
-    }
-    
-    get metrics(): IMetricsAPI {
-        return this._metrics;
-    }
-    
-    get db(): IDatabaseService {
-        return this._databaseService.getService();
-    }
-    
-    get databaseService(): DatabaseServiceWrapper {
-        return this._databaseService;
-    }
-    
-    get cache(): CacheServiceWrapper {
-        return this._cacheService;
-    }
-    
-    get memory(): MemoryServiceWrapper {
-        return this._memoryService;
-    }
-    
-    get streaming(): StreamingServiceWrapper {
-        return this._streamingService;
-    }
-    
-    getState(): ToolLifecycleState {
-        return this._state;
-    }
-    
-    getDependencies(): string[] {
-        return [];
-    }
-    
-    getConfig(): SymphonyConfig {
-        return this._config;
-    }
-    
-    updateConfig(config: Partial<SymphonyConfig>): void {
-        this._config = { ...this._config, ...config };
-    }
-    
-    startMetric(id: string, metadata?: Record<string, any>): void {
-        this._metrics.start(id, metadata);
-    }
-    
-    endMetric(id: string, metadata?: Record<string, any>): void {
-        this._metrics.end(id, metadata);
-    }
-    
-    getMetric(id: string): any {
-        return this._metrics.get(id);
-    }
+    getState(): ToolLifecycleState { return this._state; }
+    getDependencies(): string[] { return []; }
+    getConfig(): SymphonyConfig { return this._config; }
+    updateConfig(config: Partial<SymphonyConfig>): void { this._config = { ...this._config, ...config }; }
+    startMetric(id: string, metadata?: Record<string, any>): void { this._metrics.start(id, metadata); }
+    endMetric(id: string, metadata?: Record<string, any>): void { this._metrics.end(id, metadata); }
+    getMetric(id: string): any { return this._metrics.get(id); }
     
     async initialize(): Promise<void> {
         if (this._state === ToolLifecycleState.READY) {
+            this.logger.info('Symphony', 'Already initialized.');
+            return;
+        }
+        if (this._state === ToolLifecycleState.INITIALIZING) {
+            this.logger.warn('Symphony', 'Initialization already in progress.');
             return;
         }
         
         this._state = ToolLifecycleState.INITIALIZING;
-        this._logger.info('Symphony', 'Initializing...');
+        this._logger.info('Symphony', 'Initializing Symphony SDK...');
         
         try {
-            // First, initialize the database service as other services depend on it
             await this.db.initialize(this._config.db);
             this._logger.info('Symphony', 'Database initialized');
             
-            // Then initialize services that depend on the database in parallel
             await Promise.all([
-                this.tool.initialize(),
-                this.agent.initialize(),
-                this.team.initialize(),
-                this.pipeline.initialize(),
-                this.validation.initialize(),
-                this._cacheService.initialize(),
-                this._memoryService.initialize(),
-                this._streamingService.initialize()
+                this._cacheServiceWrapper.initialize(this._config.cache),
+                this._memoryServiceWrapper.initialize(this._config.memory),
+                this._streamingServiceWrapper.initialize(this._config.streaming)
             ]);
+            this._logger.info('Symphony', 'Dependent services (cache, memory, streaming) initialized.');
+
+            await this.tool.initialize();
+            await this.agent.initialize();
+            await this.team.initialize();
+            await this.pipeline.initialize();
+            await this.validation.initialize();
+            this._logger.info('Symphony', 'Main functional services (tool, agent, team, pipeline, validation) initialized.');
             
-            // Initialize auto-population of cache with tool NLP mappings
             const toolRegistry = (this.tool as ToolService).registry;
-            await toolRegistry.initializeAutoPopulation();
+            await toolRegistry.initializeAutoPopulation(this._nlpService);
+            this._logger.info('Symphony', 'ToolRegistry auto-population/runtime NLP loading initiated.');
             
-            // Set cache service on LLM Handler after cache is initialized
             const { LLMHandler } = await import('./llm/handler');
             const llmHandler = LLMHandler.getInstance();
-            llmHandler.setCacheService(this._cacheService);
+            llmHandler.setCacheService(this._cacheServiceWrapper);
             
             this._state = ToolLifecycleState.READY;
-            this._logger.info('Symphony', 'Initialization complete', {
-                contextToolsAvailable: toolRegistry.getContextTools().length,
-                totalToolsRegistered: toolRegistry.getAvailableTools().length
+            (this as any).initialized = true;
+            (this as any).isInitialized = true;
+            this._logger.info('Symphony', 'Symphony SDK Initialization complete', {
+                toolsAvailable: toolRegistry.getAvailableTools().length
             });
         } catch (error) {
             this._state = ToolLifecycleState.ERROR;
-            this._logger.error('Symphony', 'Initialization failed', { error });
+            this._logger.error('Symphony', 'Symphony SDK Initialization failed', { error });
             throw error;
         }
     }
@@ -1253,10 +1249,10 @@ export class Symphony implements Partial<ISymphony> {
             pipeline: this.pipeline,
             validation: this.validation,
             metrics: this._metrics,
-            database: this._databaseService,
-            cache: this._cacheService,
-            memory: this._memoryService,
-            streaming: this._streamingService
+            database: this._databaseServiceWrapper,
+            cache: this._cacheServiceWrapper,
+            memory: this._memoryServiceWrapper,
+            streaming: this._streamingServiceWrapper
         };
         return services[name];
     }

@@ -54,6 +54,13 @@ export interface CacheResult {
     executionTime: number;
 }
 
+export interface RuntimeToolCallDetails {
+    name: string;
+    parameters: Record<string, any>;
+    confidence?: number;
+    source?: string; // Optional: to track where this runtime pattern originated
+}
+
 export class CommandMapProcessor {
     private static instance: CommandMapProcessor;
     private patterns: Map<string, Pattern> = new Map();
@@ -176,14 +183,17 @@ export class CommandMapProcessor {
 
     private async savePatternToDatabase(pattern: Pattern): Promise<void> {
         try {
-            const existingPatterns = await this.database.getXMLPatterns();
-            const exists = existingPatterns.some((p: any) => p.pattern_id === pattern.id);
+            // Check if pattern with this ID already exists. This check might need refinement
+            // if runtime patterns can clash with XML loaded patterns by ID.
+            // For now, assuming pattern.id is unique or saveXMLPattern handles upserts/conflicts.
+            const existingPatternInDB = await this.database.getNlpPatternRecordById?.(pattern.id);
 
-            if (!exists) {
+            if (!existingPatternInDB) {
+                 this.logger.info('CommandMapProcessor', `Saving new pattern to DB: ${pattern.id}`)
                 await this.database.saveXMLPattern({
                     pattern_id: pattern.id,
                     group_id: await this.getOrCreateGroupId(pattern.groupType),
-                    pattern_name: pattern.id,
+                    pattern_name: pattern.id, // Or a more descriptive name
                     confidence_score: pattern.confidence,
                     trigger_text: pattern.trigger,
                     variables: JSON.stringify(pattern.variables),
@@ -193,11 +203,17 @@ export class CommandMapProcessor {
                     success_count: pattern.usageStats.successCount,
                     failure_count: pattern.usageStats.failureCount,
                     average_latency_ms: pattern.usageStats.averageLatency,
-                    active: true
+                    active: true,
+                    // Add created_at, updated_at if your DB schema for XML patterns supports it
                 });
+            } else {
+                // Optionally, update existing pattern in DB if it differs significantly,
+                // or log that it already exists. For now, skipping update if ID exists.
+                this.logger.debug('CommandMapProcessor', `Pattern ${pattern.id} already exists in DB, not re-saving from savePatternToDatabase.`);
             }
         } catch (error) {
-            this.logger.error('CommandMapProcessor', `Failed to save pattern ${pattern.id}`, { error });
+            this.logger.error('CommandMapProcessor', `Failed to save pattern ${pattern.id} to database`, { error });
+            // Decide if this should throw
         }
     }
 
@@ -506,54 +522,97 @@ export class CommandMapProcessor {
     }
 
     /**
-     * Add Runtime Pattern - Creates new patterns dynamically from tool registrations
+     * Adds a runtime-generated NLP pattern to the in-memory command map.
+     * Does NOT persist the pattern to the database.
+     * @param nlpPattern The natural language pattern string.
+     * @param toolCallDetails Details of the tool call associated with this pattern.
+     * @returns The created Pattern object, or null if creation failed.
      */
-    async addRuntimePattern(nlpPattern: string, toolCall: { name: string; parameters: Record<string, any>; confidence?: number }): Promise<void> {
+    public addRuntimePatternToMemory(nlpPattern: string, toolCallDetails: RuntimeToolCallDetails): Pattern | null {
         try {
-            this.logger.info('CommandMapProcessor', 'Adding runtime pattern', {
+            this.logger.info('CommandMapProcessor', 'Adding runtime pattern to memory', {
                 nlpPattern: nlpPattern.substring(0, 50) + '...',
-                toolName: toolCall.name
+                toolName: toolCallDetails.name,
+                source: toolCallDetails.source
             });
 
-            const patternId = `runtime_${toolCall.name}_${Date.now()}`;
+            const patternId = `runtime_${toolCallDetails.name}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
             
-            // Create pattern from NLP text
             const pattern: Pattern = {
                 id: patternId,
-                groupType: 'runtime',
-                confidence: toolCall.confidence || 0.7,
+                groupType: toolCallDetails.source || 'runtime_memory',
+                confidence: toolCallDetails.confidence || 0.75, // Slightly higher default for runtime if actively added
                 trigger: nlpPattern,
                 variables: this.extractVariablesFromNLP(nlpPattern),
-                examples: [nlpPattern],
-                toolName: toolCall.name,
-                parameters: toolCall.parameters,
+                examples: [nlpPattern], // Basic example
+                toolName: toolCallDetails.name,
+                parameters: toolCallDetails.parameters,
                 usageStats: {
                     successCount: 0,
                     failureCount: 0,
-                    lastUsed: new Date(),
+                    lastUsed: new Date(), // Mark as used recently
                     averageLatency: 0
                 }
             };
 
-            // Add to in-memory patterns
             this.patterns.set(patternId, pattern);
-
-            // Save to database
-            await this.savePatternToDatabase(pattern);
-
-            this.logger.info('CommandMapProcessor', 'Runtime pattern added successfully', {
+            this.logger.info('CommandMapProcessor', 'Runtime pattern added to memory successfully', {
                 patternId,
-                toolName: toolCall.name,
-                confidence: pattern.confidence
+                toolName: toolCallDetails.name
             });
-
+            return pattern;
         } catch (error) {
-            this.logger.error('CommandMapProcessor', 'Failed to add runtime pattern', { 
+            this.logger.error('CommandMapProcessor', 'Failed to add runtime pattern to memory', { 
                 error, 
                 nlpPattern, 
-                toolName: toolCall.name 
+                toolName: toolCallDetails.name 
             });
+            return null;
         }
+    }
+
+    /**
+     * Persists a given runtime pattern (previously added to memory) to the database.
+     * @param patternToPersist The Pattern object to save.
+     */
+    public async persistRuntimePattern(patternToPersist: Pattern): Promise<void> {
+        if (!patternToPersist) {
+            this.logger.warn('CommandMapProcessor', 'Attempted to persist a null/undefined pattern. Skipping.');
+            return;
+        }
+        try {
+            this.logger.info('CommandMapProcessor', 'Persisting runtime pattern to database', {
+                patternId: patternToPersist.id,
+                toolName: patternToPersist.toolName
+            });
+            await this.savePatternToDatabase(patternToPersist);
+            this.logger.info('CommandMapProcessor', 'Runtime pattern persisted to database successfully', {
+                patternId: patternToPersist.id
+            });
+        } catch (error) {
+            this.logger.error('CommandMapProcessor', 'Failed to persist runtime pattern to database', { 
+                error, 
+                patternId: patternToPersist.id
+            });
+            // Decide if this should re-throw
+        }
+    }
+
+    /**
+     * RENAMED & REFACTORED from old addRuntimePattern.
+     * Adds a runtime-generated NLP pattern to memory AND persists it to the database.
+     * @param nlpPattern The natural language pattern string.
+     * @param toolCallDetails Details of the tool call associated with this pattern.
+     * @returns The created Pattern object if successful, otherwise null.
+     */
+    async addAndPersistRuntimePattern(nlpPattern: string, toolCallDetails: RuntimeToolCallDetails): Promise<Pattern | null> {
+        const patternInMemory = this.addRuntimePatternToMemory(nlpPattern, toolCallDetails);
+        
+        if (patternInMemory) {
+            await this.persistRuntimePattern(patternInMemory);
+            return patternInMemory;
+        }
+        return null;
     }
 
     /**

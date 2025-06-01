@@ -203,6 +203,16 @@ export interface IDatabaseService {
   
   // Health check for cache intelligence
   healthCheck(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; [key: string]: any }>;
+
+  // --- Methods for StoredNlpPattern (Managed by NlpService) ---
+  findNlpPatternRecord(query: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern | null>;
+  saveNlpPatternRecord(pattern: StoredNlpPattern): Promise<StoredNlpPattern>; 
+  getNlpPatternRecordById(id: string): Promise<StoredNlpPattern | null>;
+  getNlpPatternRecordsByTool(toolName: string): Promise<StoredNlpPattern[]>;
+  updateNlpPatternRecord(id: string, updates: Partial<Omit<StoredNlpPattern, 'id' | 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern | null>;
+  deleteNlpPatternRecord(id: string): Promise<boolean>;
+  countNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<number>;
+  getAllNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern[]>;
 }
 
 export interface DatabaseHealth {
@@ -338,4 +348,7 @@ export class DatabaseQueryError extends DatabaseError {
     super(message, 'QUERY_ERROR', details);
     this.name = 'DatabaseQueryError';
   }
-} 
+}
+
+// Add StoredNlpPattern if it's not already visible here, or ensure import from tool.types
+import { StoredNlpPattern } from '../types/tool.types'; 

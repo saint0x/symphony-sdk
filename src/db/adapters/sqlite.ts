@@ -19,7 +19,8 @@ import {
   AggregateOperations,
   TransactionContext,
   DatabaseConnectionError,
-  DatabaseQueryError
+  DatabaseQueryError,
+  DatabaseError
 } from '../types';
 
 export class SQLiteAdapter implements DatabaseAdapter {
@@ -263,6 +264,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   // Table operations
   table(name: string): TableOperations {
+    this.ensureConnected();
     return new SQLiteTableOperations(this, name);
   }
 
@@ -343,6 +345,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   }
 
   async dropTable(name: string): Promise<void> {
+    this.ensureConnected();
     await this.executeRun(`DROP TABLE IF EXISTS ${name}`);
   }
 
@@ -388,6 +391,68 @@ export class SQLiteAdapter implements DatabaseAdapter {
       avgQueryTime,
       uptime: Date.now() - this.stats.startTime
     };
+  }
+
+  async describeTable(tableName: string): Promise<TableSchema> {
+    this.ensureConnected();
+    this.logger.debug('SQLiteAdapter', `Describing table ${tableName}`);
+    try {
+      const columns: any[] = await this.query(`PRAGMA table_info(${tableName})`);
+      if (!columns || columns.length === 0) {
+          throw new DatabaseError(`Table ${tableName} not found or has no columns.`, 'NOT_FOUND');
+      }
+      const schema: TableSchema = {};
+      for (const column of columns) {
+          schema[column.name] = {
+              type: this.mapSQLiteType(column.type),
+              primary: column.pk === 1,
+              required: column.notnull === 1,
+              default: column.dflt_value,
+              // Note: PRAGMA table_info doesn't directly give unique or index info easily.
+              // More complex parsing of PRAGMA index_list and PRAGMA index_info would be needed for those.
+              // Foreign key info would require PRAGMA foreign_key_list.
+              // For simplicity, we're only mapping what table_info directly provides.
+          };
+      }
+      return schema;
+    } catch (error: any) {
+        this.logger.error('SQLiteAdapter', `Failed to describe table ${tableName}`, { message: error.message, stack: error.stack });
+        if (error instanceof DatabaseError) throw error;
+        throw new DatabaseError(`Failed to describe table ${tableName}: ${error.message}`, 'QUERY_ERROR', error);
+    }
+  }
+
+  private ensureConnected(): void {
+    if (!this.db) throw new DatabaseConnectionError('Database not connected');
+  }
+
+  private mapSQLiteType(type: string): 'integer' | 'string' | 'real' | 'boolean' | 'json' | 'datetime' {
+    switch (type.toUpperCase()) {
+      case 'INTEGER':
+      case 'INT':
+        return 'integer';
+      case 'TEXT':
+      case 'VARCHAR':
+      case 'CHAR':
+      case 'CLOB':
+        return 'string';
+      case 'REAL':
+      case 'FLOAT':
+      case 'DOUBLE':
+        return 'real';
+      case 'BOOLEAN':
+      case 'BOOL':
+        return 'boolean';
+      case 'JSON':
+        return 'json';
+      case 'DATETIME':
+      case 'DATE':
+      case 'TIMESTAMP':
+        return 'datetime';
+      default:
+        this.logger.warn('SQLiteAdapter', `Unknown SQLite type encountered in mapSQLiteType: '${type}'. Defaulting to string or consider mapping it.`);
+        return 'string';
+    }
   }
 }
 

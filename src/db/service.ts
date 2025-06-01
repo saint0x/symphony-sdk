@@ -17,6 +17,8 @@ import {
   ToolExecution,
   SessionContext
 } from './types';
+import { StoredNlpPattern } from '../types/tool.types';
+import { mapNlpPatternQueryToDbRecord, nlpPatternToDbRecord, dbRecordToNlpPattern } from './mappers';
 
 export class DatabaseService implements IDatabaseService {
   private adapter: DatabaseAdapter | null = null;
@@ -194,7 +196,8 @@ export class DatabaseService implements IDatabaseService {
         
         return schema;
       } catch (error) {
-        throw new DatabaseValidationError(`Failed to describe table ${tableName}: ${error}`);
+        this.logger.error('DatabaseService', `Failed to describe table '${tableName}' during schema.describe`, { error });
+        throw new DatabaseValidationError(`Failed to describe table ${tableName}: ${(error as Error).message}`);
       }
     }
   };
@@ -674,6 +677,172 @@ export class DatabaseService implements IDatabaseService {
         error: error.message,
         timestamp: new Date()
       };
+    }
+  }
+
+  private async ensureNlpPatternsTableExists(): Promise<void> {
+    this.ensureInitialized();
+    const tableName = 'nlp_patterns';
+    try {
+        const tableExists = await this.schema.exists(tableName);
+        if (!tableExists) {
+            this.logger.info('DatabaseService', `Table '${tableName}' does not exist. Creating...`);
+            await this.schema.create(tableName, {
+                id: { type: 'string', primary: true },
+                tool_name: { type: 'string', required: true, index: true },
+                nlp_pattern: { type: 'string', required: true },
+                version: { type: 'string' },
+                is_active: { type: 'boolean', default: true, index: true },
+                source: { type: 'string' },
+                created_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' },
+                updated_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' }
+            });
+            this.logger.info('DatabaseService', `Table '${tableName}' created successfully.`);
+        }
+    } catch (error) {
+        this.logger.error('DatabaseService', `Error ensuring table '${tableName}' exists or creating it.`, { error });
+        throw error;
+    }
+  }
+
+  // --- Implementation for StoredNlpPattern methods ---
+
+  async findNlpPatternRecord(query: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern | null> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    const dbQuery = mapNlpPatternQueryToDbRecord(query);
+    this.logger.debug('DatabaseService', 'Finding NLP pattern record', { originalQuery: query, dbQuery });
+    try {
+      const record = await this.adapter!.table('nlp_patterns').where(dbQuery).findOne();
+      return dbRecordToNlpPattern(record);
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error finding NLP pattern record', { error, originalQuery: query });
+      return null;
+    }
+  }
+
+  async saveNlpPatternRecord(pattern: StoredNlpPattern): Promise<StoredNlpPattern> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    this.logger.debug('DatabaseService', 'Saving NLP pattern record', { patternId: pattern.id, toolName: pattern.toolName });
+    try {
+      const existing = await this.adapter!.table('nlp_patterns').where({ id: pattern.id }).findOne();
+      
+      if (existing) {
+        this.logger.debug('DatabaseService', `Updating existing NLP pattern record: ${pattern.id}`);
+        // For updates, ensure createdAt is not part of the payload to DB, and use isUpdate=true for the mapper
+        const { createdAt, ...updatePayload } = pattern;
+        const dataToUpdateForDb = nlpPatternToDbRecord(updatePayload, true);
+        await this.adapter!.table('nlp_patterns').update({ id: pattern.id }, dataToUpdateForDb);
+      } else {
+        this.logger.debug('DatabaseService', `Inserting new NLP pattern record: ${pattern.id}`);
+        const dataToInsertForDb = nlpPatternToDbRecord(pattern, false);
+        await this.adapter!.table('nlp_patterns').insert(dataToInsertForDb);
+      }
+      const savedOrUpdatedRecord = await this.adapter!.table('nlp_patterns').where({ id: pattern.id }).findOne();
+      const resultPattern = dbRecordToNlpPattern(savedOrUpdatedRecord);
+      if (!resultPattern) {
+        throw new DatabaseError(`Failed to fetch pattern after save/update: ${pattern.id}`, 'FETCH_AFTER_SAVE_FAILED');
+      }
+      return resultPattern;
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error saving NLP pattern record', { error, patternId: pattern.id });
+      if (error instanceof DatabaseError) throw error;
+      throw new DatabaseError(`Failed to save NLP pattern record: ${(error as Error).message}`, 'QUERY_ERROR', error);
+    }
+  }
+
+  async getNlpPatternRecordById(id: string): Promise<StoredNlpPattern | null> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    this.logger.debug('DatabaseService', 'Getting NLP pattern record by ID', { id });
+    try {
+      const record = await this.adapter!.table('nlp_patterns').where({ id }).findOne();
+      return dbRecordToNlpPattern(record);
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error getting NLP pattern record by ID', { error, id });
+      return null;
+    }
+  }
+
+  async getNlpPatternRecordsByTool(toolName: string): Promise<StoredNlpPattern[]> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    const dbQuery = mapNlpPatternQueryToDbRecord({ toolName });
+    this.logger.debug('DatabaseService', 'Getting NLP pattern records by tool', { toolName, dbQuery });
+    try {
+      const records = await this.adapter!.table('nlp_patterns').where(dbQuery).find();
+      return records.map(dbRecordToNlpPattern).filter(p => p !== null) as StoredNlpPattern[];
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error getting NLP pattern records by tool', { error, toolName });
+      return [];
+    }
+  }
+
+  async updateNlpPatternRecord(id: string, updates: Partial<Omit<StoredNlpPattern, 'id' | 'createdAt'>>): Promise<StoredNlpPattern | null> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    this.logger.debug('DatabaseService', 'Updating NLP pattern record', { id, updates });
+    try {
+      // For updates, ensure createdAt is not part of the payload to DB, and use isUpdate=true for the mapper
+      // The `updates` object already Omit<..., 'createdAt'>, so we don't need to worry about it being in `updates` itself.
+      const dataToUpdateForDb = nlpPatternToDbRecord({ ...updates, id }, true);
+      // Explicitly delete created_at from the mapped object before sending to DB, just in case mapper added it somehow (though it shouldn't for isUpdate=true)
+      if (dataToUpdateForDb.created_at !== undefined) {
+        delete dataToUpdateForDb.created_at;
+      }
+
+      const result = await this.adapter!.table('nlp_patterns').update({ id }, dataToUpdateForDb);
+      if (result.success && result.rowsAffected > 0) {
+        const updatedRecord = await this.adapter!.table('nlp_patterns').where({ id }).findOne();
+        return dbRecordToNlpPattern(updatedRecord);
+      }
+      this.logger.warn('DatabaseService', 'NLP pattern record not found or not updated', { id });
+      return null;
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error updating NLP pattern record', { error, id });
+      if (error instanceof DatabaseError) throw error;
+      throw new DatabaseError(`Failed to update NLP pattern record: ${(error as Error).message}`, 'QUERY_ERROR', error);
+    }
+  }
+
+  async deleteNlpPatternRecord(id: string): Promise<boolean> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    this.logger.debug('DatabaseService', 'Deleting NLP pattern record', { id });
+    try {
+      const result = await this.adapter!.table('nlp_patterns').delete({ id });
+      return result.success && result.rowsDeleted > 0;
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error deleting NLP pattern record', { error, id });
+      return false;
+    }
+  }
+
+  async countNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<number> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    const dbQuery = query ? mapNlpPatternQueryToDbRecord(query) : {};
+    this.logger.debug('DatabaseService', 'Counting NLP pattern records', { originalQuery: query, dbQuery });
+    try {
+      return await this.adapter!.table('nlp_patterns').where(dbQuery).count();
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error counting NLP pattern records', { error, originalQuery: query });
+      return 0;
+    }
+  }
+
+  async getAllNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern[]> {
+    await this.ensureNlpPatternsTableExists();
+    this.ensureInitialized();
+    const dbQuery = query ? mapNlpPatternQueryToDbRecord(query) : {};
+    this.logger.debug('DatabaseService', 'Getting all NLP pattern records', { originalQuery: query, dbQuery });
+    try {
+      const records = await this.adapter!.table('nlp_patterns').where(dbQuery).find();
+      return records.map(dbRecordToNlpPattern).filter(p => p !== null) as StoredNlpPattern[];
+    } catch (error) {
+      this.logger.error('DatabaseService', 'Error getting all NLP pattern records', { error, originalQuery: query });
+      return [];
     }
   }
 }

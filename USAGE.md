@@ -19,7 +19,7 @@ This guide provides comprehensive documentation for using the Symphony SDK with 
 ## Installation & Setup
 
 ```bash
-npm install symphony-sdk
+bun add symphonic
 ```
 
 ```typescript

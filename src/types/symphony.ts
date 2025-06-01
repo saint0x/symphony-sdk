@@ -4,6 +4,9 @@ import { Logger } from '../utils/logger';
 import { IDatabaseService, DatabaseConfig } from '../db/types';
 import { LLMConfig as RichLLMConfig } from '../llm/types';
 import { IToolService, IAgentService, ITeamService, IPipelineService, IValidationManager } from './interfaces';
+import { IntelligenceOptions } from '../cache/service';
+import { MemoryConfig as InternalMemoryConfig } from '../memory/service';
+import { StreamingConfig } from '../streaming/service';
 
 export interface SymphonyConfig {
     name?: string;
@@ -15,6 +18,9 @@ export interface SymphonyConfig {
     };
     llm?: RichLLMConfig;
     db?: DatabaseConfig;
+    cache?: IntelligenceOptions;
+    memory?: InternalMemoryConfig;
+    streaming?: StreamingConfig;
     serviceRegistry: {
         enabled: boolean;
         maxRetries: number;

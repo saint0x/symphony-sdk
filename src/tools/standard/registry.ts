@@ -1,4 +1,4 @@
-import { ToolConfig, ToolResult } from '../../types/sdk';
+import { ToolConfig as CoreToolConfig, ToolResult, INlpService } from '../../types/tool.types';
 import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
 import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
@@ -7,7 +7,7 @@ import { LLMFunctionDefinition } from '../../llm/types';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
-    private tools: Map<string, ToolConfig> = new Map();
+    private tools: Map<string, CoreToolConfig> = new Map();
     private logger: Logger;
     private contextAPI?: ContextIntelligenceAPI;
 
@@ -38,61 +38,56 @@ export class ToolRegistry {
     private registerContextTools(): void {
         if (!this.contextAPI) return;
 
-        const contextTools: ToolConfig[] = [
+        const contextTools: CoreToolConfig[] = [
             {
                 name: 'validateCommandMapUpdate',
                 description: 'Validates command map updates for consistency and conflicts',
                 type: 'context_management',
                 nlp: 'validate command map update for patterns and conflicts',
-                config: {
-                    handler: async (params: any) => {
-                        return await this.contextAPI!.validateCommandMapUpdate(params);
-                    }
-                }
+                handler: async (params: any) => {
+                    return await this.contextAPI!.validateCommandMapUpdate(params);
+                },
+                config: {}
             },
             {
                 name: 'updateLearningContext',
                 description: 'Updates learning context based on execution results and feedback',
                 type: 'context_management', 
                 nlp: 'update learning context with execution results and user feedback',
-                config: {
-                    handler: async (params: any) => {
-                        return await this.contextAPI!.updateLearningContext(params);
-                    }
-                }
+                handler: async (params: any) => {
+                    return await this.contextAPI!.updateLearningContext(params);
+                },
+                config: {}
             },
             {
                 name: 'executeContextPruning',
                 description: 'Prunes old or low-confidence context entries for performance',
                 type: 'context_management',
                 nlp: 'execute context pruning to remove old or low confidence entries',
-                config: {
-                    handler: async (params: any) => {
-                        return await this.contextAPI!.executeContextPruning(params);
-                    }
-                }
+                handler: async (params: any) => {
+                    return await this.contextAPI!.executeContextPruning(params);
+                },
+                config: {}
             },
             {
                 name: 'updatePatternStats',
                 description: 'Updates pattern usage statistics and performance metrics',
                 type: 'context_management',
                 nlp: 'update pattern statistics and performance metrics',
-                config: {
-                    handler: async (params: any) => {
-                        return await this.contextAPI!.updatePatternStats(params);
-                    }
-                }
+                handler: async (params: any) => {
+                    return await this.contextAPI!.updatePatternStats(params);
+                },
+                config: {}
             },
             {
                 name: 'validateContextTreeUpdate',
                 description: 'Validates context tree consistency and structure',
                 type: 'context_management',
                 nlp: 'validate context tree update for consistency and structure',
-                config: {
-                    handler: async (params: any) => {
-                        return await this.contextAPI!.validateContextTreeUpdate(params);
-                    }
-                }
+                handler: async (params: any) => {
+                    return await this.contextAPI!.validateContextTreeUpdate(params);
+                },
+                config: {}
             }
         ];
 
@@ -112,40 +107,51 @@ export class ToolRegistry {
 
     private initializeStandardTools(): void {
         // Register all standard tools with user-friendly names
-        const toolMappings: Record<string, ToolConfig> = {
+        const toolMappings: Record<string, CoreToolConfig> = {
             // File System Tools
-            'readFile': standardTools.find(t => t.name === 'readFileTool')!,
-            'writeFile': standardTools.find(t => t.name === 'writeFileTool')!,
+            'readFile': standardTools.find(t => t.name === 'readFileTool')! as CoreToolConfig,
+            'writeFile': standardTools.find(t => t.name === 'writeFileTool')! as CoreToolConfig,
             
             // Search Tools  
-            'webSearch': standardTools.find(t => t.name === 'webSearchTool')!,
+            'webSearch': standardTools.find(t => t.name === 'webSearchTool')! as CoreToolConfig,
             
             // Document Tools
-            'parseDocument': standardTools.find(t => t.name === 'parseDocumentTool')!,
+            'parseDocument': standardTools.find(t => t.name === 'parseDocumentTool')! as CoreToolConfig,
             
             // Code Tools
-            'writeCode': standardTools.find(t => t.name === 'writeCodeTool')!,
+            'writeCode': standardTools.find(t => t.name === 'writeCodeTool')! as CoreToolConfig,
             
             // Planning Tools
-            'createPlan': standardTools.find(t => t.name === 'createPlanTool')!,
+            'createPlan': standardTools.find(t => t.name === 'createPlanTool')! as CoreToolConfig,
             
             // Cognitive Tools
-            'ponder': standardTools.find(t => t.name === 'ponderTool')!,
+            'ponder': standardTools.find(t => t.name === 'ponderTool')! as CoreToolConfig,
 
             // Also register by internal names for compatibility
-            'readFileTool': standardTools.find(t => t.name === 'readFileTool')!,
-            'writeFileTool': standardTools.find(t => t.name === 'writeFileTool')!,
-            'webSearchTool': standardTools.find(t => t.name === 'webSearchTool')!,
-            'parseDocumentTool': standardTools.find(t => t.name === 'parseDocumentTool')!,
-            'writeCodeTool': standardTools.find(t => t.name === 'writeCodeTool')!,
-            'createPlanTool': standardTools.find(t => t.name === 'createPlanTool')!,
-            'ponderTool': standardTools.find(t => t.name === 'ponderTool')!
+            'readFileTool': standardTools.find(t => t.name === 'readFileTool')! as CoreToolConfig,
+            'writeFileTool': standardTools.find(t => t.name === 'writeFileTool')! as CoreToolConfig,
+            'webSearchTool': standardTools.find(t => t.name === 'webSearchTool')! as CoreToolConfig,
+            'parseDocumentTool': standardTools.find(t => t.name === 'parseDocumentTool')! as CoreToolConfig,
+            'writeCodeTool': standardTools.find(t => t.name === 'writeCodeTool')! as CoreToolConfig,
+            'createPlanTool': standardTools.find(t => t.name === 'createPlanTool')! as CoreToolConfig,
+            'ponderTool': standardTools.find(t => t.name === 'ponderTool')! as CoreToolConfig
         };
 
         // Register tools and filter out undefined ones
         Object.entries(toolMappings).forEach(([name, tool]) => {
             if (tool) {
-                this.tools.set(name, tool);
+                // Ensure the tool structure conforms to CoreToolConfig, especially the handler.
+                // Standard tools might have handler inside a config sub-object.
+                const handler = tool.handler || (tool.config as any)?.handler;
+                const toolToStore: CoreToolConfig = {
+                    ...tool, // Spread existing sdk.ToolConfig properties
+                    handler: handler, // Ensure handler is top-level
+                    config: tool.config || {} // Ensure config sub-object exists
+                };
+                if (!toolToStore.handler) {
+                    this.logger.warn('ToolRegistry', `Standard tool '${name}' (internal: ${tool.name}) is missing a handler or handler not top-level after mapping. It may not be executable.`);
+                }
+                this.tools.set(name, toolToStore);
                 this.logger.info('ToolRegistry', `Registered tool: ${name}`, {
                     internalName: tool.name,
                     type: tool.type,
@@ -174,10 +180,10 @@ export class ToolRegistry {
 
             // Ensure the tool has a handler
             if (!tool.handler) {
-                this.logger.error('ToolRegistry', `Tool ${toolName} does not have a handler function defined directly on the tool object.`);
+                this.logger.error('ToolRegistry', `Tool ${toolName} does not have a handler function.`);
                 return {
                     success: false,
-                    error: `Tool ${toolName} is not executable (no direct handler).`
+                    error: `Tool ${toolName} is not executable (no handler).`
                 };
             }
 
@@ -198,7 +204,7 @@ export class ToolRegistry {
             });
 
             // Auto-update learning context for non-context-management tools
-            if (this.contextAPI && !tool.type.includes('context_management')) {
+            if (this.contextAPI && tool.type !== 'context_management') {
                 try {
                     await this.contextAPI.updateLearningContext({
                         toolName,
@@ -245,12 +251,9 @@ export class ToolRegistry {
         return Array.from(this.tools.keys());
     }
 
-    getToolInfo(toolName: string): ToolConfig | null {
+    getToolInfo(toolName: string): CoreToolConfig | null {
         const tool = this.tools.get(toolName);
-        if (!tool) return null;
-        
-        // Return the original tool config (no modifications)
-        return tool;
+        return tool || null;
     }
 
     /**
@@ -258,7 +261,7 @@ export class ToolRegistry {
      * Use this for agent intelligence and reflection
      */
     getToolDetails(toolName: string): { 
-        config: ToolConfig; 
+        config: CoreToolConfig; 
         parameters: {
             inputs: Array<{ name: string; required?: boolean; type?: string }>;
             outputs: Array<{ name: string; type?: string }>;
@@ -276,12 +279,12 @@ export class ToolRegistry {
     /**
      * Extract tool parameters from config for agent intelligence
      */
-    private extractToolParameters(tool: ToolConfig): {
+    private extractToolParameters(tool: CoreToolConfig): {
         inputs: Array<{ name: string; required?: boolean; type?: string }>;
         outputs: Array<{ name: string; type?: string }>;
     } {
-        const inputs = tool.config.inputs || tool.inputs || [];
-        const outputs = tool.config.outputs || tool.outputs || [];
+        const inputs = tool.config?.inputs || tool.inputs || [];
+        const outputs = tool.config?.outputs || tool.outputs || [];
         
         // Convert string arrays to structured format
         return {
@@ -336,7 +339,7 @@ export class ToolRegistry {
     /**
      * Converts a tool's input parameters into a JSON schema compatible with LLM function definitions.
      */
-    private toolParamsToJSONSchema(tool: ToolConfig): { type: 'object'; properties: Record<string, any>; required?: string[] } {
+    private toolParamsToJSONSchema(tool: CoreToolConfig): { type: 'object'; properties: Record<string, any>; required?: string[] } {
         const details = this.extractToolParameters(tool);
         const properties: Record<string, any> = {};
         const required: string[] = [];
@@ -387,65 +390,30 @@ export class ToolRegistry {
     /**
      * Enhanced Tool Registration with Auto-Cache Population
      */
-    registerTool(name: string, tool: ToolConfig): void {
-        this.tools.set(name, tool);
-        
+    registerTool(name: string, tool: CoreToolConfig): void {
+        // Ensure handler is top-level, and config sub-object is present.
+        const handler = tool.handler || (tool.config as any)?.handler;
+        const toolToStore: CoreToolConfig = {
+            ...tool,
+            handler: handler,
+            config: tool.config || {}
+        };
+        if (!toolToStore.handler) {
+             this.logger.warn('ToolRegistry', `Tool '${name}' being registered is missing a handler or handler not top-level. It may not be executable.`);
+        }
+
+        this.tools.set(name, toolToStore);
         this.logger.info('ToolRegistry', `Custom tool registered: ${name}`, {
-            type: tool.type,
-            description: tool.description,
-            hasNLP: !!tool.nlp
+            type: toolToStore.type,
+            description: toolToStore.description,
+            hasNLP: !!toolToStore.nlp
         });
-
-        // Auto-populate cache if tool has NLP field
-        if (tool.nlp && this.contextAPI) {
-            this.populateCacheWithNLP(name, tool).catch(error => {
-                this.logger.error('ToolRegistry', 'Failed to populate cache with NLP mapping', {
-                    error,
-                    toolName: name,
-                    nlp: tool.nlp
-                });
-            });
-        }
-    }
-
-    /**
-     * Populate Cache with NLP Mapping - Auto-registers tool patterns
-     */
-    private async populateCacheWithNLP(toolName: string, tool: ToolConfig): Promise<void> {
-        if (!tool.nlp || !this.contextAPI) return;
-
-        try {
-            this.logger.info('ToolRegistry', 'Auto-populating cache with NLP mapping', {
-                toolName,
-                nlp: tool.nlp.substring(0, 50) + '...'
-            });
-
-            await this.contextAPI.registerToolNLPMapping(toolName, tool.nlp, {
-                toolType: tool.type,
-                description: tool.description,
-                capabilities: tool.capabilities || [],
-                autoRegistered: true,
-                registeredAt: new Date().toISOString()
-            });
-
-            this.logger.info('ToolRegistry', 'Cache NLP mapping populated successfully', {
-                toolName,
-                nlpLength: tool.nlp.length
-            });
-
-        } catch (error) {
-            this.logger.error('ToolRegistry', 'Failed to populate cache with NLP mapping', {
-                error,
-                toolName,
-                nlp: tool.nlp
-            });
-        }
     }
 
     /**
      * Get Enhanced Tool List with Full Metadata
      */
-    getEnhancedToolList(): Array<ToolConfig & { 
+    getEnhancedToolList(): Array<CoreToolConfig & { 
         name: string; 
         registeredAt?: string;
         parameters?: {
@@ -454,7 +422,7 @@ export class ToolRegistry {
         };
     }> {
         return Array.from(this.tools.entries()).map(([name, tool]) => ({
-            ...tool,
+            ...(tool as CoreToolConfig), // Cast to CoreToolConfig
             name,
             parameters: this.extractToolParameters(tool),
             registeredAt: new Date().toISOString() // Could track actual registration time
@@ -471,31 +439,31 @@ export class ToolRegistry {
     }
 
     /**
-     * Initialize All Auto-Population - Called after context integration setup
+     * REVISED: This method now leverages NlpService to load all persisted, active NLP patterns 
+     * into the runtime memory (e.g., ContextIntelligenceAPI command map).
+     * It should be called during Symphony SDK initialization.
+     * @param nlpService An instance of INlpService.
      */
-    async initializeAutoPopulation(): Promise<void> {
+    async initializeAutoPopulation(nlpService: INlpService): Promise<void> {
+        this.logger.info('ToolRegistry', 'Initializing runtime loading of all persisted NLP patterns via NlpService.');
         if (!this.contextAPI) {
-            this.logger.warn('ToolRegistry', 'Cannot initialize auto-population without context API');
+            this.logger.warn('ToolRegistry', 'Cannot initialize runtime NLP patterns as ContextIntelligenceAPI (via this.contextAPI) is not available. This is unexpected if context integration was initialized.');
+            return;
+        }
+        if (!nlpService) {
+            this.logger.error('ToolRegistry', 'NlpService instance was not provided to initializeAutoPopulation. Cannot load persisted NLP patterns.');
             return;
         }
 
-        this.logger.info('ToolRegistry', 'Initializing auto-population for existing tools');
-
-        let populatedCount = 0;
-        for (const [name, tool] of this.tools.entries()) {
-            if (tool.nlp) {
-                try {
-                    await this.populateCacheWithNLP(name, tool);
-                    populatedCount++;
-                } catch (error) {
-                    this.logger.warn('ToolRegistry', 'Failed to auto-populate tool', { error, name });
-                }
-            }
+        try {
+            const result = await nlpService.loadAllPersistedPatternsToRuntime();
+            this.logger.info('ToolRegistry', 'NlpService finished loading persisted patterns to runtime.', {
+                loaded: result.loaded,
+                failed: result.failed,
+                errors: result.errors.length > 0 ? result.errors : undefined
+            });
+        } catch (error) {
+            this.logger.error('ToolRegistry', 'Error during NlpService.loadAllPersistedPatternsToRuntime call from initializeAutoPopulation.', { error });
         }
-
-        this.logger.info('ToolRegistry', 'Auto-population completed', {
-            totalTools: this.tools.size,
-            populatedTools: populatedCount
-        });
     }
 } 

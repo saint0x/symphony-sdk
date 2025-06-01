@@ -51,6 +51,18 @@ CREATE TABLE xml_patterns (
     FOREIGN KEY (group_id) REFERENCES pattern_groups(id) ON DELETE CASCADE
 );
 
+-- NLP Patterns (Managed by NlpService, for user-defined and seeded patterns)
+CREATE TABLE IF NOT EXISTS nlp_patterns (
+    id TEXT PRIMARY KEY,
+    tool_name TEXT NOT NULL,
+    nlp_pattern TEXT NOT NULL,
+    version TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    source TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Pattern usage history (for learning optimization)
 CREATE TABLE pattern_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -380,6 +392,10 @@ CREATE INDEX idx_user_data_accessed ON user_data(last_accessed DESC);
 
 -- Performance Metrics
 CREATE INDEX idx_perf_metrics_type_time ON performance_metrics(metric_type, time_period, created_at DESC);
+
+-- NLP Patterns
+CREATE INDEX IF NOT EXISTS idx_nlp_patterns_tool_name ON nlp_patterns(tool_name);
+CREATE INDEX IF NOT EXISTS idx_nlp_patterns_is_active ON nlp_patterns(is_active);
 
 -- ================================================================
 -- INITIAL DATA SETUP
