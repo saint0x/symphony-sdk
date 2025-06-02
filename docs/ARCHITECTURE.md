@@ -37,7 +37,7 @@ These form the primary hierarchy for building applications:
 
 - **Teams (`TeamCoordinator` - Conceptual, `TeamConfig`, `TeamResult`):**
   - **Functionality**: Groups of specialized agents collaborating on larger tasks, managed by coordination strategies (e.g., parallel, sequential, role-based delegation).
-  - **Implementation**: Defined by `TeamConfig` (specifying member agents, strategy, delegation rules). Execution is orchestrated by a `TeamCoordinator` (or similar entity, potentially exposed via `symphony.team.run()`).
+  - **Implementation**: Defined by `TeamConfig` (specifying member agents, strategy, delegation rules). Execution is orchestrated by a `TeamCoordinator` (exposed via `symphony.team.run()`).
   - **Interaction**: The `TeamCoordinator` receives a team-level task, breaks it down (potentially using a manager agent or LLM-driven planning), delegates sub-tasks to appropriate member agents, and aggregates results.
 
 - **Pipelines (`PipelineExecutor` - Conceptual, `PipelineConfig`, `PipelineResult`):**

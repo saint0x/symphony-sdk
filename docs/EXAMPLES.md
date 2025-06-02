@@ -218,7 +218,7 @@ import { TeamConfig, AgentConfig, AgentExecutor, ToolRegistry } from 'symphonic'
 const querySupportAgentConfig: AgentConfig = {
   name: 'QuerySupportAgent',
   description: 'Handles user queries by providing information or escalating to other specialists.',
-  task: 'Understand user queries, provide answers from a knowledge base (simulated), or identify when to delegate for specific actions like sending an email.',
+  task: 'Understand user queries, provide answers from a knowledge base, or identify when to delegate for specific actions like sending an email.',
   tools: [], // This agent might not use tools directly, or could have a knowledge base access tool
   llm: {
     provider: 'openai',

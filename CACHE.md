@@ -15,7 +15,7 @@ The Command Map provides the ability to translate natural language queries or pr
 
 *   **`ToolRegistry`:** The central registry where all tools (their definitions and handlers) are stored.
 *   **`CommandMapProcessor` (`src/cache/map-processor.ts`):**
-    *   Maintains an in-memory map (`Map<string, Pattern>`) where keys are NLP trigger strings (or pattern IDs) and values are `Pattern` objects detailing the associated tool, parameter mappings, confidence, etc.
+    *   Maintains an in-memory map (`Map<string, Pattern>`) where keys are NLP trigger strings (or pattern IDs) and values are `Pattern` objects detailing the associated tool, parameter mappings, etc.
     *   **Initialization:**
         *   Loads predefined patterns from an XML file (e.g., `src/cache/command-map.xml`) during its initialization. These are typically system-level or core tool NLP triggers.
         *   Can also load and reconcile these XML patterns with versions stored in the `xml_patterns` database table.

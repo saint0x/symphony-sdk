@@ -6,9 +6,9 @@ This document delves into the Cache Intelligence system within the Symphony SDK,
 
 The Cache Intelligence system in Symphony aims to go beyond simple key-value caching. Its goal is to optimize SDK performance, reduce redundant LLM calls or tool executions, and potentially guide agents towards more efficient task completion strategies based on historical data.
 
-As per `USAGE.md` and `ARCHITECTURE.md`, this system might be managed by a `ContextIntelligenceAPI` (conceptual) and interacted with via `symphony.cache.*` methods.
+This is managed by a `ContextIntelligenceAPI` and interacted with via `symphony.cache.*` methods.
 
-Key features suggested by `USAGE.md` include:
+Key features:
 - **Basic Caching**: Standard get/set/delete operations for caching arbitrary data, LLM responses, or tool results.
 - **Pattern Matching**: Identifying recurring patterns in task queries or LLM interactions to potentially offer shortcuts or pre-computed responses/tool calls.
 - **Context Trees**: Building hierarchical representations of context to better understand the current state and retrieve relevant information or predict next steps.

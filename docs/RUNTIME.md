@@ -12,8 +12,8 @@ When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescripti
 
 2.  **System Prompt Generation**:
     - `SystemPromptService.generateSystemPrompt(agentConfig, agentHasTools)` is called. This service constructs a base system prompt. If `agentHasTools` is true, it typically includes descriptions of the available tools, their input schemas, and general instructions for how the agent should consider using them.
-    - If `agentConfig.systemPrompt` is provided, it might be used as a base or override.
-    - If `agentConfig.directives` are present, they are appended to the generated system prompt.
+    - If `agentConfig.systemPrompt` is provided, it's used as a base or override.
+    - If `agentConfig.directives` are present, they are appended to the system-generated system prompt.
 
 3.  **JSON Mode Enforcement (if `agentHasTools` is true)**:
     - The `AgentExecutor` appends its standardized, verbose JSON structural requirements (the "ALL CAPS" instructions) to the system prompt. This addendum explicitly tells the LLM:
@@ -30,13 +30,13 @@ When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescripti
         - `expectsJsonResponse`: Set to `true` if `agentHasTools` is true. This is a hint for the `LLMProvider`.
 
 5.  **LLM Interaction via `LLMHandler`**:
-    - `AgentExecutor` calls `this.llm.complete(llmRequest)`. `this.llm` is an instance of an `LLMProvider` (e.g., `OpenAIProvider`) obtained via `LLMHandler.getInstance().getProvider(...)` (typically during `AgentExecutor` initialization).
+    - `AgentExecutor` calls `this.llm.complete(llmRequest)`. `this.llm` is an instance of an `LLMProvider` (e.g., `OpenAIProvider`) obtained via `LLMHandler.getInstance().getProvider(...)` (during `AgentExecutor` initialization).
     - **Inside `LLMHandler.getProvider()`** (Simplified):
         - Determines the target provider (from `request.provider`, or default).
         - Retrieves or initializes the `LLMProvider` instance.
     - **Inside `LLMHandler.complete()`** (Simplified for this context, actual logic involves `request.llmConfig` overrides which might re-register/fetch a provider instance):
         - It ultimately calls `providerInstance.complete(request)`.
-    - **Inside `OpenAIProvider.complete()`** (Example for OpenAI):
+    - **Inside `OpenAIProvider.complete()`**:
         - Sees `request.expectsJsonResponse === true`.
         - Sets `response_format: { type: "json_object" }` in the parameters for the OpenAI API call.
         - Makes the actual HTTPS request to the OpenAI API.
@@ -51,7 +51,7 @@ When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescripti
             - `ToolRegistry.getInstance().executeTool(toolName, parameters)` is called.
             - **Inside `ToolRegistry.executeTool()`**:
                 - The tool's registered `handler` function is retrieved.
-                - Input validation against the tool's `inputSchema` is performed (if schema exists).
+                - Input validation against the tool's `inputSchema` is performed.
                 - The `handler(parameters)` is invoked.
                 - The `ToolResult` from the handler is returned.
             - `AgentExecutor` records this `ToolResult` in its `toolsExecuted` array.
@@ -89,8 +89,8 @@ When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescripti
     - If validation fails, returns a `ToolResult` with `success: false` and error details.
 3.  **Handler Invocation**: If validation passes (or no schema), calls `tool.handler(params)`.
 4.  **Result Propagation**: Returns the `Promise<ToolResult>` from the handler.
-5.  **Contextual Updates** (Conceptual, from `USAGE.md`):
-    - May update a learning context via `ContextIntelligenceAPI` if the tool is not a context management tool itself.
+5.  **Contextual Updates**:
+    - Updates learning context via `ContextIntelligenceAPI` if the tool is not a context management tool itself.
 6.  **Metrics**: Wraps the result with execution metrics (duration, start/end times).
 
 ## 3. LLM Provider Interaction (`LLMHandler`)
@@ -99,7 +99,7 @@ When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescripti
 - **Provider Registration (`registerProvider`)**: Allows adding or updating provider configurations. For OpenAI, it ensures the environment API key is used.
 - **Provider Retrieval (`getProvider`)**: Gets a provider instance by name or the default.
 - **Request-Specific Configuration (`complete`, `completeStream` methods)**:
-    - If an `LLMRequest` includes `llmConfig` (for overriding model, temp, etc., for that specific call), the `LLMHandler` currently re-registers (effectively updates) the provider instance with these temporary settings before the call and then uses that updated instance. This means a request-specific config temporarily alters the shared provider instance. *Note: A more advanced system might clone a provider or apply overrides without mutating the shared instance if true request isolation is needed without re-registration.* The current approach implies that sequential calls with different `llmConfig`s will use a provider reflecting the latest `llmConfig` passed through `registerProvider`.
+    - If an `LLMRequest` includes `llmConfig` (for overriding model, temp, etc., for that specific call), the `LLMHandler` currently re-registers (effectively updates) the provider instance with these temporary settings before the call and then uses that updated instance. This means a request-specific config temporarily alters the shared provider instance. *Note: A more advanced method might be to clone a provider or apply overrides without mutating the shared instance if true request isolation is needed without re-registration.* The current approach implies that sequential calls with different `llmConfig`s will use a provider reflecting the latest `llmConfig` passed through `registerProvider`.
 
 ## 4. System Prompt Assembly
 

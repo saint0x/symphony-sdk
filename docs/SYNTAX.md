@@ -54,7 +54,7 @@ export interface ToolResult<T = any> {
 Defines LLM settings, used within `AgentConfig` and for agents in `TeamConfig`.
 
 ```typescript
-// From: src/types/sdk.ts (previously had useFunctionCalling, now removed)
+// From: src/types/sdk.ts
 export interface LLMBaseConfig {
   model: string;         // LLM model identifier (e.g., 'gpt-3.5-turbo', 'gpt-4o-mini').
   provider?: string;      // Optional: LLM provider name (e.g., 'openai', 'anthropic'). 
@@ -111,7 +111,7 @@ export interface TeamConfig {
   // log?: { ... };
 }
 
-export interface TeamStrategy {      // Conceptual structure from USAGE.md
+export interface TeamStrategy {  
   name?: string;
   description?: string;
   assignmentLogic?: (task: string, agents: AgentConfig[]) => Promise<string[]>; // Or agent names
@@ -122,7 +122,7 @@ export interface TeamStrategy {      // Conceptual structure from USAGE.md
   };
 }
 
-export interface DelegationStrategy { // Conceptual structure from USAGE.md
+export interface DelegationStrategy {
   type: 'custom' | 'rule-based' | 'llm_driven';
   customLogic?: (task: string, agents: AgentConfig[]) => Promise<string[]>;
   rules?: Array<{ condition: string; assignTo: string[]; }>;
@@ -274,7 +274,7 @@ export interface LLMResponse {
 Standardized result object returned by `agent.run()` or `agentExecutor.executeTask()`.
 
 ```typescript
-// From: src/types/sdk.ts (simplified)
+// From: src/types/sdk.ts
 export interface AgentResult<T = any> {
   success: boolean;
   result?: {                        // Main result data from the agent's execution.

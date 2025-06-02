@@ -1,0 +1,11 @@
+
+
+- std tools vec to pass in, maybe also via registry, so no hardcoded into prompt for llm awareness
+
+- respondtouser api for cli feedback
+
+- /fixnlptable.md
+
+- test script for when llm uses a tool but pattern match was incorrect (should negatively update cmd map)
+
+- actually apply to CONTEXT.json???
