@@ -1,156 +1,109 @@
-# Symphony: An Intelligent Orchestra of Agents
+# Symphony SDK: Architecture Overview
 
-Symphony orchestrates a seamless collaboration between AI agents, tools, and memory systems, much like a conductor leading an orchestra. Each component plays its part in perfect harmony, creating a powerful system that learns and improves with every interaction.
+This document provides a technical breakdown of the Symphony SDK's architecture, its core layers, and how they interact to enable complex AI-driven applications.
 
-## The Symphony Experience
+## Core Philosophy
 
-When you interact with Symphony, you're engaging with a living system that:
-- Understands and breaks down complex tasks
-- Learns from every interaction
-- Maintains context and memory across operations
-- Continuously improves its performance
-- Ensures security and reliability
+The Symphony SDK is designed to be a modular, extensible, and robust framework for building and orchestrating AI agents and workflows. Key design principles include:
+- **Layered Abstraction**: Clear separation of concerns between tools, agents, teams, and pipelines.
+- **Developer Experience**: Intuitive APIs and sensible defaults, with flexibility for customization.
+- **Determinism & Reliability**: Emphasis on structured communication (e.g., JSON for tool calls), robust error handling, and clear success/failure reporting.
+- **Observability**: Built-in mechanisms for logging, metrics, and health monitoring.
+- **Extensibility**: Easy integration of custom tools, agents, and even LLM providers.
 
-Here's how the magic happens:
+## SDK Layers and Components
 
-## The Core Ensemble
+The SDK is structured into several key layers and supporting components:
 
-### The Conductor: Symphony Core
+### 1. Core Orchestration Layers
 
-At the heart of our platform sits the Symphony conductor, orchestrating the perfect interplay between:
-- Intelligent agents that solve problems
-- Tools that interact with the world
-- Memory systems that maintain context
-- LLMs that provide reasoning capabilities
+These form the primary hierarchy for building applications:
 
-### The Soloists: Agents
+- **Tools (`ToolRegistry`, `ToolConfig`, `ToolResult`):**
+  - **Functionality**: The most granular layer, representing individual, executable capabilities (e.g., file I/O, web search, custom business logic).
+  - **Implementation**: Each tool is defined by a `ToolConfig` (specifying its name, description, input schema, and handler function) and registered with the global `ToolRegistry`.
+  - **Interaction**: Tools are invoked by agents (via the `AgentExecutor`) or pipeline steps, receiving parameters and returning a `ToolResult` (indicating success/failure and data).
 
-Agents are our virtuoso performers. Each agent:
-- Specializes in specific types of tasks
-- Carries its own memory and experience
-- Knows exactly which tools to use
-- Learns and improves with each performance
+- **Agents (`AgentExecutor`, `AgentConfig`, `AgentResult`):**
+  - **Functionality**: Intelligent entities that use an LLM to reason about tasks and utilize a defined set of tools to achieve goals.
+  - **Implementation**: Defined by `AgentConfig` (specifying name, description, task, tools, LLM settings, system prompt, directives). Execution is primarily handled by `AgentExecutor`.
+  - **Interaction**: `AgentExecutor` takes a task description and the agent's configuration. It:
+    1.  Constructs a system prompt (combining agent-specific prompts with SDK-appended JSON structural guidance if tools are present).
+    2.  Communicates with the configured LLM (via `LLMHandler` and the appropriate `LLMProvider`).
+    3.  If tools are present, it expects a JSON response from the LLM indicating a tool call (`{"tool_name": "...", "parameters": {...}}`) or no tool (`{"tool_name": "none", "response": "..."}`).
+    4.  Parses the LLM's JSON response and, if a tool is indicated, invokes the tool via `ToolRegistry.executeTool()`.
+    5.  Formats the final `AgentResult`, including the LLM's response/reasoning and details of any tools executed.
+  - **JSON Mode**: This is a critical, automatic feature for agents configured with tools. The SDK (specifically `AgentExecutor`) appends robust instructions to the system prompt to ensure the LLM responds in a parsable JSON format. For OpenAI, this is further enhanced by setting `response_format: { type: "json_object" }` in the API call (handled by the `OpenAIProvider` based on an `expectsJsonResponse` hint from `AgentExecutor`).
 
-Think of agents as expert musicians who:
-- Read the score (understand the task)
-- Choose their instruments (select tools)
-- Remember past performances (use memory)
-- Adapt their technique (learn and improve)
+- **Teams (`TeamCoordinator` - Conceptual, `TeamConfig`, `TeamResult`):**
+  - **Functionality**: Groups of specialized agents collaborating on larger tasks, managed by coordination strategies (e.g., parallel, sequential, role-based delegation).
+  - **Implementation**: Defined by `TeamConfig` (specifying member agents, strategy, delegation rules). Execution is orchestrated by a `TeamCoordinator` (or similar entity, potentially exposed via `symphony.team.run()`).
+  - **Interaction**: The `TeamCoordinator` receives a team-level task, breaks it down (potentially using a manager agent or LLM-driven planning), delegates sub-tasks to appropriate member agents, and aggregates results.
 
-### The Instruments: Tools
+- **Pipelines (`PipelineExecutor` - Conceptual, `PipelineConfig`, `PipelineResult`):**
+  - **Functionality**: Define and execute complex, multi-step workflows involving sequences of tools, agents, or even other teams/pipelines. Support data flow, conditional logic, error handling, and parallelism.
+  - **Implementation**: Defined by `PipelineConfig` (specifying steps, variables, error strategies). Execution is managed by a `PipelineExecutor` (potentially exposed via `symphony.pipeline.run()`).
+  - **Interaction**: The `PipelineExecutor` processes steps sequentially (respecting dependencies), passing outputs from one step as inputs to another, evaluating conditions, and managing the overall workflow state.
 
-Tools are the instruments our agents play to interact with the world. Each tool:
-- Has a specific purpose and capability
-- Produces reliable, consistent results
-- Can be fine-tuned for different situations
-- Comes with built-in safety measures
+### 2. LLM Abstraction Layer
 
-## The Performance: How It All Works
+- **`LLMHandler`**: A central service that manages different LLM provider instances. It handles:
+  - Registration of LLM providers (e.g., OpenAI, Anthropic).
+  - Selection of the appropriate provider based on configuration or request.
+  - Potentially request-specific configuration overrides.
+- **`LLMProvider` (Interface and Implementations, e.g., `OpenAIProvider`):**
+  - **Functionality**: Adapters for specific LLM APIs (e.g., OpenAI API, Anthropic API).
+  - **Implementation**: Each provider implements the `LLMProvider` interface (`complete`, `completeStream`).
+  - **Interaction**: `AgentExecutor` (via `this.llm`) calls `complete()` or `completeStream()` on the active `LLMProvider` instance, passing an `LLMRequest`. The provider translates this into an API call to the specific LLM service.
+  - **OpenAIProvider Specifics**: Leverages the `expectsJsonResponse` flag in `LLMRequest` (set by `AgentExecutor` for tool-enabled agents) to enable OpenAI's native `response_format: { type: "json_object" }`.
+- **`LLMRequest` / `LLMResponse` / `LLMConfig` / `LLMMessage` (Types):** Standardized interfaces for interacting with LLMs, ensuring consistency across providers.
 
-```mermaid
-graph TD
-    A[User Request] --> B[Symphony Conductor]
-    B --> C[Agent Selection]
-    C --> D[Task Analysis]
-    D --> E[Tool Selection]
-    E --> F[Execution]
-    F --> G[Results]
-    G --> H[Learning Loop]
-    H --> I[Memory Update]
-    I --> J[Tool Optimization]
-    J --> K[Knowledge Base]
-    K --> C
-    subgraph "Continuous Improvement"
-        H
-        I
-        J
-        K
-    end
-    style A fill:#e6f3ff,stroke:#333,stroke-width:2px,color:#000
-    style B fill:#fff2cc,stroke:#333,stroke-width:2px,color:#000
-    style C fill:#e6ffe6,stroke:#333,stroke-width:2px,color:#000
-    style D fill:#ffe6e6,stroke:#333,stroke-width:2px,color:#000
-    style E fill:#e6e6ff,stroke:#333,stroke-width:2px,color:#000
-    style F fill:#fff2e6,stroke:#333,stroke-width:2px,color:#000
-    style G fill:#ccffcc,stroke:#333,stroke-width:2px,color:#000
-    style H fill:#ffffcc,stroke:#333,stroke-width:2px,color:#000
-    style I fill:#ffccff,stroke:#333,stroke-width:2px,color:#000
-    style J fill:#ccffff,stroke:#333,stroke-width:2px,color:#000
-    style K fill:#ffe6cc,stroke:#333,stroke-width:2px,color:#000
-```
+### 3. Supporting Systems
 
-1. **Opening Movement: Task Reception**
-   - User presents a task
-   - Symphony analyzes and routes it
-   - The perfect agent is selected
+- **System Prompt Service (`SystemPromptService`):**
+  - **Functionality**: Responsible for generating the initial system prompt for an agent based on its `AgentConfig` (including its description, task, and list of tools) and whether tools are present.
+  - **Interaction**: Called by `AgentExecutor` during task execution. The output of this service is then further augmented by `AgentExecutor` with the verbose JSON structural requirements if tools are enabled.
 
-2. **Main Performance: Task Execution**
-   - Agent studies the task
-   - Selects appropriate tools
-   - Executes with precision
-   - Monitors and adjusts in real-time
+- **Cache Intelligence (`symphony.cache`, `ContextIntelligenceAPI` - Conceptual):
+  - **Functionality**: Provides mechanisms for caching LLM calls, tool responses, and employing advanced techniques like pattern matching and context trees to optimize performance and reduce redundant computations.
+  - **Interaction**: Can be integrated at various levels (e.g., `LLMHandler` might use it for caching LLM responses, `AgentExecutor` might cache tool results).
 
-3. **Harmony: Memory Integration**
-   - Short-term memory captures immediate context
-   - Long-term memory stores valuable insights
-   - Episodic memory maintains task history
-   - All three types work in perfect harmony
+- **Memory System (`symphony.memory`):
+  - **Functionality**: Offers short-term (session-based) and long-term (persistent) memory capabilities for agents and the system to store and retrieve contextual information, user preferences, conversation history, etc.
+  - **Interaction**: Agents can be designed to interact with this system to maintain context across interactions or learn over time.
 
-4. **Encore: Learning and Improvement**
-   - Results are verified
-   - Successful patterns are remembered
-   - Tools are optimized
-   - Knowledge is preserved
+- **Streaming Service (`symphony.streaming`):
+  - **Functionality**: Facilitates real-time progress updates and intermediate data streaming for long-running operations, particularly useful for pipelines and complex agent tasks.
+  - **Interaction**: Components like `AgentExecutor` or `PipelineExecutor` can publish updates to streams, which client applications can subscribe to.
 
-## The Virtuoso Features
+- **Database Service (`symphony.db`):
+  - **Functionality**: Provides an abstraction layer for database interactions, used for persisting SDK configurations, logs, metrics, memory, and cache data (if configured).
+  - **Interaction**: Various SDK components might use this service for persistence. Users might also be exposed to limited query capabilities for operational data.
 
-### Intelligent Memory System
+- **Logging (`Logger`) & Metrics (`symphony.metrics`):
+  - **Functionality**: Core services for observability. The `Logger` provides structured logging across the SDK. The metrics system collects data on performance, token usage, etc.
+  - **Interaction**: Used throughout the SDK. Users can configure log levels and access collected metrics.
 
-Like a musician's muscle memory, our three-tiered system provides:
-- Lightning-fast recent context (Short-Term)
-- Deep, searchable knowledge (Long-Term)
-- Rich, sequential experiences (Episodic)
+## Data Flow for a Tool-Enabled Agent Task
 
-### Self-Learning Loop
+1.  `AgentExecutor.executeTask(taskDescription)` is called.
+2.  `AgentExecutor` determines the agent has tools.
+3.  `SystemPromptService.generateSystemPrompt()` creates a base system prompt (including tool descriptions).
+4.  `AgentExecutor` appends the verbose JSON structural requirements to this system prompt.
+5.  `AgentExecutor` prepares an `LLMRequest` containing the full system prompt and user task, and sets `expectsJsonResponse = true`.
+6.  `AgentExecutor` calls `this.llm.complete(llmRequest)` (where `this.llm` is an `LLMProvider` instance obtained from `LLMHandler`).
+7.  The specific `LLMProvider` (e.g., `OpenAIProvider`):
+    - If OpenAI, sees `expectsJsonResponse` and adds `response_format: { type: "json_object" }` to its API call parameters.
+    - Makes the API call to the LLM service.
+8.  LLM responds (ideally with structured JSON).
+9.  `LLMProvider` returns an `LLMResponse`.
+10. `AgentExecutor` parses `llmResponse.content` as JSON.
+11. If a tool call is found (`tool_name` and `parameters`):
+    - `AgentExecutor` calls `ToolRegistry.getInstance().executeTool(toolName, parameters)`.
+    - The tool's `handler` executes and returns a `ToolResult`.
+12. `AgentExecutor` processes the `ToolResult` and formulates the final `AgentResult` for the `executeTask` call.
+13. If `tool_name: "none"` is found, `AgentExecutor` uses the content of the `response` field as the agent's textual answer.
 
-Every performance makes the system better:
-- Successful patterns are recognized and stored
-- Tools are fine-tuned based on usage
-- Agents learn from experience
-- The entire system grows smarter
+This architecture aims to provide a powerful yet manageable framework for developing sophisticated AI applications.
 
-### Real-Time Adaptation
-
-The system constantly monitors and adjusts:
-- Resource usage is optimized
-- Errors are caught and handled
-- Performance is measured
-- Security is maintained
-
-## Behind the Scenes
-
-### Safety and Security
-
-Like a well-protected concert hall:
-- API keys are securely vaulted
-- Inputs are carefully validated
-- Resources are managed
-- Access is controlled
-
-### Performance Monitoring
-
-Like a conductor's ear for perfection:
-- Execution timing is precise
-- Resource usage is tracked
-- Quality is measured
-- Improvements are identified
-
-## The End Result
-
-Symphony delivers a seamless, intelligent, and ever-improving performance:
-- Tasks are completed with precision
-- Knowledge is preserved and applied
-- The system learns and grows
-- Results get better over time
-
-Whether you're orchestrating a simple task or a complex operation, Symphony ensures every performance is better than the last, creating a harmonious blend of artificial intelligence, practical tools, and continuous learning. 
+--- 
