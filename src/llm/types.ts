@@ -8,7 +8,6 @@ export interface LLMConfig {
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
-    useFunctionCalling?: boolean; // Feature flag for function calling
 }
 
 // Configuration that can be passed in requests (no API key)
@@ -17,7 +16,6 @@ export interface LLMRequestConfig {
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
-    useFunctionCalling?: boolean; // Feature flag for function calling
 }
 
 export interface LLMMessage {
@@ -58,6 +56,7 @@ export interface LLMRequest {
     stream?: boolean;
     provider?: string;
     llmConfig?: LLMRequestConfig;  // Only non-sensitive configuration
+    expectsJsonResponse?: boolean; // ADDED: Hint that the caller expects a JSON-structured response
 }
 
 export interface LLMResponse {

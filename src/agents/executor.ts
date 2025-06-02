@@ -122,13 +122,14 @@ export class AgentExecutor extends BaseAgent {
         try {
             this.logger.info('AgentExecutor', `Executing task: ${task}`);
 
-            // Default to true for function calling
-            const agentLLMDetails = typeof this.config.llm === 'object' ? this.config.llm : null;
-            const effectiveUseFunctionCalling = agentLLMDetails?.useFunctionCalling !== false; // True unless explicitly false
+            // Determine if the agent has tools, as this now dictates JSON mode and prompt structure.
+            const agentHasTools = this.config.tools && this.config.tools.length > 0;
 
-            let systemPrompt = this.systemPromptService.generateSystemPrompt(this.config, effectiveUseFunctionCalling);
+            // The second argument to generateSystemPrompt now indicates if tools are present,
+            // guiding it to prepare a prompt suitable for tool use (implying JSON output).
+            let systemPrompt = this.systemPromptService.generateSystemPrompt(this.config, agentHasTools);
             
-            // Append custom directives if provided and not using custom systemPrompt
+            // Append custom directives if provided and not using custom systemPrompt (from agent config)
             if (this.config.directives && !this.config.systemPrompt) {
                 systemPrompt += `\n\nAdditional Directives:\n${this.config.directives}`;
             }
@@ -158,47 +159,36 @@ export class AgentExecutor extends BaseAgent {
                 }
             } else {
                 // No tools were executed.
-                // Check if shouldUseJSONMode is defined in this scope or needs to be passed/re-derived
-                const agentLLMConfig = typeof this.config.llm === 'object' ? this.config.llm as RichLLMAgentConfig : null;
-                const shouldUseJSONMode = agentLLMConfig?.useFunctionCalling !== false; // Re-derive for safety, or pass from above
+                const agentHasTools = this.config.tools && this.config.tools.length > 0;
 
-                if (this.config.tools && this.config.tools.length > 0) {
+                if (agentHasTools) {
                     // Agent has tools configured, but none were selected or executed by the LLM.
-                    // Check if the LLM explicitly said "no tool".
-                    let llmIndicatedNoTool = false;
-                    // Ensure analysisResult.response is the raw JSON string from LLM when in JSON mode
-                    // and tools were expected to be decided via that JSON.
-                    if (analysisResult.response && shouldUseJSONMode) { 
+                    // Check if the LLM explicitly said "no tool" in its JSON response.
+                    let llmIndicatedNoToolViaJson = false;
+                    if (analysisResult.response) { 
                         try {
-                            // The analysisResult.response here might already be processed (e.g. "Tool X executed...")
-                            // We need to inspect the *original* LLM output if it was a direct JSON response
-                            // not leading to a tool_call. This logic might be better placed inside analyzeAndExecuteTask
-                            // or ensure analyzeAndExecuteTask returns a more specific flag for "no tool indicated".
-
-                            // For now, let's assume analysisResult.response *could* be the direct JSON if no tool was called.
+                            // analysisResult.response should be the direct content from LLM if no tool was called
                             const parsedResponse = JSON.parse(analysisResult.response);
                             if (parsedResponse.tool_name === 'none' || parsedResponse.toolName === 'none') {
-                                llmIndicatedNoTool = true;
+                                llmIndicatedNoToolViaJson = true;
                             }
                         } catch (e) {
                             // Not a valid JSON response, or not a tool_name:none structure.
-                            // This catch means if it's not 'tool_name:none', it's treated as not explicitly saying no tool.
-                            this.logger.debug('AgentExecutor', 'Could not parse analysisResult.response as JSON or no explicit "none" tool found.', { response: analysisResult.response, error: e instanceof Error ? e.message : String(e) });
+                            this.logger.debug('AgentExecutor', 'executeTask: Could not parse analysisResult.response as JSON or no explicit "none" tool found when checking no-tool case.', { response: analysisResult.response, error: e instanceof Error ? e.message : String(e) });
                         }
                     }
 
-                    if (!llmIndicatedNoTool) {
+                    if (!llmIndicatedNoToolViaJson) {
                         overallTaskSuccess = false;
-                        primaryError = `Agent ${this.config.name} has tools configured but did not select or execute any tool. The LLM response did not explicitly indicate 'no tool'. Task may be incomplete.`;
-                        finalResponse = analysisResult.response; // Keep original LLM response
+                        primaryError = `Agent ${this.config.name} has tools configured but did not select or execute any tool. The LLM response also did not explicitly indicate 'no tool' in the expected JSON format. Task may be incomplete.`;
+                        // finalResponse remains analysisResult.response (which could be non-JSON or malformed JSON in this failure case)
                         this.logger.warn('AgentExecutor', primaryError, { agentName: this.config.name, configuredTools: this.config.tools.length, llmResponse: analysisResult.response });
                     } else {
-                         this.logger.info('AgentExecutor', `Agent ${this.config.name} explicitly indicated no tool was needed via JSON response.`, { agentName: this.config.name });
-                         // In this case, overallTaskSuccess remains true as LLM made a conscious decision.
+                         this.logger.info('AgentExecutor', `Agent ${this.config.name} explicitly indicated no tool was needed via JSON response. Task considered successful based on LLM decision.`, { agentName: this.config.name });
+                         // overallTaskSuccess remains true
                     }
                 }
-                // If agent has no tools configured, then overallTaskSuccess remains true (default)
-                // as the task relies solely on direct LLM response.
+                // If agent has no tools configured, then overallTaskSuccess remains true by default.
             }
             
             // If analyzeAndExecuteTask itself threw or indicated a problem, that would be caught by the outer try/catch.
@@ -249,63 +239,62 @@ export class AgentExecutor extends BaseAgent {
     // Simplified analysis and execution - let LLM handle tool selection through registry
     private async analyzeAndExecuteTask(task: string, systemPrompt: string) {
         const agentLLMConfig = typeof this.config.llm === 'object' ? this.config.llm as RichLLMAgentConfig : null;
-        // effectiveUseStructuredJSONOutput determines if we request JSON mode or use tool_calling API
-        const shouldUseJSONMode = agentLLMConfig?.useFunctionCalling !== false; // Defaults to true, re-interpreting flag for JSON mode
+        const agentHasTools = this.config.tools && this.config.tools.length > 0;
 
-        let finalSystemPrompt = systemPrompt; // Use a new variable for the potentially modified system prompt
+        let finalSystemPrompt = systemPrompt;
 
-        if (shouldUseJSONMode) {
+        if (agentHasTools) {
             let jsonInstruction = "";
             const baseInstruction = "\n\n--- BEGIN SDK JSON REQUIREMENTS ---";
             const endInstruction = "\n--- END SDK JSON REQUIREMENTS ---";
             let toolGuidance = "";
 
-            if (this.config.tools && this.config.tools.length > 0) {
-                toolGuidance = `
+            // Tool guidance is always included if agentHasTools, as a tool_name is always expected.
+            toolGuidance = `
 YOU HAVE TOOLS. TO USE A TOOL: your JSON object MUST contain a "tool_name" (string) key AND a "parameters" (object) key. The value for "tool_name" MUST be the EXACT name of the tool. The "parameters" object MUST contain the arguments for the tool.
 IF NO TOOL IS NEEDED: your JSON object MUST contain a "tool_name" (string) key set EXPLICITLY to "none", AND a "response" (string) key with your direct textual answer.`;
-            } else {
-                toolGuidance = `
-YOU HAVE NO TOOLS CONFIGURED. Your JSON object MUST contain a "response" (string) key with your direct textual answer to the task.`;
-            }
-
+            
             jsonInstruction = `${baseInstruction}
 YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. DO NOT ADD ANY TEXT BEFORE OR AFTER THIS JSON OBJECT.
 ${toolGuidance}
 FAILURE TO ADHERE TO THIS JSON STRUCTURE WILL RESULT IN AN ERROR.${endInstruction}`;
             
             finalSystemPrompt += jsonInstruction;
-            this.logger.info('AgentExecutor', 'Appended VERY EXPLICIT JSON structural instruction to system prompt.', { hasTools: (this.config.tools && this.config.tools.length > 0) });
+            this.logger.info('AgentExecutor', 'Appended VERY EXPLICIT JSON structural instruction to system prompt as agent has tools.');
         }
 
         const initialMessages: LLMMessage[] = [
-            { role: 'system', content: finalSystemPrompt }, // Use the modified system prompt
+            { role: 'system', content: finalSystemPrompt }, 
             { role: 'user', content: task }
         ];
 
-        const llmRequest: LLMRequest = {
-            messages: initialMessages,
-            llmConfig: {
-                model: agentLLMConfig?.model || (typeof this.config.llm === 'string' ? this.config.llm : 'default-model'),
-                temperature: agentLLMConfig?.temperature ?? 0.7,
-                maxTokens: agentLLMConfig?.maxTokens ?? 2048,
-                useFunctionCalling: shouldUseJSONMode // This flag is still useful for provider logic
-            }
+        // agentLLMConfig is derived from this.config.llm, which could be a string (model name)
+        // or an LLMBaseConfig object. LLMBaseConfig no longer has useFunctionCalling.
+        const baseLlmSettings = {
+            model: agentLLMConfig?.model || (typeof this.config.llm === 'string' ? this.config.llm : 'default-model'),
+            temperature: agentLLMConfig?.temperature ?? 0.7,
+            maxTokens: agentLLMConfig?.maxTokens ?? 2048,
         };
 
-        if (shouldUseJSONMode) {
-            llmRequest.response_format = { type: "json_object" };
-            // We do NOT send llmRequest.functions or tool_choice when using response_format = json_object
-            this.logger.info('AgentExecutor', 'Requesting JSON object response from LLM.');
+        const llmRequest: LLMRequest = {
+            messages: initialMessages,
+            llmConfig: baseLlmSettings // Assign the cleaned settings
+        };
+
+        if (agentHasTools) {
+            llmRequest.expectsJsonResponse = true;
+            this.logger.info('AgentExecutor', 'Agent has tools, setting expectsJsonResponse = true in LLMRequest.');
+            // No longer setting response_format here; OpenAIProvider will handle it if expectsJsonResponse is true.
         } else {
-            // Fallback: Prepare for old text-based TOOL_CALL regex (or future actual tool_calling API if distinct)
-            if (!initialMessages[0].content?.includes('TOOL_CALL:')) {
-                 initialMessages[0].content += '\n\nWhen you need to use a tool, respond with exactly:\nTOOL_CALL: toolName\nPARAMETERS: {json parameters}';
+            // Fallback for agents without tools: ensure no legacy TOOL_CALL instructions interfere if system prompt is reused.
+            // This part might be simplified or removed if agents without tools have different prompt generation.
+            if (initialMessages[0].content?.includes('TOOL_CALL:')) {
+                 this.logger.warn('AgentExecutor', 'Agent has no tools, but system prompt contains TOOL_CALL. This might be from a shared/old system prompt.');
             }
-            this.logger.info('AgentExecutor', 'Using text-based TOOL_CALL fallback.');
+            this.logger.info('AgentExecutor', 'Agent has no tools; expecting standard text response.');
         }
 
-        this.logger.info('AgentExecutor', 'Analyzing task with LLM', { shouldUseJSONMode });
+        this.logger.info('AgentExecutor', 'Analyzing task with LLM', { agentHasTools });
         const llmResponse = await this.llm.complete(llmRequest);
 
         if (!llmResponse) {
@@ -313,85 +302,48 @@ FAILURE TO ADHERE TO THIS JSON STRUCTURE WILL RESULT IN AN ERROR.${endInstructio
             throw new Error('LLM completion failed.');
         }
 
-        // Commented out problematic debug logs
-        /* 
-        this.logger.debug('[AgentExecutor] LLM Response Received Details', { 
-            content: llmResponse.content, 
-            tool_calls_raw: llmResponse.tool_calls, 
-            usage: llmResponse.usage
-        });
-        */
-
         let toolResults: any[] = [];
-        let actualResponseContent = llmResponse.content; // This is the primary output now
+        let actualResponseContent = llmResponse.content;
 
-        if (shouldUseJSONMode) {
+        // Parsing logic now primarily depends on agentHasTools to expect JSON
+        if (agentHasTools) { 
             if (llmResponse.content) {
                 try {
                     const parsedJson = JSON.parse(llmResponse.content);
-                    const toolName = parsedJson.tool_name || parsedJson.toolName; // Allow for snake_case or camelCase
+                    const toolName = parsedJson.tool_name || parsedJson.toolName;
                     const parameters = parsedJson.parameters;
 
                     if (toolName && toolName !== 'none' && parameters) {
                         this.logger.info('AgentExecutor', `LLM designated tool (JSON mode): ${toolName}`, { parameters });
                         const toolResultData = await this.registry.executeTool(toolName, parameters);
                         toolResults.push({ name: toolName, success: toolResultData.success, result: toolResultData.result, error: toolResultData.error });
-                        
-                        // In pure JSON mode, the conversation might end here, or the LLM might be expected
-                        // to generate a final textual response based on this tool execution in a subsequent turn.
-                        // For now, we assume the JSON was the main work.
-                        // If a follow-up textual response is needed, the system prompt and task would need to guide it.
-                        // We can set actualResponseContent to a summary or the tool result.
                         actualResponseContent = `Tool ${toolName} executed. Success: ${toolResultData.success}. Result: ${JSON.stringify(toolResultData.result || toolResultData.error)}`;
                         this.logger.info('AgentExecutor', `JSON mode tool execution summary: ${actualResponseContent}`)
                     } else if (toolName === 'none') {
                         this.logger.info('AgentExecutor', 'LLM indicated no tool (JSON mode).');
                         actualResponseContent = parsedJson.response || "No further action taken as per LLM JSON response.";
                     } else {
-                        this.logger.warn('AgentExecutor', 'LLM JSON response in JSON mode did not conform to expected {tool_name, parameters} structure or tool_name was missing.', { parsedJson });
-                        actualResponseContent = llmResponse.content; // Fallback to raw content if structure is wrong
+                        this.logger.warn('AgentExecutor', 'LLM JSON response did not conform to expected {tool_name, parameters} or tool_name was missing.', { parsedJson });
+                        actualResponseContent = llmResponse.content; // Fallback to raw content
                     }
                 } catch (e) {
-                    this.logger.error('AgentExecutor', 'Failed to parse LLM content as JSON in JSON_OBJECT mode', { content: llmResponse.content, error: e });
-                    actualResponseContent = llmResponse.content || "Error: LLM response was not valid JSON despite json_object mode."; 
+                    this.logger.error('AgentExecutor', 'Failed to parse LLM content as JSON, though JSON was expected as agent has tools.', { content: llmResponse.content, error: e });
+                    actualResponseContent = llmResponse.content || "Error: LLM response was not valid JSON despite tools being present."; 
                 }
             } else {
-                this.logger.warn('AgentExecutor', 'LLM content was null in JSON_OBJECT mode.');
+                this.logger.warn('AgentExecutor', 'LLM content was null, though JSON was expected as agent has tools.');
                 actualResponseContent = "LLM response content was null.";
             }
         } else {
-            // Fallback to legacy text-based TOOL_CALL parsing
-            this.logger.info('AgentExecutor', 'Executing fallback text-based TOOL_CALL parsing.');
-            const toolCallPattern = /TOOL_CALL:\s*(\w+)\s*\nPARAMETERS:\s*({[\s\S]*?}(?=\s*(?:TOOL_CALL|$)))/g;
-            const matches = Array.from((actualResponseContent || '').matchAll(toolCallPattern));
-            if (matches.length > 0) toolResults.length = 0; // Reset for this specific parsing
-
-            for (const match of matches) {
-                const toolName = match[1];
-                const parametersStr = match[2];
-                try {
-                    let parameters = JSON.parse(parametersStr);
-                    this.logger.info('AgentExecutor', `Executing (regex) tool: ${toolName}`, { params: parametersStr });
-                    const toolResult = await this.registry.executeTool(toolName, parameters);
-                    toolResults.push({ name: toolName, success: toolResult.success, result: toolResult.result, error: toolResult.error });
-                    if (toolResult.success) {
-                        actualResponseContent = (actualResponseContent || '').replace(match[0], `Tool Executed: ${toolName}\nResult: ${JSON.stringify(toolResult.result, null, 2)}`);
-                    } else {
-                        actualResponseContent = (actualResponseContent || '').replace(match[0], `Tool Execution Failed: ${toolName}\nError: ${toolResult.error}`);
-                    }
-                } catch (error) {
-                    this.logger.error('AgentExecutor', 'Failed to parse/execute (regex) tool', { error, toolName, params: parametersStr });
-                    actualResponseContent = (actualResponseContent || '').replace(match[0], `Tool Execution Error: ${error instanceof Error ? error.message : String(error)}`);
-                    toolResults.push({ name: toolName, success: false, error: error instanceof Error ? error.message : String(error) });
-                }
-            }
+            // If agent has no tools, actualResponseContent is already llmResponse.content. No specific JSON parsing expected here.
+            this.logger.info('AgentExecutor', 'Agent has no tools, LLM response treated as direct text.');
         }
 
         return {
             response: actualResponseContent ?? '',
             reasoning: toolResults.length > 0 
                 ? `Processed ${toolResults.length} tool actions. First tool: ${toolResults[0].name}, Success: ${toolResults[0].success}` 
-                : 'No tool actions taken, or direct LLM response.',
+                : (agentHasTools ? 'No tool actions taken as per LLM JSON, or direct LLM response in JSON indicated no tool.' : 'Direct LLM response as agent has no tools.'),
             agent: this.config.name,
             timestamp: new Date().toISOString(),
             model: llmResponse.model,

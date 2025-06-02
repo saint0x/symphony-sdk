@@ -26,7 +26,6 @@ async function runOpenAIJsonTest() {
         llm: { 
             provider: 'openai',
             model: 'gpt-3.5-turbo', // Or your preferred OpenAI model that supports JSON mode well
-            useFunctionCalling: true, // CRITICAL: This enables JSON mode in AgentExecutor's logic
             temperature: 0.3, // Lower temperature for more predictable JSON structure
         },
         tools: [], // No external tools needed for this direct JSON output test

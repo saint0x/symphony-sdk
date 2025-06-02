@@ -23,7 +23,7 @@ bun add symphonic
 ```
 
 ```typescript
-import { Symphony } from 'symphony-sdk';
+import { Symphony } from 'symphonic';
 
 const symphony = new Symphony({
   llm: {
@@ -146,94 +146,102 @@ Symphony provides built-in tools that work out of the box:
 
 ### Creating Custom Tools
 
+A tool is defined by its configuration, including an `inputSchema` (JSON schema for parameters) and a `handler` function.
+
 ```typescript
-const customTool = await symphony.tool.create({
-  name: 'processData',
-  description: 'Process and transform data with validation',
-  inputs: ['data', 'options'],
-  outputs: ['result', 'metadata'],
-    handler: async (params) => {
-        const startTime = Date.now();
+import { ToolConfig, ToolResult } from 'symphonic'; // Assuming ToolConfig and ToolResult are exported
 
-        try {
-            // Input validation
-      if (!params.data) {
-        throw new Error('Data parameter is required');
-            }
-
-            const options = {
-        format: 'json',
-        validate: true,
-                ...params.options
-            };
-
-      // Processing logic
-      let processedData = params.data;
-      
-      if (options.validate) {
-        processedData = await validateData(processedData);
-      }
-      
-      if (options.format === 'json') {
-        processedData = JSON.stringify(processedData, null, 2);
-      }
-
-            return {
-                success: true,
-                result: {
-          processed: processedData,
-                    metadata: {
-            originalSize: JSON.stringify(params.data).length,
-            processedSize: processedData.length,
-            timestamp: Date.now(),
-            format: options.format
-                    }
-                },
-                metrics: {
-                    duration: Date.now() - startTime,
-          startTime,
-          endTime: Date.now()
-                }
-            };
-        } catch (error) {
-            return {
-                success: false,
-        error: error.message,
-                metrics: {
-                    duration: Date.now() - startTime,
-          startTime,
-          endTime: Date.now()
-                }
-            };
-        }
-    },
+const myCustomTool: ToolConfig = {
+  name: 'processUserData',
+  description: 'Processes user data, applying validation and transformation.',
+  type: 'data_processing', // An example type
+  // Optional: Define NLP hint for when this tool might be used
+  nlp: 'process user data with options', 
   
-    // Advanced configuration
-    timeout: 30000,
-    retry: {
-        enabled: true,
-        maxAttempts: 3,
-        delay: 1000,
-    backoffFactor: 2
-    },
-    cache: {
-        enabled: true,
-        ttl: 3600,
-        maxSize: 100
-    },
-    monitoring: {
-        collectMetrics: true,
-        logLevel: 'info',
-        alertOnFailure: true
+  // Configuration for the tool, including its input schema
+  config: {
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userData: { type: 'object', description: 'The raw user data.' },
+        options: { 
+          type: 'object', 
+          description: 'Processing options.',
+          properties: {
+            validate: { type: 'boolean', default: true },
+            format: { type: 'string', enum: ['json', 'xml'], default: 'json' }
+          }
+        }
+      },
+      required: ['userData']
     }
-});
+  },
+
+  // The handler function that executes the tool's logic
+  handler: async (params: { userData: any, options?: { validate?: boolean, format?: string } }): Promise<ToolResult<{ processedData: any, report: string }>> => {
+    const startTime = Date.now();
+    try {
+      const { userData, options = {} } = params;
+      const { validate = true, format = 'json' } = options;
+
+      if (!userData) {
+        throw new Error('userData parameter is required.');
+      }
+
+      let processedData = JSON.parse(JSON.stringify(userData)); // Deep copy
+
+      // Example validation (replace with actual validation logic)
+      if (validate && (!processedData.id || !processedData.name)) {
+        throw new Error('User data must include id and name for validation.');
+      }
+
+      let report = `Data processed for user ID: ${processedData.id}.`;
+
+      if (format === 'json') {
+        processedData = processedData; // Already an object, or could be stringified if needed
+        report += ' Output format: JSON.';
+      } else if (format === 'xml') {
+        // Example: Convert to XML (actual implementation would be more complex)
+        report += ' Output format: XML (conversion not shown).';
+        // processedData = convertToXml(processedData); 
+      }
+
+      return {
+        success: true,
+        result: {
+          processedData,
+          report
+        },
+        metrics: { duration: Date.now() - startTime, startTime, endTime: Date.now() }
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        metrics: { duration: Date.now() - startTime, startTime, endTime: Date.now() }
+      };
+    }
+  },
+  
+  // Optional: Top-level config fields as per ToolConfig type
+  timeout: 30000, // e.g., 30 seconds
+  retryCount: 3,   // Number of retries
+};
+
+// If you have a `symphony.tool.create` or similar method for registration:
+// await symphony.tool.create(myCustomTool); 
+// Or, if registering directly with ToolRegistry (more common for internal/custom setup):
+// import { ToolRegistry } from 'symphonic';
+// ToolRegistry.getInstance().registerTool(myCustomTool.name, myCustomTool);
+
+// For agents to use this tool, its name ('processUserData') would be added to their 'tools' array in AgentConfig.
 ```
 
 ### Using Tools Directly
 
 ```typescript
 // Using ToolRegistry directly
-import { ToolRegistry } from 'symphony-sdk';
+import { ToolRegistry } from 'symphonic'; // Corrected import path
 
 const registry = ToolRegistry.getInstance();
 
@@ -252,51 +260,75 @@ const toolInfo = registry.getToolInfo('ponder');
 
 ## Agents
 
+Agents in Symphony are intelligent entities that leverage Large Language Models (LLMs) along with a defined set of tools to perform tasks. They can understand natural language instructions, reason about how to achieve a goal, and utilize tools by generating structured JSON requests.
+
 ### Creating Agents
+
+When creating an agent, you define its core attributes, the tools it can use, and its LLM configuration. If an agent is configured with tools, the Symphony SDK automatically enables a specialized JSON mode. This involves appending robust instructions to the system prompt to guide the LLM towards producing structured JSON output for tool calls or direct responses. This ensures reliable tool interactions across different LLM providers.
 
 ```typescript
 const agent = await symphony.agent.create({
   name: 'DataAnalyst',
-  description: 'Specialized in data analysis and insights generation',
-  task: 'Analyze data and provide actionable insights',
-  tools: ['webSearch', 'ponder', 'writeFile', 'createPlan'],
+  description: 'Specialized in data analysis and insights generation. Capable of web research, deep analysis, and report generation.',
+  task: 'Analyze complex datasets, identify key trends, and produce actionable insights reports.', // Default or guiding task
+  tools: ['webSearch', 'ponder', 'writeFile', 'createPlan', 'processUserData'], // Include custom or standard tools by name
   llm: {
-    provider: 'openai',
-    model: 'gpt-4o-mini',
-    temperature: 0.7,
-    maxTokens: 2000
+    provider: 'openai', // Or other supported providers
+    model: 'gpt-4o-mini',    // Choose appropriate model (e.g., gpt-3.5-turbo, gpt-4)
+    temperature: 0.5,      // Adjust for creativity vs. determinism
+    maxTokens: 2500,       // Max tokens for LLM response
+    // No useFunctionCalling field needed; JSON mode is automatic for tool-enabled agents.
   },
-  capabilities: ['data_analysis', 'reporting', 'visualization'],
-  maxCalls: 10,
-  timeout: 60000
+  // Optional configurations for more fine-grained control:
+  systemPrompt: "You are an expert Data Analyst. Your primary goal is to deliver accurate and insightful analysis. Always cite your sources if performing research.", // Override/set a specific system prompt.
+  directives: "Focus on clarity and conciseness in your final output. Quantify your findings where possible.", // Additional instructions appended to the system prompt.
+  capabilities: ['data_analysis', 'reporting', 'web_research', 'trend_identification'], // Tags for agent capabilities, useful for selection.
+  maxCalls: 5,        // Max LLM calls the agent can make for a single .run() invocation.
+  timeout: 120000,    // Overall timeout in milliseconds for a single .run() invocation.
+  // requireApproval: true, // If true, agent might pause for approval before certain actions (if supported by executor).
+  // enableCache: true,       // To enable caching for this agent's LLM calls.
 });
 ```
 
 ### Agent Execution
 
+Once an agent is created, you can execute tasks using its `run` method. The task description provided to `run` will be the primary instruction for the agent.
+
 ```typescript
-// Simple execution
-const result = await agent.run('Analyze current AI market trends and create a report');
+// Simple execution of a specific task
+const analysisTask = 'Analyze the Q3 financial performance of ACME Corp based on recent news and provide a summary.';
+const result = await agent.run(analysisTask);
 
-console.log('Agent Result:', {
-  success: result.success,
-  response: result.result?.response,
-  toolCalls: result.metrics?.toolCalls,
-  duration: result.metrics?.duration,
-  llmUsage: result.metrics?.llmUsage
-});
+console.log('Agent Run Result:');
+if (result.success) {
+  console.log('  Response:', result.result?.response);
+  console.log('  Reasoning:', result.result?.reasoning); // May include details if provided by agent
+} else {
+  console.error('  Error:', result.error);
+}
+console.log('  Tool Calls:', result.metrics?.toolCalls); // Number of tools called
+console.log('  LLM Usage:', result.metrics?.llmUsage); // Token usage
+console.log('  Duration:', result.metrics?.duration, 'ms');
 
-// Execution with options
-const result = await agent.run('Research and analyze competitive landscape', {
-  timeout: 120000,
-  onProgress: (update) => {
-    console.log(`Agent status: ${update.status}`);
+// Execution with options (e.g., for streaming progress in a UI)
+const complexResearchTask = 'Conduct a comprehensive market analysis for a new SaaS product in the AI space, focusing on competitors and potential differentiators. Output a structured report.';
+const options = {
+  timeout: 300000, // 5 minutes for a complex task
+  // Example: if the agent supports streaming progress via onProgress callback
+  /*
+  onProgress: (update: { status: string; step?: string; details?: any }) => {
+    console.log(`Agent Progress: ${update.status} - ${update.step || 'N/A'}`, update.details || '');
   },
-  onMetrics: (metrics) => {
-    console.log(`Performance: ${JSON.stringify(metrics)}`);
-                    }
-});
+  onMetrics: (metrics: any) => {
+    console.log(`Agent Intermediate Metrics: ${JSON.stringify(metrics)}`);
+  }
+  */
+};
+// const detailedResult = await agent.run(complexResearchTask, options);
 ```
+
+**Note on JSON Mode and System Prompts:**
+If an agent is configured with any tools, Symphony SDK automatically appends a detailed set of instructions to the final system prompt. These instructions guide the LLM to respond strictly in JSON format, specifying how to structure tool calls (`{"tool_name": "...", "parameters": {...}}`) or indicate that no tool is needed (`{"tool_name": "none", "response": "..."}`). This ensures reliable parsing and execution, even if the agent's custom `systemPrompt` is minimal. For OpenAI models, the SDK also leverages the native `response_format: { type: "json_object" }` API parameter for enhanced reliability.
 
 ### Agent Tool Selection
 
@@ -313,54 +345,68 @@ console.log('Tool Selection:', {
 
 ## Teams
 
+Teams in Symphony allow multiple agents to collaborate on complex tasks. Each agent can have its own specialization, tools, and LLM configuration. Teams utilize strategies to coordinate agent execution.
+
 ### Creating Teams
+
+When defining a team, you specify its member agents (either by providing their full configuration inline or by referencing existing agent names/IDs if supported by `symphony.team.create`). Each agent within a team can have its own `llm` settings, including `useFunctionCalling: true` to leverage the SDK's JSON mode enforcement for reliable tool use.
 
 ```typescript
 const team = await symphony.team.create({
-  name: 'DevelopmentTeam',
-  description: 'Full-stack development team with specialized roles',
+  name: 'SoftwareDevelopmentTeam',
+  description: 'A versatile team for full-cycle software development, from design to deployment.',
+  // Agents can be defined inline with their full configuration
   agents: [
     {
-      name: 'Frontend',
-      description: 'React and TypeScript specialist',
-      task: 'Build user interfaces and frontend components',
-      tools: ['writeCode', 'readFile', 'writeFile'],
-      llm: 'gpt-4o-mini',
-      capabilities: ['react', 'typescript', 'css', 'responsive_design']
+      name: 'ProductDesigner',
+      description: 'Focuses on UI/UX design, user flows, and wireframing.',
+      task: 'Create intuitive and visually appealing user interface designs and prototypes.',
+      tools: ['createPlan', 'ponder'], // e.g., planning and ideation tools
+      llm: {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        // useFunctionCalling: true, // REMOVED - JSON mode is automatic for tool-enabled agents
+        temperature: 0.6
+      },
+      capabilities: ['ui_design', 'ux_research', 'prototyping']
     },
     {
-      name: 'Backend',
-      description: 'Node.js and database specialist', 
-      task: 'Build APIs, services, and database schemas',
-      tools: ['writeCode', 'readFile', 'writeFile', 'ponder'],
-      llm: 'gpt-4o-mini',
-      capabilities: ['nodejs', 'express', 'database', 'api_design']
+      name: 'BackendEngineer',
+      description: 'Node.js, Python, and database specialist for server-side logic.', 
+      task: 'Develop robust APIs, manage database schemas, and implement business logic.',
+      tools: ['writeCode', 'readFile', 'writeFile', 'ponder', 'webSearch'],
+      llm: 'gpt-4o-mini', // Can also be a string for simplicity if defaults are acceptable
+      capabilities: ['nodejs', 'python', 'database_management', 'api_design', 'system_architecture']
     },
-    {
-      name: 'DevOps',
-      description: 'Infrastructure and deployment specialist',
-      task: 'Handle deployment, monitoring, and infrastructure',
-      tools: ['writeCode', 'readFile', 'writeFile', 'webSearch'],
-      llm: 'gpt-4o-mini',
-      capabilities: ['docker', 'kubernetes', 'ci_cd', 'monitoring']
-    }
+    // Add other specialized agents like FrontendEngineer, QATester, DevOpsSpecialist etc.
   ],
+  // Optional: Designate a manager agent or define specific delegation rules
+  // manager: 'TeamLeadAgentName', // or true if one agent is implicitly manager by role/config
+  // delegationStrategy: {
+  //   type: 'capability_based', // e.g., tasks routed by agent capabilities
+  //   // rules: [ { condition: "task_type === 'database'", assignTo: ['BackendEngineer'] } ]
+  // },
   strategy: {
-    name: 'role_based_collaboration',
+    name: 'adaptive_collaborative_execution', // Example strategy name
+    description: 'Team coordinates dynamically based on task complexity and agent availability.',
+    // assignmentLogic: async (task, agents) => { /* custom logic */ return [agents[0].name]; },
     coordinationRules: {
-      maxParallelTasks: 3,
-      taskTimeout: 300000
-        }
+      maxParallelTasks: 2,      // Max number of tasks agents can work on concurrently
+      taskTimeout: 600000,      // Timeout for individual agent tasks within the team (10 minutes)
+      // Ddditional rules like error handling, escalation paths, etc.
     }
+  },
+  // capabilities: ['software_development', 'web_applications', 'api_services'],
+  // log: { inputs: true, outputs: true, metrics: true } // Configure team-level logging
 });
 ```
 
 ### Team Execution Strategies
 
 ```typescript
-import { TeamExecutionStrategy } from 'symphony-sdk';
+import { TeamExecutionStrategy } from 'symphonic'; // Corrected import path
 
-// Parallel execution - all agents work simultaneously
+// Parallel execution - all agents work simultaneously on sub-tasks of the main goal
 const parallelResult = await team.run('Implement user authentication system', {
   strategy: TeamExecutionStrategy.PARALLEL,
   timeout: 600000
@@ -429,153 +475,221 @@ console.log('Team Status:', {
 
 ### Creating Pipelines
 
+Pipelines define structured workflows composed of multiple steps. These steps can involve executing tools, running agents or teams, conditional logic, and more. Variables can be passed into pipelines and between steps.
+
 ```typescript
-const pipeline = await symphony.pipeline.create({
-  name: 'ContentAnalysisPipeline',
-  description: 'Comprehensive content analysis and reporting pipeline',
-  version: '1.0.0',
+import { PipelineConfig, PipelineStep, RetryConfig } from 'symphonic'; // Assuming these types are exported
+
+const pipelineConfig: PipelineConfig = {
+  name: 'ComprehensiveContentAnalysis',
+  description: 'Fetches, analyzes, and reports on web content using tools and conditional logic.',
+  // version: '1.0.0', // Optional versioning
   steps: [
     {
-      id: 'fetch_content',
-      name: 'Fetch Content',
-      type: 'tool',
-      tool: 'webSearch',
-      inputs: {
-        query: '$search_term',
-        type: 'search'
+      id: 'fetch_web_content',
+      name: 'Fetch Web Content',
+      type: 'tool', // Step type: 'tool', 'agent', 'team', 'condition', etc.
+      tool: 'webSearch', // Name of the tool to use (must be registered in ToolRegistry)
+      inputs: { // Mapping inputs for the tool
+        query: '$pipeline_input_search_term' // Using a pipeline variable
       },
       outputs: {
-        content: '.'
+        fetched_content: '.result' // Mapping the entire tool result to 'fetched_content' for next steps
+                                  // Or specify a path, e.g. '.result.articles[0].content'
       },
-      retryPolicy: {
-        maxRetries: 3,
-        backoffMs: 1000,
-        retryOn: ['timeout', 'network', 'rate_limit']
+      retryConfig: { // Configuration for retrying this step on failure
+        maxAttempts: 3,
+        delay: 1000, // Initial delay in ms
+        // retryableErrors: ['timeout', 'network_error'] // Optional: specific errors to retry on
       },
-    timeout: 30000
+      timeout: 30000 // Step-specific timeout in ms
     },
     {
-      id: 'analyze_content',
-      name: 'Analyze Content',
-      type: 'tool',
-      tool: 'ponder',
+      id: 'analyze_fetched_content',
+      name: 'Analyze Fetched Content',
+      type: 'agent', // Example of an agent step
+      agent: 'ContentAnalysisAgent', // Name of a pre-configured agent (assumed to exist)
+                                   // Agents used in pipelines automatically benefit from the SDK's JSON mode enhancements
+                                   // if they are configured with tools.
       inputs: {
-        task: 'Analyze this content for key insights: @fetch_content',
-        depth: '2'
+        task_description: 'Analyze the following text for key themes and sentiment: @fetch_web_content.fetched_content' // Referencing output from previous step
       },
-      dependencies: ['fetch_content'],
-      timeout: 60000
+      outputs: {
+        analysis_summary: '.result.response' // Mapping agent's response to 'analysis_summary'
+      },
+      dependencies: ['fetch_web_content'] // Depends on the successful completion of this step
     },
     {
-      id: 'generate_report',
-      name: 'Generate Report',
+      id: 'generate_final_report',
+      name: 'Generate Final Report',
       type: 'tool',
       tool: 'writeFile',
       inputs: {
-        filename: 'content_analysis_report.md',
-        content: '@analyze_content'
+        filename: '$pipeline_input_report_filename', // Using a pipeline variable
+        content: 'Summary of Analysis for query \'$pipeline_input_search_term\':\n\n@analyze_fetched_content.analysis_summary'
       },
-      dependencies: ['analyze_content']
+      dependencies: ['analyze_fetched_content']
     },
     {
-      id: 'validate_output',
-      name: 'Validate Output',
-      type: 'condition',
-      condition: {
-        expression: '$validate_results === true',
-        ifTrue: 'complete',
-        ifFalse: 'retry_analysis'
-      },
-      dependencies: ['generate_report']
+      id: 'check_report_validity',
+      name: 'Check Report Validity',
+      type: 'condition', // Conditional step
+      // 'condition' field not directly on PipelineStep, but this illustrates intent.
+      // Actual conditional logic might be via a custom 'condition' tool or specific step type.
+      // For this example, we'll assume a conceptual condition. The actual implementation might vary.
+      // config: { 
+      //   expression: '$pipeline_input_enable_validation === true && @generate_final_report.result.success === true',
+      //   ifTrue: 'notify_completion', // Hypothetical next step ID
+      //   ifFalse: 'escalate_failure'   // Hypothetical next step ID
+      // }, 
+      dependencies: ['generate_final_report']
     }
   ],
+  // Global pipeline variables, can be overridden at runtime
   variables: {
-    search_term: '',
-    validate_results: true,
-    output_format: 'markdown'
+    pipeline_input_search_term: 'default search term',
+    pipeline_input_report_filename: 'analysis_report.txt',
+    pipeline_input_enable_validation: true
   },
-  errorHandling: {
-    strategy: 'retry',
-    maxGlobalRetries: 2
+  // Global error handling strategy for the pipeline
+  errorStrategy: {
+    type: 'retry', // 'stop', 'continue', 'retry'
+    maxAttempts: 2, // Max retries for the entire pipeline if a step ultimately fails
+    // delay: 5000 // Delay between pipeline-level retries
   },
-  concurrency: {
-    maxParallelSteps: 2,
-    resourceLimits: {
-      memory: 1024,
-      cpu: 80
-    }
-  }
-});
+  // Concurrency settings for the pipeline execution
+  // metrics: { enabled: true, detailed: true, trackMemory: true } // Optional metrics config
+};
+
+// Assuming a symphony client instance for pipeline creation
+// const pipeline = await symphony.pipeline.create(pipelineConfig);
 ```
 
 ### Pipeline Step Types
 
+Pipelines support various step types to build complex workflows:
+
 ```typescript
-// Tool step - execute a specific tool
+// Tool step: Executes a registered tool.
 {
-  id: 'process_data',
-  name: 'Process Data',
+  id: 'run_data_tool',
+  name: 'Process Data with Tool',
   type: 'tool',
-  tool: 'ponder',
-  inputs: { task: 'Process: @previous_step' }
+  tool: 'processUserData', // Assumes 'processUserData' tool is registered
+  inputs: { 
+    userData: '$input_data_object', 
+    options: { validate: true, format: 'json' } 
+  },
+  outputs: { processed_data_output: '.result.processedData' }
 }
 
-// Chain step - execute a tool chain
+// Agent step: Invokes a configured agent to perform a task.
+// Agents used in pipelines automatically benefit from the SDK's JSON mode enhancements
+// (like verbose JSON instructions) if they are configured with tools.
 {
-  id: 'research_chain',
-  name: 'Research Chain',
-  type: 'chain',
-  chain: {
-    id: 'research_workflow',
-    name: 'Research Workflow',
-    steps: [/* chain steps */]
+  id: 'expert_analysis_step',
+  name: 'Perform Expert Analysis',
+  type: 'agent',
+  agent: 'ContentAnalysisAgent', // Name of a pre-configured agent
+  inputs: { 
+    task_description: 'Review financial data @previous_step.processed_data_output and identify anomalies.' 
+  },
+  outputs: { expert_findings: '.result.response' }
+}
+
+// Team step: Delegates a task to a configured team.
+{
+  id: 'development_feature_step',
+  name: 'Develop New Feature',
+  type: 'team',
+  team: 'SoftwareDevelopmentTeam', // Name of a pre-configured team
+  inputs: { 
+    feature_specification: '$feature_docs_variable' 
+  },
+  outputs: { development_status: '.result' } // Output from the team's execution
+}
+
+// Chain step - (Conceptual) execute a pre-defined tool chain if supported
+// Note: `ToolChain` execution is typically via `ChainExecutor.getInstance().executeChain()`.
+// Direct 'chain' type in PipelineStep might be a higher-level abstraction or future feature.
+// For current direct usage, a tool step could wrap a ChainExecutor call.
+{
+  id: 'research_workflow_chain',
+  name: 'Execute Research Tool Chain',
+  type: 'chain', // This type might be conceptual or specific to your PipelineStep definition
+  // chain: 'my_research_chain_id', // ID of a pre-defined ToolChain
+  // inputs: { query: '$research_topic' }
+  config: { chainId: 'my_research_chain_id', inputs: { query: '$research_topic' } } // More likely config
+
+}
+
+// Condition step - (Conceptual) conditional branching logic
+// Actual implementation may vary; could be a special tool or a specific step type.
+{
+  id: 'quality_assurance_check',
+  name: 'QA Checkpoint',
+  type: 'condition', // This type might be conceptual
+  // config: { 
+  //   expression: '$quality_score_variable > 0.9 && @previous_step.result.validation_passed === true',
+  //   ifTrue: 'deployment_step_id',  // ID of step to go to if true
+  //   ifFalse: 'review_step_id'     // ID of step to go to if false
+  // }
+  // inputs: { quality_score: '$quality_score_variable', validation_status: '@previous_step.result.validation_passed' },
+  // Assuming a custom 'conditionalRouterTool' that takes expression and routes
+  tool: 'conditionalRouterTool',
+  inputs: {
+    condition_expression: '$quality_score_variable > 0.9 && @previous_step.result.validation_passed === true',
+    true_step: 'deployment_step_id',
+    false_step: 'review_step_id'
   }
 }
 
-// Condition step - conditional branching
+// Transform step - (Conceptual) for data manipulation between steps
+// Often, data transformation can be handled by tools themselves or input/output mapping.
 {
-  id: 'check_quality',
-  name: 'Check Quality',
-  type: 'condition',
-  condition: {
-    expression: '$quality_score > 0.8',
-    ifTrue: 'publish',
-    ifFalse: 'improve_quality'
-  }
+  id: 'format_report_data',
+  name: 'Format Report Data',
+  type: 'transform', // This type might be conceptual
+  // config: {
+  //   input_path: '@raw_data_step.result',
+  //   output_path: 'formatted_report_data',
+  //   transform_function: 'json_to_csv' // Name of a registered transformation function
+  // }
+  // Assuming a custom 'dataTransformerTool'
+  tool: 'dataTransformerTool',
+  inputs: { data: '@raw_data_step.result', target_format: 'csv' },
+  outputs: { transformed_data_output: '.result.csv_data' }
 }
 
-// Transform step - data transformation
+// Parallel step - (Conceptual) for executing multiple steps concurrently
+// The Pipeline executor itself might handle concurrency based on dependencies rather than a specific step type.
+// Alternatively, a 'parallel' step type could define a sub-set of steps to run in parallel.
 {
-  id: 'format_data',
-  name: 'Format Data',
-  type: 'transform',
-  transform: {
-    input: 'raw_data',
-    output: 'formatted_data',
-    transformation: 'json_stringify'
-  }
+  id: 'concurrent_analysis_tasks',
+  name: 'Run Analyses in Parallel',
+  type: 'parallel', // This type might be conceptual
+  // config: {
+  //   branches: [
+  //     [{ id: 'sentiment_analysis', type:'tool', tool: 'sentimentAnalysisTool', inputs: {text: '$text_input'} }],
+  //     [{ id: 'keyword_extraction', type:'tool', tool: 'keywordDetectionTool', inputs: {text: '$text_input'} }]
+  //   ]
+  // }
+  // This might be achieved by defining steps with no dependencies on each other if the executor supports it.
 }
 
-// Parallel step - parallel execution
+// Wait step - (Conceptual) for introducing delays or waiting for external conditions
 {
-  id: 'parallel_processing',
-  name: 'Parallel Processing',
-  type: 'parallel',
-  parallel: {
-    steps: ['step1', 'step2', 'step3'],
-    waitForAll: true
-  }
-}
-
-// Wait step - delays and conditions
-{
-  id: 'wait_for_processing',
-  name: 'Wait for Processing',
-  type: 'wait',
-  wait: {
-    duration: 5000,
-    condition: '$processing_complete === true'
-  }
+  id: 'wait_for_external_process',
+  name: 'Wait for External System Update',
+  type: 'wait', // This type might be conceptual
+  // config: {
+  //   duration_ms: 10000, // Wait for a fixed duration
+  //   condition_poll_tool: 'checkSystemStatusTool', // Tool to poll for a condition
+  //   expected_condition_value: 'READY'
+  // }
+  // Assuming a custom 'waitConditionTool'
+  tool: 'waitConditionTool',
+  inputs: { duration_ms: 10000, poll_url: '$status_check_url', expected_value: 'READY' }
 }
 ```
 
@@ -976,79 +1090,99 @@ console.log('Streaming Health:', streamingHealth);
 
 ### Tool Chaining
 
-```typescript
-import { ChainExecutor } from 'symphony-sdk';
+Symphony supports defining and executing sequences of tool calls where the output of one step can be the input to another. This is managed by the `ChainExecutor`.
 
-const chain = {
-  id: 'research_analysis_chain',
-  name: 'Research and Analysis Chain',
-  description: 'Comprehensive research workflow with analysis and reporting',
-    steps: [
-        {
-      id: 'research',
-      tool: 'webSearch',
-      semantic_number: '1', // Initial step
-      static_params: {
-        type: 'search'
+```typescript
+import { ChainExecutor, ToolChain, ToolChainStep } from 'symphonic'; // Corrected import, added types
+
+const researchChain: ToolChain = {
+  id: 'advanced_research_workflow',
+  name: 'Advanced Research and Synthesis Chain',
+  description: 'Performs web research, analyzes findings, synthesizes information, and writes a report.',
+  input_schema: { // Defines expected input for the entire chain
+    research_query: { type: 'string', description: 'The core topic for research.' },
+    analysis_depth: { type: 'number', default: 2, description: 'Depth of analysis for ponder tool.' },
+    synthesis_prompt: { type: 'string', default: 'Synthesize the key findings.'},
+    report_filename: { type: 'string', default: 'research_report.md' }
+  },
+  steps: [
+    {
+      id: 'step1_initial_research',
+      tool: 'webSearch', // Name of a registered tool
+      chained: '1',       // Execution order/identifier
+      static_params: {    // Parameters always passed to this tool in this step
+        // Assuming webSearch tool can take a 'result_count' parameter
+        // result_count: 5 
+      },
+      input_mapping: { // Maps chain input to tool input parameters
+        query: 'input.research_query' // Uses 'research_query' from the chain's initial input
+      }
+      // outputs: { search_results: '.result.articles' } // Optional: define how to map this step's output for clarity or if needed by ChainExecutor
+    },
+    {
+      id: 'step2_analyze_findings',
+      tool: 'ponder',
+      chained: '2',
+      depends_on: ['step1_initial_research'], // This step runs after step1 completes
+      input_mapping: {
+        // 'task' for ponder tool is constructed using output from step1 and chain input
+        task: `Analyze these search results: @step1_initial_research.result. For the query: 'input.research_query'.`,
+        depth: 'input.analysis_depth' // Uses 'analysis_depth' from chain input
       }
     },
     {
-      id: 'analyze',
-      tool: 'ponder',
-      semantic_number: '2.1', // First intermediary step
-      input_mapping: {
-        task: 'research.result',
-        depth: 'input.analysis_depth'
-            }
-        },
-        {
-      id: 'synthesize',
+      id: 'step3_synthesize_analysis',
       tool: 'ponder', 
-      semantic_number: '2.2', // Second intermediary step
+      chained: '3',
+      depends_on: ['step2_analyze_findings'],
       input_mapping: {
-        task: 'analyze.result',
-        depth: 'input.synthesis_depth'
-      },
-      depends_on: ['analyze']
-        },
-        {
-      id: 'report',
+        task: `'input.synthesis_prompt' Based on this analysis: @step2_analyze_findings.result`,
+        depth: 'input.analysis_depth' // Can re-use or use a different depth
+      }
+    },
+    {
+      id: 'step4_write_report',
       tool: 'writeFile',
-      semantic_number: '3', // Final step
+      chained: '4',
+      depends_on: ['step3_synthesize_analysis'],
       input_mapping: {
-        filename: 'input.output_file',
-        content: 'synthesize.result'
+        filename: 'input.report_filename',
+        content: '@step3_synthesize_analysis.result' // Uses the direct output of the synthesis step
       }
     }
   ],
-  input_schema: {
-    query: 'string',
-    analysis_depth: 'string',
-    synthesis_depth: 'string',
-    output_file: 'string'
-            },
-  output_mapping: {
-    final_report: 'report.result',
-    analysis: 'analyze.result',
-    synthesis: 'synthesize.result'
+  output_mapping: { // Defines the final output of the chain
+    report_file_result: 'step4_write_report.result',
+    synthesized_content: 'step3_synthesize_analysis.result',
+    raw_search_results: 'step1_initial_research.result'
   }
 };
 
 const chainExecutor = ChainExecutor.getInstance();
-const chainResult = await chainExecutor.executeChain(chain, {
-  query: 'latest developments in quantum computing',
-  analysis_depth: '2',
-  synthesis_depth: '3',
-  output_file: 'quantum_computing_report.md'
-});
+// Potentially configure the executor if it has options: e.g., chainExecutor.setConfig(...)
 
-console.log('Chain Result:', {
-  success: chainResult.success,
-  totalDuration: chainResult.metrics.totalDuration,
-  stepsCompleted: chainResult.metrics.completedSteps,
-  parallelGroups: chainResult.metrics.parallelGroups
-});
-```
+async function runMyChain() {
+  try {
+    const chainResult = await chainExecutor.executeChain(researchChain, {
+      research_query: 'breakthroughs in renewable energy storage 2024',
+      analysis_depth: 3,
+      report_filename: 'renewable_energy_report_2024.md'
+      // synthesis_prompt will use default from input_schema
+    });
+
+    if (chainResult.success) {
+      console.log('Chain executed successfully:', chainResult.result);
+      console.log('Metrics:', chainResult.metrics);
+    } else {
+      console.error('Chain execution failed:', chainResult.error);
+      console.log('Failed Steps:', chainResult.metrics?.failedSteps);
+    }
+  } catch (error) {
+    console.error('Error running chain:', error);
+  }
+}
+
+// runMyChain();
 
 ### Database Operations
 

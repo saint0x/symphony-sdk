@@ -27,7 +27,6 @@ async function runVerboseJsonEnforcementTest() {
         llm: {
             provider: 'openai',
             model: 'gpt-3.5-turbo',
-            useFunctionCalling: true, 
             temperature: 0.0, // Minimum temperature for determinism
         },
         tools: [mockToolName],

@@ -79,7 +79,6 @@ export interface LLMBaseConfig {
     apiKey?: string;        // Optional: API key (can be set globally)
     temperature?: number;
     maxTokens?: number;
-    useFunctionCalling?: boolean; // Added here
 }
 
 export interface AgentConfig {

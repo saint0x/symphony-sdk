@@ -58,34 +58,24 @@ export class OpenAIProvider implements LLMProvider {
         try {
             metrics.trackOperation('request_preparation');
             
-            const effectiveUseFunctionCalling = this.config.useFunctionCalling === true;
-
             this.logger.info('OpenAIProvider', 'Making OpenAI API request via SDK client with effective config:', {
                 model: this.model,
                 temperature: this.config.temperature,
                 maxTokens: this.config.maxTokens,
-                useFunctionCalling: effectiveUseFunctionCalling, // Retained for logging, actual mechanism via request.response_format
+                expectsJsonResponse: request.expectsJsonResponse,
                 numMessages: request.messages.length,
-                // numFunctions: request.functions?.length || 0 // functions are not directly passed in this model
             });
 
             const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
                 model: this.model,
-                messages: request.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[], // Cast to SDK type
+                messages: request.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
                 temperature: this.config.temperature ?? 0.7,
                 max_tokens: this.config.maxTokens ?? 2000,
             };
 
-            if (request.response_format?.type === 'json_object') {
+            if (request.expectsJsonResponse) { 
                 completionParams.response_format = { type: 'json_object' };
-                this.logger.info('OpenAIProvider', 'OpenAI request: JSON mode enabled via response_format.');
-            } else if (effectiveUseFunctionCalling && request.functions && request.functions.length > 0) {
-                // This branch is for the legacy function calling if needed, though JSON mode is preferred.
-                // The current AgentExecutor logic leans towards JSON mode output.
-                // For true OpenAI tool/function calling, this would be different.
-                // completionParams.tools = request.functions as any[]; // SDK type is OpenAI.Chat.Completions.ChatCompletionToolParam[]
-                // completionParams.tool_choice = request.tool_choice || 'auto';
-                 this.logger.warn('OpenAIProvider', 'Legacy function calling requested but JSON mode is primary. Review useFunctionCalling flag.');
+                this.logger.info('OpenAIProvider', 'OpenAI request: JSON mode enabled via response_format due to expectsJsonResponse flag.');
             }
 
             metrics.trackOperation('api_request');
@@ -103,9 +93,8 @@ export class OpenAIProvider implements LLMProvider {
                     completion_tokens: usage?.completion_tokens || 0,
                     total_tokens: usage?.total_tokens || 0,
                 },
-                // functionCall and tool_calls from rawMessage if needed for consistency with old format
                 functionCall: rawMessage.function_call ? { name: rawMessage.function_call.name!, arguments: rawMessage.function_call.arguments } : undefined,
-                tool_calls: rawMessage.tool_calls as any, // Cast if SDK types differ slightly but structure is compatible
+                tool_calls: rawMessage.tool_calls as any,
             };
 
             if (request.response_format?.type === 'json_object') {

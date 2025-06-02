@@ -27,7 +27,6 @@ async function runStrictJsonToolAgentTest() {
         llm: {
             provider: 'openai',
             model: 'gpt-3.5-turbo', // Or your preferred model
-            useFunctionCalling: true, // Enables JSON mode logic in AgentExecutor
             temperature: 0.1, // Low temperature for predictability
         },
         tools: [mockToolName], // Configure the agent with the mock tool

@@ -29,8 +29,7 @@ async function runCustomModerationAgentTest() {
         llm: {
             provider: 'openai',
             model: 'gpt-3.5-turbo',
-            useFunctionCalling: true, 
-            temperature: 0.1, 
+            temperature: 0.1,
         },
         tools: [sentimentToolName, keywordToolName, moderationActionToolName],
         maxCalls: 3, // Allow for a few steps if LLM decides to chain tool calls

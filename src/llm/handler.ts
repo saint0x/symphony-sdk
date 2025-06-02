@@ -108,7 +108,6 @@ export class LLMHandler {
                 model: finalConfig.model,
                 temperature: finalConfig.temperature,
                 maxTokens: finalConfig.maxTokens,
-                useFunctionCalling: finalConfig.useFunctionCalling,
                 provider: finalConfig.provider
             });
 
@@ -178,7 +177,6 @@ export class LLMHandler {
                     model: request.llmConfig?.model || envConfig.defaultModel,
                     temperature: request.llmConfig?.temperature,
                     maxTokens: request.llmConfig?.maxTokens,
-                    useFunctionCalling: request.llmConfig?.useFunctionCalling
                 });
                 providerInstance = this.providers.get(targetProviderName);
                 if (!providerInstance) throw new Error(`Failed to dynamically initialize provider: ${targetProviderName}`);
@@ -201,9 +199,6 @@ export class LLMHandler {
                 temperature: request.llmConfig.temperature ?? currentProviderConfig.temperature,
                 maxTokens: request.llmConfig.maxTokens ?? currentProviderConfig.maxTokens,
                 timeout: request.llmConfig.timeout ?? currentProviderConfig.timeout,
-                useFunctionCalling: request.llmConfig.useFunctionCalling !== undefined 
-                                    ? request.llmConfig.useFunctionCalling 
-                                    : currentProviderConfig.useFunctionCalling
             };
             
             // Re-register the provider with this specific config for this call.
@@ -235,7 +230,6 @@ export class LLMHandler {
                     model: request.llmConfig?.model || envConfig.defaultModel,
                     temperature: request.llmConfig?.temperature,
                     maxTokens: request.llmConfig?.maxTokens,
-                    useFunctionCalling: request.llmConfig?.useFunctionCalling
                 });
                 providerInstance = this.providers.get(targetProviderName);
                 if (!providerInstance) throw new Error(`Failed to dynamically initialize provider for stream: ${targetProviderName}`);
@@ -253,9 +247,6 @@ export class LLMHandler {
                 temperature: request.llmConfig.temperature ?? currentProviderConfig.temperature,
                 maxTokens: request.llmConfig.maxTokens ?? currentProviderConfig.maxTokens,
                 timeout: request.llmConfig.timeout ?? currentProviderConfig.timeout,
-                useFunctionCalling: request.llmConfig.useFunctionCalling !== undefined 
-                                    ? request.llmConfig.useFunctionCalling 
-                                    : currentProviderConfig.useFunctionCalling
             };
             
             await this.registerProvider(requestSpecificConfig);
