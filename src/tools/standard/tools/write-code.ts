@@ -11,14 +11,14 @@ export const writeCodeTool: ToolConfig = {
     },
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            // Accept both 'spec' and 'query' for flexibility
-            const spec = params.spec || params.query;
+            // Accept 'prompt', 'spec', and 'query' for flexibility
+            const spec = params.prompt || params.spec || params.query;
             const { language = 'javascript', context = {} } = params;
             
             if (!spec) {
                 return {
                     success: false,
-                    error: 'Spec or query parameter is required'
+                    error: 'Prompt, spec, or query parameter is required'
                 };
             }
 
