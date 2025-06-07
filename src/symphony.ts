@@ -1,5 +1,5 @@
 import { ISymphony, SymphonyConfig, IMetricsAPI } from './types/symphony';
-import { ToolLifecycleState, AgentConfig, TeamConfig } from './types/sdk';
+import { ToolLifecycleState, AgentConfig, TeamConfig, ToolResult } from './types/sdk';
 import { IToolService, IAgentService, ITeamService, IValidationManager } from './types/interfaces';
 import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
@@ -60,7 +60,8 @@ class ToolService implements IToolService {
             inputs: config.inputs,
             outputs: config.outputs,
             capabilities: config.capabilities,
-            config: config.config || {}
+            config: config.config || {},
+            inputSchema: config.config?.inputSchema
         };
 
         this.toolRegistry.registerTool(config.name, toolToRegister);
@@ -177,14 +178,14 @@ class AgentService implements IAgentService {
 class TeamService implements ITeamService {
     private teams: Map<string, TeamCoordinator> = new Map();
     private logger: Logger;
-    private toolRegistry: ToolRegistry;
     private _state: ToolLifecycleState = ToolLifecycleState.READY;
     private agentService: IAgentService;
+    private runtime: SymphonyRuntime;
 
-    constructor(agentService: IAgentService, toolRegistry: ToolRegistry) {
+    constructor(agentService: IAgentService, runtime: SymphonyRuntime) {
         this.logger = Logger.getInstance('TeamService');
         this.agentService = agentService;
-        this.toolRegistry = toolRegistry;
+        this.runtime = runtime;
     }
 
     get state(): ToolLifecycleState {
@@ -192,7 +193,7 @@ class TeamService implements ITeamService {
     }
 
     getDependencies(): string[] {
-        return ['ToolRegistry', 'AgentService'];
+        return ['AgentService', 'SymphonyRuntime'];
     }
 
     async create(config: TeamConfig): Promise<TeamCoordinator> {
@@ -201,8 +202,23 @@ class TeamService implements ITeamService {
             strategy: config.strategy?.name || 'default'
         });
 
-        // Create TeamCoordinator instance with shared ToolRegistry
-        const teamCoordinator = new TeamCoordinator(config, this.toolRegistry, this.agentService);
+        // This adapter function makes the runtime compatible with the coordinator's expectation
+        const teamExecutor = async (task: string, agentConfig: AgentConfig): Promise<ToolResult> => {
+            const runtimeResult = await this.runtime.execute(task, agentConfig);
+            // This is a simplified transformation. A real implementation would be more robust.
+            return {
+                success: runtimeResult.success,
+                result: runtimeResult.executionDetails,
+                error: runtimeResult.error,
+                metrics: {
+                    duration: runtimeResult.metrics.totalDuration,
+                    startTime: runtimeResult.metrics.startTime,
+                    endTime: runtimeResult.metrics.endTime,
+                }
+            };
+        };
+
+        const teamCoordinator = new TeamCoordinator(config, this.agentService, teamExecutor);
         
         // Initialize the team
         await teamCoordinator.initialize();
@@ -301,6 +317,7 @@ export class Symphony implements Partial<ISymphony> {
     private _cache: CacheIntelligenceService;
     private _memory: MemoryService;
     private _streaming: StreamingService;
+    private _tools: ToolRegistry;
     
     // New services for NLP
     private _contextIntelligenceApi: IContextAPI;
@@ -336,7 +353,14 @@ export class Symphony implements Partial<ISymphony> {
         this._logger = Logger.getInstance('Symphony');
         this._llm = LLMHandler.getInstance();
         this._metrics = new MetricsService();
-        this._db = new DatabaseService(config.db);
+        
+        // Ensure a default DB config exists if none is provided
+        const dbConfig = config.db || {
+            adapter: 'sqlite',
+            path: ':memory:'
+        };
+
+        this._db = new DatabaseService(dbConfig);
         this._cache = CacheIntelligenceService.getInstance(this._db);
         this._memory = MemoryService.getInstance(this._db);
         this._streaming = StreamingService.getInstance();
@@ -346,6 +370,7 @@ export class Symphony implements Partial<ISymphony> {
         this._nlpService = new NlpService(this._db, this._contextIntelligenceApi);
         
         const sharedToolRegistry = ToolRegistry.getInstance();
+        this._tools = sharedToolRegistry;
         sharedToolRegistry.initializeContextIntegration(this._db);
         
         const runtimeDependencies: RuntimeDependencies = {
@@ -359,7 +384,7 @@ export class Symphony implements Partial<ISymphony> {
         // Correctly instantiate services with all their dependencies
         const toolServiceInstance = new ToolService(sharedToolRegistry, this._nlpService);
         const agentServiceInstance = new AgentService(this._runtime);
-        const teamServiceInstance = new TeamService(agentServiceInstance, sharedToolRegistry);
+        const teamServiceInstance = new TeamService(agentServiceInstance, this._runtime);
         const validationServiceInstance = new ValidationService();
 
         this.tool = toolServiceInstance;
@@ -368,8 +393,8 @@ export class Symphony implements Partial<ISymphony> {
         this.validation = validationServiceInstance;
 
         this._logger.info('Symphony', 'Core services instantiated. Context intelligence integration with ToolRegistry prepared.', {
-            contextTools: sharedToolRegistry.getContextTools(),
-            totalToolsRegisteredInitially: sharedToolRegistry.getAvailableTools().length
+            contextTools: this._tools.getContextTools(),
+            totalToolsRegisteredInitially: this._tools.getAvailableTools().length
         });
     }
     
@@ -406,9 +431,11 @@ export class Symphony implements Partial<ISymphony> {
         this._logger.info('Symphony', 'Initializing Symphony SDK...');
         
         try {
+            // Initialize DB first as other services depend on it
             await this.db.initialize(this._config.db);
             this._logger.info('Symphony', 'Database initialized');
-            
+
+            // Initialize services that may depend on the database
             await Promise.all([
                 this._cache.initialize(this._config.cache),
                 this._memory.initialize(this._config.memory),
@@ -416,25 +443,26 @@ export class Symphony implements Partial<ISymphony> {
             ]);
             this._logger.info('Symphony', 'Dependent services (cache, memory, streaming) initialized.');
 
+            // Initialize functional services
             await this.tool.initialize();
             await this.agent.initialize();
             await this.team.initialize();
             await this.validation.initialize();
             this._logger.info('Symphony', 'Main functional services (tool, agent, team, validation) initialized.');
             
-            const toolRegistry = (this.tool as ToolService).registry;
-            await toolRegistry.initializeAutoPopulation(this._nlpService);
-            this._logger.info('Symphony', 'ToolRegistry auto-population/runtime NLP loading initiated.');
-            
             const { LLMHandler } = await import('./llm/handler');
             const llmHandler = LLMHandler.getInstance();
             llmHandler.setCacheService(this._cache);
+            
+            // Initialize NLP service after all other services are ready
+            await this._nlpService.loadAllPersistedPatternsToRuntime();
+            this._logger.info('Symphony', 'NLP Service loaded persisted patterns.');
             
             this._state = ToolLifecycleState.READY;
             (this as any).initialized = true;
             (this as any).isInitialized = true;
             this._logger.info('Symphony', 'Symphony SDK Initialization complete', {
-                toolsAvailable: toolRegistry.getAvailableTools().length
+                toolsAvailable: (this.tool as ToolService).registry.getAvailableTools().length
             });
         } catch (error) {
             this._state = ToolLifecycleState.ERROR;
@@ -453,7 +481,9 @@ export class Symphony implements Partial<ISymphony> {
             database: this._db,
             cache: this._cache,
             memory: this._memory,
-            streaming: this._streaming
+            streaming: this._streaming,
+            context: this._contextIntelligenceApi,
+            nlp: this._nlpService
         };
         return services[name];
     }

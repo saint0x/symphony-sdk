@@ -12,7 +12,7 @@ PRAGMA synchronous = NORMAL;
 -- ================================================================
 
 -- Pattern Groups (file_operations, code_editing, etc.)
-CREATE TABLE pattern_groups (
+CREATE TABLE IF NOT EXISTS pattern_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL UNIQUE,
     description TEXT,
@@ -21,7 +21,7 @@ CREATE TABLE pattern_groups (
 );
 
 -- XML Patterns (core cache intelligence)
-CREATE TABLE xml_patterns (
+CREATE TABLE IF NOT EXISTS xml_patterns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pattern_id TEXT NOT NULL UNIQUE,           -- FILE_SEARCH, EDIT_FILE, etc.
     group_id INTEGER NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS nlp_patterns (
 );
 
 -- Pattern usage history (for learning optimization)
-CREATE TABLE pattern_executions (
+CREATE TABLE IF NOT EXISTS pattern_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pattern_id INTEGER NOT NULL,
     execution_id TEXT NOT NULL,               -- Unique execution identifier
@@ -94,7 +94,7 @@ CREATE TABLE pattern_executions (
 -- ================================================================
 
 -- Context tree sessions
-CREATE TABLE context_sessions (
+CREATE TABLE IF NOT EXISTS context_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL UNIQUE,
     session_type TEXT NOT NULL DEFAULT 'user',  -- user, system, learning
@@ -117,7 +117,7 @@ CREATE TABLE context_sessions (
 );
 
 -- Agent state tracking
-CREATE TABLE agent_states (
+CREATE TABLE IF NOT EXISTS agent_states (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
@@ -142,7 +142,7 @@ CREATE TABLE agent_states (
 );
 
 -- Learning configuration and evolution
-CREATE TABLE learning_config (
+CREATE TABLE IF NOT EXISTS learning_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     config_type TEXT NOT NULL,               -- pattern_evolution, type_inference, etc.
     config_data JSON NOT NULL,               -- Configuration parameters
@@ -157,7 +157,7 @@ CREATE TABLE learning_config (
 -- ================================================================
 
 -- Tool execution tracking (comprehensive analytics)
-CREATE TABLE tool_executions (
+CREATE TABLE IF NOT EXISTS tool_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL UNIQUE,
     
@@ -192,7 +192,7 @@ CREATE TABLE tool_executions (
 );
 
 -- Chain execution tracking
-CREATE TABLE chain_executions (
+CREATE TABLE IF NOT EXISTS chain_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL UNIQUE,
     chain_name TEXT NOT NULL,
@@ -222,7 +222,7 @@ CREATE TABLE chain_executions (
 );
 
 -- Team coordination tracking
-CREATE TABLE team_executions (
+CREATE TABLE IF NOT EXISTS team_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL UNIQUE,
     team_name TEXT NOT NULL,
@@ -247,7 +247,7 @@ CREATE TABLE team_executions (
 );
 
 -- Pipeline execution tracking  
-CREATE TABLE pipeline_executions (
+CREATE TABLE IF NOT EXISTS pipeline_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL UNIQUE,
     pipeline_name TEXT NOT NULL,
@@ -282,7 +282,7 @@ CREATE TABLE pipeline_executions (
 -- ================================================================
 
 -- Key-value storage for user applications
-CREATE TABLE user_data (
+CREATE TABLE IF NOT EXISTS user_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     namespace TEXT NOT NULL DEFAULT 'default', -- Allow data separation
     key TEXT NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE user_data (
 );
 
 -- User-defined tables (dynamic schema)
-CREATE TABLE user_tables (
+CREATE TABLE IF NOT EXISTS user_tables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     table_name TEXT NOT NULL UNIQUE,
     schema_definition JSON NOT NULL,          -- Column definitions
@@ -311,7 +311,7 @@ CREATE TABLE user_tables (
 );
 
 -- Flexible table data storage
-CREATE TABLE user_table_data (
+CREATE TABLE IF NOT EXISTS user_table_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     table_name TEXT NOT NULL,
     row_data JSON NOT NULL,                   -- Flexible row storage
@@ -326,7 +326,7 @@ CREATE TABLE user_table_data (
 -- ================================================================
 
 -- System performance metrics
-CREATE TABLE performance_metrics (
+CREATE TABLE IF NOT EXISTS performance_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     metric_type TEXT NOT NULL,               -- tool_performance, pattern_success, etc.
     metric_name TEXT NOT NULL,
@@ -343,7 +343,7 @@ CREATE TABLE performance_metrics (
 );
 
 -- Learning analytics
-CREATE TABLE learning_metrics (
+CREATE TABLE IF NOT EXISTS learning_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     metric_type TEXT NOT NULL,               -- confidence_evolution, pattern_accuracy
     entity_type TEXT NOT NULL,               -- pattern, tool, agent, session
@@ -362,36 +362,36 @@ CREATE TABLE learning_metrics (
 -- ================================================================
 
 -- XML Patterns
-CREATE INDEX idx_patterns_confidence ON xml_patterns(confidence_score DESC);
-CREATE INDEX idx_patterns_tool ON xml_patterns(tool_name);
-CREATE INDEX idx_patterns_last_used ON xml_patterns(last_used DESC);
-CREATE INDEX idx_patterns_active ON xml_patterns(active) WHERE active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_patterns_confidence ON xml_patterns(confidence_score DESC);
+CREATE INDEX IF NOT EXISTS idx_patterns_tool ON xml_patterns(tool_name);
+CREATE INDEX IF NOT EXISTS idx_patterns_last_used ON xml_patterns(last_used DESC);
+CREATE INDEX IF NOT EXISTS idx_patterns_active ON xml_patterns(active) WHERE active = TRUE;
 
 -- Pattern Executions
-CREATE INDEX idx_pattern_exec_pattern ON pattern_executions(pattern_id);
-CREATE INDEX idx_pattern_exec_session ON pattern_executions(session_id);
-CREATE INDEX idx_pattern_exec_success ON pattern_executions(success);
-CREATE INDEX idx_pattern_exec_time ON pattern_executions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pattern_exec_pattern ON pattern_executions(pattern_id);
+CREATE INDEX IF NOT EXISTS idx_pattern_exec_session ON pattern_executions(session_id);
+CREATE INDEX IF NOT EXISTS idx_pattern_exec_success ON pattern_executions(success);
+CREATE INDEX IF NOT EXISTS idx_pattern_exec_time ON pattern_executions(created_at DESC);
 
 -- Context Sessions
-CREATE INDEX idx_sessions_active ON context_sessions(active) WHERE active = TRUE;
-CREATE INDEX idx_sessions_type ON context_sessions(session_type);
-CREATE INDEX idx_sessions_activity ON context_sessions(last_activity DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_active ON context_sessions(active) WHERE active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_sessions_type ON context_sessions(session_type);
+CREATE INDEX IF NOT EXISTS idx_sessions_activity ON context_sessions(last_activity DESC);
 
 -- Tool Executions
-CREATE INDEX idx_tool_exec_tool ON tool_executions(tool_name);
-CREATE INDEX idx_tool_exec_session ON tool_executions(session_id);
-CREATE INDEX idx_tool_exec_success ON tool_executions(success);
-CREATE INDEX idx_tool_exec_time ON tool_executions(created_at DESC);
-CREATE INDEX idx_tool_exec_performance ON tool_executions(execution_time_ms);
+CREATE INDEX IF NOT EXISTS idx_tool_exec_tool ON tool_executions(tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_exec_session ON tool_executions(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_exec_success ON tool_executions(success);
+CREATE INDEX IF NOT EXISTS idx_tool_exec_time ON tool_executions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_exec_performance ON tool_executions(execution_time_ms);
 
 -- User Data
-CREATE INDEX idx_user_data_namespace ON user_data(namespace);
-CREATE INDEX idx_user_data_expires ON user_data(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX idx_user_data_accessed ON user_data(last_accessed DESC);
+CREATE INDEX IF NOT EXISTS idx_user_data_namespace ON user_data(namespace);
+CREATE INDEX IF NOT EXISTS idx_user_data_expires ON user_data(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_data_accessed ON user_data(last_accessed DESC);
 
 -- Performance Metrics
-CREATE INDEX idx_perf_metrics_type_time ON performance_metrics(metric_type, time_period, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_perf_metrics_type_time ON performance_metrics(metric_type, time_period, created_at DESC);
 
 -- NLP Patterns
 CREATE INDEX IF NOT EXISTS idx_nlp_patterns_tool_name ON nlp_patterns(tool_name);
@@ -421,7 +421,7 @@ INSERT INTO learning_config (config_type, config_data) VALUES
 -- ================================================================
 
 -- Pattern performance view
-CREATE VIEW pattern_performance AS
+CREATE VIEW IF NOT EXISTS pattern_performance AS
 SELECT 
     p.pattern_id,
     p.pattern_name,
@@ -441,7 +441,7 @@ JOIN pattern_groups pg ON p.group_id = pg.id
 WHERE p.active = TRUE;
 
 -- Tool analytics view
-CREATE VIEW tool_analytics AS
+CREATE VIEW IF NOT EXISTS tool_analytics AS
 SELECT 
     tool_name,
     COUNT(*) as total_executions,
@@ -455,7 +455,7 @@ FROM tool_executions
 GROUP BY tool_name;
 
 -- Session analytics view  
-CREATE VIEW session_analytics AS
+CREATE VIEW IF NOT EXISTS session_analytics AS
 SELECT 
     session_id,
     session_type,

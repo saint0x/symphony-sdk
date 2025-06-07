@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ReflectionEngineInterface, RuntimeContext, RuntimeDependencies, Reflection, ExecutionStep, Conversation, ReflectionAssessment } from "../RuntimeTypes";
+import { ReflectionEngineInterface, RuntimeDependencies, Reflection, ExecutionStep, Conversation, ReflectionAssessment } from "../RuntimeTypes";
 import { ToolResult } from '../../types/sdk';
+import { ExecutionState } from '../context/ExecutionState';
 
 /**
  * The ReflectionEngine leverages the 'ponderTool' to analyze execution results
@@ -33,7 +34,7 @@ export class ReflectionEngine implements ReflectionEngineInterface {
      * Reflects on an execution step by forming a query and calling the ponderTool.
      * @returns A Reflection object.
      */
-    async reflect(stepResult: ExecutionStep, context: RuntimeContext, _conversation: Conversation): Promise<Reflection> {
+    async reflect(stepResult: ExecutionStep, state: ExecutionState, _conversation: Conversation): Promise<Reflection> {
         this.dependencies.logger.info('ReflectionEngine', `Reflecting on step: ${stepResult.description}`);
         
         const query = this.createPonderQuery(stepResult);
@@ -42,9 +43,9 @@ export class ReflectionEngine implements ReflectionEngineInterface {
             const ponderResult: ToolResult = await this.dependencies.toolRegistry.executeTool('ponderTool', {
                 query: query,
                 context: {
-                    agentConfig: context.agentConfig,
-                    fullPlan: context.currentPlan,
-                    executionHistory: context.executionHistory
+                    agentConfig: state.agentConfig,
+                    fullPlan: state.plan,
+                    executionHistory: state.history
                 }
             });
 

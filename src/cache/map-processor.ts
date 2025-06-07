@@ -68,6 +68,7 @@ export class CommandMapProcessor {
     private database: IDatabaseService;
     private fastPathThreshold: number = 0.85;
     private initialized: boolean = false;
+    private dbPatternsLoaded: boolean = false;
 
     private constructor(database: IDatabaseService) {
         this.logger = Logger.getInstance('CommandMapProcessor');
@@ -97,11 +98,9 @@ export class CommandMapProcessor {
                 await this.loadPatternsFromXML(xmlPath);
             }
 
-            // Load patterns from database
-            await this.loadPatternsFromDatabase();
-
+            // DB patterns will be loaded on demand.
             this.initialized = true;
-            this.logger.info('CommandMapProcessor', `Loaded ${this.patterns.size} patterns successfully`);
+            this.logger.info('CommandMapProcessor', `Initialized with ${this.patterns.size} XML patterns. DB patterns will be loaded on demand.`);
         } catch (error) {
             this.logger.error('CommandMapProcessor', 'Failed to initialize', { error });
             throw error;
@@ -224,6 +223,20 @@ export class CommandMapProcessor {
         return 1;
     }
 
+    private async ensureDbPatternsLoaded(): Promise<void> {
+        if (this.dbPatternsLoaded) return;
+        try {
+            this.logger.info('CommandMapProcessor', 'Lazily loading patterns from database');
+            await this.loadPatternsFromDatabase();
+            this.dbPatternsLoaded = true;
+            this.logger.info('CommandMapProcessor', `DB patterns loaded. Total patterns: ${this.patterns.size}`);
+        } catch (error) {
+            this.logger.error('CommandMapProcessor', 'Failed to lazily load patterns from database', { error });
+            // Optionally re-throw or handle so the calling function knows about the failure
+            throw error;
+        }
+    }
+
     private async loadPatternsFromDatabase(): Promise<void> {
         this.logger.info('CommandMapProcessor', 'Loading patterns from database');
 
@@ -242,6 +255,7 @@ export class CommandMapProcessor {
     }
 
     async processUserInput(input: string, sessionId?: string): Promise<CacheResult> {
+        await this.ensureDbPatternsLoaded();
         const startTime = Date.now();
         
         this.logger.info('CommandMapProcessor', 'Processing user input for pattern match', {
@@ -481,6 +495,7 @@ export class CommandMapProcessor {
 
     async updatePatternConfidence(patternId: string, success: boolean, executionTime: number): Promise<void> {
         try {
+            await this.ensureDbPatternsLoaded();
             const pattern = this.patterns.get(patternId);
             if (!pattern) return;
 
@@ -517,7 +532,8 @@ export class CommandMapProcessor {
         }
     }
 
-    getPatterns(): Pattern[] {
+    async getPatterns(): Promise<Pattern[]> {
+        await this.ensureDbPatternsLoaded();
         return Array.from(this.patterns.values());
     }
 
@@ -682,11 +698,13 @@ export class CommandMapProcessor {
         return 'string';
     }
 
-    getPattern(patternId: string): Pattern | undefined {
+    async getPattern(patternId: string): Promise<Pattern | undefined> {
+        await this.ensureDbPatternsLoaded();
         return this.patterns.get(patternId);
     }
 
-    getPatternsByTool(toolName: string): Pattern[] {
+    async getPatternsByTool(toolName: string): Promise<Pattern[]> {
+        await this.ensureDbPatternsLoaded();
         return Array.from(this.patterns.values()).filter(p => p.toolName === toolName);
     }
 

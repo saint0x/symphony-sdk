@@ -1,8 +1,9 @@
-import { ExecutionEngineInterface, RuntimeContext } from "../RuntimeTypes";
+import { ExecutionEngineInterface } from "../RuntimeTypes";
 import { RuntimeDependencies } from "../RuntimeTypes";
-import { ToolResult } from "../../types/sdk";
+import { ToolResult, AgentConfig } from "../../types/sdk";
 import { LLMRequest, LLMMessage, LLMConfig as RichLLMAgentConfig } from "../../llm/types";
 import { SystemPromptService } from "../../agents/sysprompt";
+import { ExecutionState } from "../context/ExecutionState";
 
 /**
  * The ExecutionEngine is responsible for the core "magic" of tool execution.
@@ -37,11 +38,11 @@ export class ExecutionEngine implements ExecutionEngineInterface {
      * Executes a task using the "magic" of unconscious tool execution.
      * This is a direct port of the original, successful logic from AgentExecutor.
      * @param task The task to execute.
-     * @param context The runtime context for this execution.
+     * @param agentConfig The configuration of the agent performing the task.
+     * @param state The current execution state.
      * @returns A promise that resolves with the result of the tool execution.
      */
-    async execute(task: string, context: RuntimeContext): Promise<ToolResult> {
-        const agentConfig = context.agentConfig;
+    async execute(task: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ToolResult> {
         try {
             this.dependencies.logger.info('ExecutionEngine', `Executing task: ${task}`);
 
@@ -59,7 +60,7 @@ export class ExecutionEngine implements ExecutionEngineInterface {
                 hasCustomDirectives: !!agentConfig.directives
             });
 
-            const analysisResult = await this._analyzeAndExecute(task, systemPrompt, context);
+            const analysisResult = await this._analyzeAndExecute(task, systemPrompt, agentConfig, state);
             
             let overallTaskSuccess = true;
             let primaryError: string | undefined;
@@ -125,8 +126,7 @@ export class ExecutionEngine implements ExecutionEngineInterface {
         }
     }
 
-    private async _analyzeAndExecute(task: string, systemPrompt: string, context: RuntimeContext) {
-        const agentConfig = context.agentConfig;
+    private async _analyzeAndExecute(task: string, systemPrompt: string, agentConfig: AgentConfig, _state: ExecutionState) {
         const agentLLMConfig = typeof agentConfig.llm === 'object' ? agentConfig.llm as RichLLMAgentConfig : null;
         const agentHasTools = agentConfig.tools && agentConfig.tools.length > 0;
 

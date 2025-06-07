@@ -591,6 +591,15 @@ class SQLiteTableOperations implements TableOperations, TableQuery {
     return count > 0;
   }
 
+  async delete(): Promise<DeleteResult> {
+    const { sql, params } = this.buildDeleteQuery();
+    const result = await this.adapter._executeRun(sql, params);
+    return {
+      rowsDeleted: result.changes,
+      success: result.changes > 0
+    };
+  }
+
   // Direct operations
   async insert(data: Record<string, any>): Promise<InsertResult> {
     const fields = Object.keys(data);
@@ -629,19 +638,6 @@ class SQLiteTableOperations implements TableOperations, TableQuery {
 
     return {
       rowsAffected: result.changes,
-      success: result.changes > 0
-    };
-  }
-
-  async delete(where: Record<string, any>): Promise<DeleteResult> {
-    const whereClause = Object.keys(where).map(key => `${key} = ?`).join(' AND ');
-    const sql = `DELETE FROM ${this.tableName} WHERE ${whereClause}`;
-    const params = Object.values(where);
-    
-    const result = await this.adapter._executeRun(sql, params);
-
-    return {
-      rowsDeleted: result.changes,
       success: result.changes > 0
     };
   }
@@ -724,6 +720,35 @@ class SQLiteTableOperations implements TableOperations, TableQuery {
 
     if (this.offsetValue !== undefined) {
       sql += ` OFFSET ${this.offsetValue}`;
+    }
+
+    return { sql, params };
+  }
+
+  private buildDeleteQuery(): { sql: string; params: any[] } {
+    const params: any[] = [];
+    let sql = `DELETE FROM ${this.tableName}`;
+
+    if (this.conditions.length > 0) {
+      sql += ' WHERE ';
+      const whereParts: string[] = [];
+
+      for (const condition of this.conditions) {
+        let conditionSQL = `${condition.field} ${condition.operator}`;
+        
+        if (condition.operator === 'IN' || condition.operator === 'NOT IN') {
+          const placeholders = condition.value.map(() => '?').join(', ');
+          conditionSQL += ` (${placeholders})`;
+          params.push(...condition.value);
+        } else {
+          conditionSQL += ' ?';
+          params.push(condition.value);
+        }
+
+        whereParts.push(conditionSQL);
+      }
+
+      sql += whereParts.join(' AND ');
     }
 
     return { sql, params };

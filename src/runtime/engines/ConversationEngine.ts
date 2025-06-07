@@ -33,7 +33,7 @@ export class ConversationEngine implements ConversationEngineInterface {
      * @param context The runtime context.
      * @returns A new Conversation object.
      */
-    async initiate(task: string, context: RuntimeContext): Promise<Conversation> {
+    async initiate(task: string, context: { sessionId: string }): Promise<Conversation> {
         const conversation = new ConversationManager(task, context.sessionId);
         
         // For now, we'll just add a simple, hardcoded opening response.
@@ -63,7 +63,7 @@ export class ConversationEngine implements ConversationEngineInterface {
      * Concludes the conversation after execution is complete.
      * (This will be implemented in a later step)
      */
-    async conclude(conversation: Conversation, _context: RuntimeContext): Promise<Conversation> {
+    async conclude(conversation: Conversation, _context: { sessionId: string }): Promise<Conversation> {
         this.dependencies.logger.warn('ConversationEngine', 'conclude method is not yet implemented.');
         return conversation;
     }

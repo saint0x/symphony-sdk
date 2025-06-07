@@ -3,6 +3,7 @@ import { IContextAPI } from '../api/IContextAPI';
 import { LLMHandler } from '../llm/handler';
 import { ToolRegistry } from '../tools/standard/registry';
 import { Logger } from '../utils/logger';
+import { ExecutionState } from './context/ExecutionState';
 
 // ==========================================
 // CORE RUNTIME TYPES
@@ -260,6 +261,7 @@ export interface Insight {
   readonly source: string;
   readonly timestamp: number;
   readonly actionable: boolean;
+  readonly metadata?: Record<string, any>;
 }
 
 export type InsightType = 
@@ -312,22 +314,22 @@ export interface RuntimeEngine {
 }
 
 export interface ExecutionEngineInterface extends RuntimeEngine {
-  execute(task: string, context: RuntimeContext): Promise<ToolResult>;
+  execute(task: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ToolResult>;
 }
 
 export interface ConversationEngineInterface extends RuntimeEngine {
-  initiate(task: string, context: RuntimeContext): Promise<Conversation>;
-  run(conversation: Conversation, context: RuntimeContext): Promise<Conversation>;
-  conclude(conversation: Conversation, context: RuntimeContext): Promise<Conversation>;
+  initiate(task: string, context: { sessionId: string }): Promise<Conversation>;
+  run(conversation: Conversation, context: { sessionId: string }): Promise<Conversation>;
+  conclude(conversation: Conversation, context: { sessionId:string }): Promise<Conversation>;
 }
 
 export interface PlanningEngineInterface extends RuntimeEngine {
-  analyzeTask(task: string, context: RuntimeContext): Promise<TaskAnalysis>;
-  createExecutionPlan(task: string, context: RuntimeContext): Promise<ExecutionPlan>;
+  analyzeTask(task: string, state: ExecutionState): Promise<TaskAnalysis>;
+  createExecutionPlan(task: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ExecutionPlan>;
 }
 
 export interface ReflectionEngineInterface extends RuntimeEngine {
-  reflect(stepResult: ExecutionStep, context: RuntimeContext, conversation: Conversation): Promise<Reflection>;
+  reflect(stepResult: ExecutionStep, state: ExecutionState, conversation: Conversation): Promise<Reflection>;
 }
 
 // ==========================================
@@ -363,6 +365,7 @@ export interface ExecutionDetails {
   completedSteps: number;
   failedSteps: number;
   adaptations: ExecutionAdaptation[];
+  readonly insights?: readonly Insight[];
 }
 
 export type RuntimeStatus = 'initializing' | 'ready' | 'executing' | 'error' | 'shutdown';

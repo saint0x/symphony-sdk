@@ -91,11 +91,6 @@ export interface IContextAPI {
     useMagic(intent: 'validate_command_update', params: ValidateCommandParams): Promise<ToolResult>;
     
     /**
-     * Update learning context from execution results
-     */
-    useMagic(intent: 'update_learning', params: LearningUpdateRequest): Promise<ToolResult>;
-    
-    /**
      * Execute intelligent context pruning
      */
     useMagic(intent: 'prune_context', params: ContextPruningRequest): Promise<ToolResult>;
@@ -152,7 +147,6 @@ export interface IContextAPI {
 
 export type MagicIntent = 
     | 'validate_command_update'
-    | 'update_learning'
     | 'prune_context'
     | 'update_pattern_stats'
     | 'validate_context_tree'
@@ -168,7 +162,6 @@ export type MagicIntent =
 
 export type MagicRequest = 
     | { intent: 'validate_command_update'; params: ValidateCommandParams }
-    | { intent: 'update_learning'; params: LearningUpdateRequest }
     | { intent: 'prune_context'; params: ContextPruningRequest }
     | { intent: 'update_pattern_stats'; params: PatternUpdateRequest }
     | { intent: 'validate_context_tree'; params: ValidateContextTreeParams }

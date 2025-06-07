@@ -20,6 +20,10 @@ export class AgentExecutor extends BaseAgent {
         return this.formatRuntimeResult(runtimeResult);
     }
     
+    public getConfig(): AgentConfig {
+        return this.config;
+    }
+
     private formatRuntimeResult(runtimeResult: RuntimeResult): ToolResult {
         const { conversation, metrics, executionDetails, success, error } = runtimeResult;
 

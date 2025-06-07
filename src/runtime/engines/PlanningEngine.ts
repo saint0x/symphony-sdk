@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { PlanningEngineInterface, RuntimeContext, RuntimeDependencies, ExecutionPlan, TaskAnalysis, TaskComplexity, PlannedStep } from "../RuntimeTypes";
-import { ToolResult } from "../../types/sdk";
+import { PlanningEngineInterface, RuntimeDependencies, ExecutionPlan, TaskAnalysis, TaskComplexity, PlannedStep } from "../RuntimeTypes";
+import { ToolResult, AgentConfig } from "../../types/sdk";
+import { ExecutionState } from '../context/ExecutionState';
 
 /**
  * The PlanningEngine is responsible for analyzing tasks and creating execution plans.
@@ -34,10 +35,10 @@ export class PlanningEngine implements PlanningEngineInterface {
     /**
      * Analyzes the complexity of a task to determine if it requires multi-step planning.
      * @param task The user's task description.
-     * @param _context The runtime context.
+     * @param _state The current execution state.
      * @returns A TaskAnalysis object.
      */
-    async analyzeTask(task: string, _context: RuntimeContext): Promise<TaskAnalysis> {
+    async analyzeTask(task: string, _state: ExecutionState): Promise<TaskAnalysis> {
         const keywords = ['then', 'and then', 'after that', 'first', 'second', 'finally', 'create a plan'];
         const taskLower = task.toLowerCase();
 
@@ -58,10 +59,11 @@ export class PlanningEngine implements PlanningEngineInterface {
     /**
      * Creates a detailed execution plan for a given task by wrapping the 'createPlanTool'.
      * @param task The user's task description.
-     * @param context The runtime context.
+     * @param agentConfig The configuration of the agent.
+     * @param state The current execution state.
      * @returns An ExecutionPlan object.
      */
-    async createExecutionPlan(task: string, context: RuntimeContext): Promise<ExecutionPlan> {
+    async createExecutionPlan(task: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ExecutionPlan> {
         this.dependencies.logger.info('PlanningEngine', `Creating execution plan for task: ${task}`);
 
         try {
@@ -69,9 +71,9 @@ export class PlanningEngine implements PlanningEngineInterface {
             const planSuggestionResult = await this.dependencies.contextAPI.useMagic('suggest_tools', {
                 task: task,
                 context: {
-                    agentName: context.agentConfig.name,
-                    availableTools: context.agentConfig.tools,
-                    sessionId: context.sessionId
+                    agentName: agentConfig.name,
+                    availableTools: agentConfig.tools,
+                    sessionId: state.sessionId
                 }
             });
 
@@ -80,8 +82,8 @@ export class PlanningEngine implements PlanningEngineInterface {
             const planToolResult: ToolResult = await this.dependencies.toolRegistry.executeTool('createPlanTool', {
                 objective: task,
                 context: {
-                    agentName: context.agentConfig.name,
-                    availableTools: context.agentConfig.tools,
+                    agentName: agentConfig.name,
+                    availableTools: agentConfig.tools,
                     suggestions: planSuggestionResult.result?.suggestions
                 }
             });

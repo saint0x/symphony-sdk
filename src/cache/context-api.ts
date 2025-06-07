@@ -58,7 +58,6 @@ export class ContextAPI implements IContextAPI {
      * Type-safe magic method with overloads for perfect TypeScript experience
      */
     async useMagic(intent: 'validate_command_update', params: ValidateCommandParams): Promise<ToolResult>;
-    async useMagic(intent: 'update_learning', params: LearningUpdateRequest): Promise<ToolResult>;
     async useMagic(intent: 'prune_context', params: ContextPruningRequest): Promise<ToolResult>;
     async useMagic(intent: 'update_pattern_stats', params: PatternUpdateRequest): Promise<ToolResult>;
     async useMagic(intent: 'validate_context_tree', params: ValidateContextTreeParams): Promise<ToolResult>;
@@ -76,10 +75,8 @@ export class ContextAPI implements IContextAPI {
             switch (intent) {
                 case 'validate_command_update':
                     return this.validateCommandMapUpdate(params);
-                case 'update_learning':
-                    return this.updateLearningContext(params);
                 case 'prune_context':
-                    return this.executeContextPruning(params);
+                    return this.pruneContextEntries(params);
                 case 'update_pattern_stats':
                     return this.updatePatternStats(params);
                 case 'validate_context_tree':
@@ -110,8 +107,72 @@ export class ContextAPI implements IContextAPI {
     }
 
     // ==========================================
+    // DEPRECATED WRAPPERS - For ToolRegistry backward compatibility
+    // ==========================================
+
+    public async updateLearningContext(params: LearningUpdateRequest): Promise<ToolResult> {
+        this.logger.info('ContextAPI', 'Received call to deprecated updateLearningContext wrapper', { toolName: params.toolName });
+        
+        const executionTime = (params.contextData as any)?.executionTime || 0;
+        const errorDetails = (params.result as any)?.error || undefined;
+
+        const learnParams: LearnFromExecutionParams = {
+            toolName: params.toolName,
+            success: params.success,
+            executionTime,
+            userFeedback: params.userFeedback,
+            context: {
+                parameters: params.parameters,
+                result: params.result,
+                contextData: params.contextData
+            },
+            errorDetails
+        };
+        return this.useMagic('learn_from_execution', learnParams);
+    }
+
+    public async executeContextPruning(params: ContextPruningRequest): Promise<ToolResult> {
+        this.logger.info('ContextAPI', 'Executing context pruning');
+        return this.pruneContextEntries(params);
+    }
+
+    // ==========================================
     // NEW MAGIC METHODS
     // ==========================================
+
+    /**
+     * The actual implementation of the context pruning logic.
+     */
+    private async pruneContextEntries(params: ContextPruningRequest): Promise<ToolResult> {
+        try {
+            const maxAge = params.maxAge || 60 * 60 * 24 * 7; // Default to 7 days
+            const cutoffDate = new Date(Date.now() - maxAge).toISOString();
+
+            this.logger.info('ContextAPI', `Pruning tool executions older than ${cutoffDate}`);
+
+            const result = await this.database.table('tool_executions')
+                .whereLte('created_at', cutoffDate)
+                .delete();
+
+            const prunedCount = result.rowsDeleted || 0;
+            this.logger.info('ContextAPI', `Pruning complete. Pruned ${prunedCount} entries.`);
+
+            return {
+                success: true,
+                result: {
+                    pruningCompleted: true,
+                    prunedEntries: prunedCount,
+                    maxAge: params.maxAge
+                }
+            };
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Context pruning failed', { error, params });
+            return {
+                success: false,
+                error: `Context pruning failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
 
     /**
      * Suggest tools for a given task using learned patterns
@@ -123,7 +184,7 @@ export class ContextAPI implements IContextAPI {
                 agentName: params.agentName 
             });
 
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
             const taskLower = params.task.toLowerCase();
             
             // Find patterns that match the task
@@ -251,18 +312,10 @@ export class ContextAPI implements IContextAPI {
                 executionTime: params.executionTime
             });
 
-            // Update learning context
-            const learningResult = await this.updateLearningContext({
-                toolName: params.toolName,
-                parameters: params.context?.parameters || {},
-                result: params.context?.result || {},
-                success: params.success,
-                userFeedback: params.userFeedback,
-                contextData: params.context
-            });
+            // The recording is now handled by the ToolRegistry after every execution.
+            // This method now focuses on post-execution analysis and pattern updates.
 
-            // Update pattern stats if pattern exists
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
             const pattern = patterns.find(p => p.toolName === params.toolName);
             let patternResult = null;
             
@@ -283,7 +336,7 @@ export class ContextAPI implements IContextAPI {
                 success: true,
                 result: {
                     learned: true,
-                    learningUpdated: learningResult.success,
+                    learningUpdated: true, 
                     patternUpdated: !!pattern && patternResult?.success,
                     patternId: pattern?.id,
                     confidence: pattern?.confidence,
@@ -312,7 +365,7 @@ export class ContextAPI implements IContextAPI {
         try {
             this.logger.info('ContextAPI', 'Analyzing patterns', params);
 
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
             let filteredPatterns = patterns;
 
             // Apply filters
@@ -327,7 +380,7 @@ export class ContextAPI implements IContextAPI {
             const analysis = {
                 totalPatterns: patterns.length,
                 filteredPatterns: filteredPatterns.length,
-                averageConfidence: filteredPatterns.reduce((sum, p) => sum + p.confidence, 0) / filteredPatterns.length,
+                averageConfidence: filteredPatterns.length > 0 ? filteredPatterns.reduce((sum, p) => sum + p.confidence, 0) / filteredPatterns.length : 0,
                 topPerformers: filteredPatterns
                     .sort((a, b) => b.confidence - a.confidence)
                     .slice(0, 5)
@@ -372,7 +425,7 @@ export class ContextAPI implements IContextAPI {
             this.logger.info('ContextAPI', 'Optimizing performance', params);
 
             const executions = await this.database.table('tool_executions').find();
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
 
             let targetExecutions = executions;
             if (params.targetTool) {
@@ -425,7 +478,7 @@ export class ContextAPI implements IContextAPI {
             }
 
             // Check for pattern conflicts
-            const existingPatterns = this.mapProcessor.getPatterns();
+            const existingPatterns = await this.mapProcessor.getPatterns();
             const hasConflict = existingPatterns.some(pattern => 
                 pattern.trigger === nlpPattern && pattern.toolName !== toolName
             );
@@ -466,251 +519,6 @@ export class ContextAPI implements IContextAPI {
     }
 
     /**
-     * Update Learning Context - Tool Interface  
-     * Updates the learning context based on execution results and user feedback
-     */
-    async updateLearningContext(params: LearningUpdateRequest): Promise<ToolResult> {
-        try {
-            this.logger.info('ContextIntelligenceAPI', 'Updating learning context', {
-                toolName: params.toolName,
-                success: params.success,
-                hasFeedback: !!params.userFeedback
-            });
-
-            const { toolName, parameters, result, success, userFeedback, contextData } = params;
-
-            if (!this.config.enableLearning) {
-                return {
-                    success: true,
-                    result: { learningDisabled: true, message: 'Learning updates disabled' }
-                };
-            }
-
-            // Record execution in database for context building
-            await this.database.recordToolExecution({
-                execution_id: `learning_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                tool_name: toolName,
-                parameters: JSON.stringify(parameters),
-                result: JSON.stringify(result),
-                success,
-                execution_time_ms: 0,
-                session_id: this.config.sessionId || 'default',
-                error_details: success ? null : (result?.error || 'Execution failed'),
-                user_feedback: userFeedback ? this.mapUserFeedbackToInteger(userFeedback) : undefined,
-                pattern_id: undefined // No specific pattern for learning context updates
-            });
-
-            // Update pattern confidence if applicable
-            const patterns = this.mapProcessor.getPatterns();
-            const relatedPattern = patterns.find(p => p.toolName === toolName);
-            
-            if (relatedPattern) {
-                const confidenceAdjustment = this.calculateConfidenceAdjustment(success, userFeedback);
-                await this.mapProcessor.updatePatternConfidence(
-                    relatedPattern.id, 
-                    success, 
-                    0 // No execution time for learning updates
-                );
-
-                this.logger.info('ContextIntelligenceAPI', 'Updated pattern confidence', {
-                    patternId: relatedPattern.id,
-                    adjustment: confidenceAdjustment,
-                    newConfidence: relatedPattern.confidence + confidenceAdjustment
-                });
-            }
-
-            return {
-                success: true,
-                result: {
-                    learningUpdated: true,
-                    patternUpdated: !!relatedPattern,
-                    contextData: contextData || {},
-                    recommendations: this.generateLearningRecommendations(toolName, success, userFeedback)
-                }
-            };
-
-        } catch (error) {
-            this.logger.error('ContextIntelligenceAPI', 'Learning context update failed', { error, params });
-            return {
-                success: false,
-                error: `Learning update failed: ${error instanceof Error ? error.message : String(error)}`
-            };
-        }
-    }
-
-    /**
-     * Execute Context Pruning - Tool Interface
-     * Prunes old or low-confidence context entries to maintain performance
-     */
-    async executeContextPruning(params: ContextPruningRequest): Promise<ToolResult> {
-        try {
-            this.logger.info('ContextIntelligenceAPI', 'Executing context pruning', params);
-
-            const {
-                maxAge = 24 * 60 * 60 * 1000, // 24 hours default
-                minConfidence = 0.3,
-                keepRecentCount = 50
-            } = params;
-
-            let totalPruned = 0;
-
-            // 1. Prune context tree cache (existing functionality)
-            this.treeBuilder.clearCache();
-
-            // 2. Intelligent Database Pruning - Remove old tool execution records
-            
-            // Get old records that are candidates for pruning
-            const allExecutions = await this.database.table('tool_executions').find();
-            
-            // Group executions by tool to analyze usage patterns
-            const toolUsageMap = new Map<string, any[]>();
-            allExecutions.forEach((exec: any) => {
-                const toolName = exec.tool_name;
-                if (!toolUsageMap.has(toolName)) {
-                    toolUsageMap.set(toolName, []);
-                }
-                toolUsageMap.get(toolName)!.push(exec);
-            });
-
-            // Intelligent pruning logic
-            const recordsToPrune: string[] = [];
-            
-            this.logger.info('ContextIntelligenceAPI', 'Starting intelligent pruning analysis', {
-                totalTools: toolUsageMap.size,
-                totalExecutions: allExecutions.length,
-                maxAge,
-                minConfidence,
-                keepRecentCount
-            });
-            
-            for (const [toolName, executions] of toolUsageMap) {
-                // Calculate tool performance metrics
-                const successCount = executions.filter((e: any) => e.success).length;
-                const totalCount = executions.length;
-                const successRate = totalCount > 0 ? successCount / totalCount : 0;
-                
-                this.logger.info('ContextIntelligenceAPI', 'Analyzing tool', {
-                    toolName,
-                    totalExecutions: totalCount,
-                    successCount,
-                    successRate: Math.round(successRate * 100) + '%'
-                });
-                
-                // Sort executions by age (oldest first)
-                const sortedExecutions = executions.sort((a: any, b: any) => 
-                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                );
-
-                let toolPruneCount = 0;
-                let toolPreserveCount = 0;
-
-                // Pruning criteria based on intelligence
-                for (const execution of sortedExecutions) {
-                    const executionAge = Date.now() - new Date(execution.created_at).getTime();
-                    const isOld = executionAge > maxAge;
-                    const isLowPerformance = successRate < minConfidence;
-                    const isObsolete = !execution.success && executionAge > (maxAge / 2); // Failed and old
-                    
-                    // Keep recent high-value executions
-                    const isRecentCritical = executionAge < (maxAge / 4) && execution.success;
-                    const isHighFrequencyRecent = totalCount > 20 && successRate > 0.9 && executionAge < (maxAge / 2);
-                    
-                    // Age-based pruning is primary - only preserve if critically important
-                    if (isOld && !isRecentCritical && !isHighFrequencyRecent) {
-                        recordsToPrune.push(execution.execution_id);
-                        toolPruneCount++;
-                    } else if (isLowPerformance || isObsolete) {
-                        recordsToPrune.push(execution.execution_id);
-                        toolPruneCount++;
-                    } else {
-                        toolPreserveCount++;
-                    }
-                }
-                
-                this.logger.info('ContextIntelligenceAPI', 'Tool analysis complete', {
-                    toolName,
-                    markedForPruning: toolPruneCount,
-                    preserved: toolPreserveCount,
-                    totalForTool: totalCount
-                });
-            }
-            
-            this.logger.info('ContextIntelligenceAPI', 'Pre-preservation pruning list', {
-                totalMarkedForPruning: recordsToPrune.length,
-                toolsAnalyzed: toolUsageMap.size
-            });
-
-            // Execute database pruning
-            for (const executionId of recordsToPrune) {
-                try {
-                    await this.database.table('tool_executions')
-                        .delete({ execution_id: executionId });
-                    totalPruned++;
-                } catch (error) {
-                    this.logger.warn('ContextIntelligenceAPI', 'Failed to prune execution record', { 
-                        executionId, 
-                        error 
-                    });
-                }
-            }
-
-            // 3. Prune in-memory patterns (existing logic enhanced)
-            const patterns = this.mapProcessor.getPatterns();
-            const lowConfidencePatterns = patterns.filter(p => p.confidence < minConfidence);
-            const oldPatterns = patterns.filter(p => {
-                const lastUsed = new Date(p.usageStats.lastUsed || 0);
-                return Date.now() - lastUsed.getTime() > maxAge;
-            });
-
-            const prunedPatterns = [...new Set([...lowConfidencePatterns, ...oldPatterns])];
-            
-            // Sort by confidence and keep only the worst performers
-            const patternsToPrune = prunedPatterns
-                .sort((a, b) => a.confidence - b.confidence)
-                .slice(0, Math.max(0, prunedPatterns.length - keepRecentCount));
-
-            let prunedPatternCount = 0;
-            for (const pattern of patternsToPrune) {
-                try {
-                    // For now, just mark as low priority (could implement actual removal)
-                    pattern.confidence = Math.max(0.1, pattern.confidence - 0.1);
-                    prunedPatternCount++;
-                } catch (error) {
-                    this.logger.warn('ContextIntelligenceAPI', 'Failed to prune pattern', { 
-                        patternId: pattern.id, 
-                        error 
-                    });
-                }
-            }
-
-            return {
-                success: true,
-                result: {
-                    pruningCompleted: true,
-                    prunedEntries: totalPruned, // Database records pruned
-                    prunedPatterns: prunedPatternCount, // In-memory patterns adjusted
-                    totalExecutions: allExecutions.length,
-                    remainingExecutions: allExecutions.length - totalPruned,
-                    criteria: { maxAge, minConfidence, keepRecentCount },
-                    intelligentDecisions: {
-                        toolsAnalyzed: toolUsageMap.size,
-                        usageBasedPreservation: true,
-                        performanceBasedPruning: true,
-                        ageBasedRemoval: true
-                    }
-                }
-            };
-
-        } catch (error) {
-            this.logger.error('ContextIntelligenceAPI', 'Context pruning failed', { error, params });
-            return {
-                success: false,
-                error: `Context pruning failed: ${error instanceof Error ? error.message : String(error)}`
-            };
-        }
-    }
-
-    /**
      * Update Pattern Stats - Tool Interface
      * Updates pattern usage statistics and performance metrics
      */
@@ -724,7 +532,7 @@ export class ContextAPI implements IContextAPI {
             const { nlpPattern, toolName, success, executionTime = 0, metadata = {} } = params;
 
             // Find the pattern
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
             const pattern = patterns.find(p => 
                 p.trigger === nlpPattern || p.toolName === toolName
             );
@@ -924,13 +732,6 @@ export class ContextAPI implements IContextAPI {
     }
 
     // Helper methods
-    private calculateConfidenceAdjustment(success: boolean, feedback?: string): number {
-        if (feedback === 'positive') return 0.05;
-        if (feedback === 'negative') return -0.1;
-        if (success) return 0.02;
-        return -0.05;
-    }
-
     private generateLearningRecommendations(
         toolName: string, 
         success: boolean, 
@@ -971,19 +772,6 @@ export class ContextAPI implements IContextAPI {
                typeof contextTree.metadata.learningAdaptations === 'number';
     }
 
-    private mapUserFeedbackToInteger(feedback: string): number {
-        switch (feedback) {
-            case 'positive':
-                return 1;
-            case 'negative':
-                return -1;
-            case 'neutral':
-                return 0;
-            default:
-                throw new Error('Invalid user feedback format');
-        }
-    }
-
     /**
      * Health check for the Context Intelligence API
      */
@@ -996,7 +784,7 @@ export class ContextAPI implements IContextAPI {
             }
 
             // Test map processor functionality
-            const patterns = this.mapProcessor.getPatterns();
+            const patterns = await this.mapProcessor.getPatterns();
             const mapProcessorHealthy = Array.isArray(patterns);
 
             // Test basic functionality
@@ -1008,4 +796,4 @@ export class ContextAPI implements IContextAPI {
             return false;
         }
     }
-} 
+}

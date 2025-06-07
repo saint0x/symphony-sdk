@@ -375,7 +375,7 @@ export class CacheIntelligenceService {
     }
 
     // Tool execution feedback methods
-    async recordToolExecution(
+    public async recordToolExecution(
         sessionId: string,
         toolName: string,
         parameters: Record<string, any>,
@@ -389,6 +389,15 @@ export class CacheIntelligenceService {
             if (patternId) {
                 await this.commandMapProcessor.updatePatternConfidence(patternId, success, executionTime);
             }
+
+            let patternDbId: number | undefined;
+            if (patternId) {
+                const dbPatterns = await this.database.getXMLPatterns();
+                const matchingPattern = dbPatterns.find(p => p.pattern_id === patternId);
+                if (matchingPattern) {
+                    patternDbId = matchingPattern.id;
+                }
+            }
             
             // Record in database for context building
             await this.database.recordToolExecution({
@@ -399,7 +408,8 @@ export class CacheIntelligenceService {
                 success,
                 execution_time_ms: executionTime,
                 session_id: sessionId,
-                error_message: success ? null : (result?.error || 'Unknown error')
+                error_details: success ? undefined : (result?.error || 'Unknown error'),
+                pattern_id: patternDbId
             });
             
             this.logger.info('CacheIntelligenceService', 'Recorded tool execution', {
@@ -418,7 +428,7 @@ export class CacheIntelligenceService {
 
     async adaptPattern(patternId: string, userFeedback: 'positive' | 'negative', _context?: any): Promise<void> {
         try {
-            const pattern = this.commandMapProcessor.getPattern(patternId);
+            const pattern = await this.commandMapProcessor.getPattern(patternId);
             if (!pattern) {
                 this.logger.warn('CacheIntelligenceService', 'Cannot adapt unknown pattern', { patternId });
                 return;
@@ -462,11 +472,11 @@ export class CacheIntelligenceService {
     }
 
     async getPatternAnalytics() {
-        const patterns = this.commandMapProcessor.getPatterns();
+        const patterns = await this.commandMapProcessor.getPatterns();
         
         return {
             totalPatterns: patterns.length,
-            averageConfidence: patterns.reduce((sum, p) => sum + p.confidence, 0) / patterns.length,
+            averageConfidence: patterns.length > 0 ? patterns.reduce((sum, p) => sum + p.confidence, 0) / patterns.length : 0,
             topPatterns: patterns
                 .sort((a, b) => b.usageStats.successCount - a.usageStats.successCount)
                 .slice(0, 10)
@@ -509,11 +519,12 @@ export class CacheIntelligenceService {
         activeContexts: number;
         uptime: number;
     }> {
+        const patterns = await this.commandMapProcessor.getPatterns();
         return {
             status: 'healthy',
             cacheHits: this.globalStats.cacheHits,
             cacheMisses: this.globalStats.cacheMisses,
-            totalPatterns: this.commandMapProcessor.getPatterns().length,
+            totalPatterns: patterns.length,
             activeContexts: this.sessionStats.size,
             uptime: Date.now() - Date.now() // Simple uptime placeholder
         };

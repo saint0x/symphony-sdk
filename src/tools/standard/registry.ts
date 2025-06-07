@@ -226,6 +226,20 @@ export class ToolRegistry {
             // Auto-update learning context for non-context-management tools
             if (this.contextAPI && tool.type !== 'context_management') {
                 try {
+                    // <<< FIX START: Explicitly record the execution before learning >>>
+                    const db = this.contextAPI['database']; // Access private member for fix
+                    if (db) {
+                        await db.table('tool_executions').insert({
+                            execution_id: `${toolName}-${Date.now()}`, // Add unique ID
+                            tool_name: toolName,
+                            success: result.success,
+                            execution_time_ms: duration,
+                            input_parameters: JSON.stringify({ parameters: params }),
+                            created_at: new Date(startTime).toISOString()
+                        });
+                    }
+                    // <<< FIX END >>>
+
                     await this.contextAPI.updateLearningContext({
                         toolName,
                         parameters: params,
