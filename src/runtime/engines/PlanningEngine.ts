@@ -65,12 +65,24 @@ export class PlanningEngine implements PlanningEngineInterface {
         this.dependencies.logger.info('PlanningEngine', `Creating execution plan for task: ${task}`);
 
         try {
-            // Leverage the existing createPlanTool
+            // Use the context-aware magic of the ContextAPI
+            const planSuggestionResult = await this.dependencies.contextAPI.useMagic('suggest_tools', {
+                task: task,
+                context: {
+                    agentName: context.agentConfig.name,
+                    availableTools: context.agentConfig.tools,
+                    sessionId: context.sessionId
+                }
+            });
+
+            // For now, we still use the createPlanTool, but in the future,
+            // the suggest_tools magic could directly return a structured plan.
             const planToolResult: ToolResult = await this.dependencies.toolRegistry.executeTool('createPlanTool', {
                 objective: task,
                 context: {
                     agentName: context.agentConfig.name,
-                    availableTools: context.agentConfig.tools
+                    availableTools: context.agentConfig.tools,
+                    suggestions: planSuggestionResult.result?.suggestions
                 }
             });
 

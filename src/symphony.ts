@@ -21,6 +21,8 @@ import { INlpService, NlpPatternDefinition, ToolConfig as CoreToolConfig } from 
 import { NlpService } from './nlp/NlpService';
 import { ContextAPI } from './cache/context-api';
 import { IContextAPI } from './api/IContextAPI';
+import { SymphonyRuntime, createSymphonyRuntime } from './runtime/SymphonyRuntime';
+import { RuntimeDependencies } from './runtime/RuntimeTypes';
 
 // Service wrapper interfaces for internal services that don't need to extend IService
 export interface IDatabaseServiceWrapper {
@@ -198,12 +200,12 @@ class ToolService implements IToolService {
 }
 
 class AgentService implements IAgentService {
-    private toolRegistry: ToolRegistry;
     private agents: Map<string, AgentExecutor> = new Map();
     private _state: ToolLifecycleState = ToolLifecycleState.READY;
+    private runtime: SymphonyRuntime;
 
-    constructor(toolRegistry: ToolRegistry) {
-        this.toolRegistry = toolRegistry;
+    constructor(runtime: SymphonyRuntime) {
+        this.runtime = runtime;
     }
 
     get state(): ToolLifecycleState {
@@ -211,19 +213,13 @@ class AgentService implements IAgentService {
     }
 
     getDependencies(): string[] {
-        return ['ToolRegistry'];
+        return ['SymphonyRuntime'];
     }
 
     async create(config: AgentConfig): Promise<AgentExecutor> {
-        // Auto-add context management tools to all agents
-        const contextTools = this.toolRegistry.getContextTools();
-        const enhancedConfig = {
-            ...config,
-            tools: [...(config.tools || []), ...contextTools]
-        };
-
-        // Create an actual AgentExecutor instance with LLM capabilities and the correct ToolRegistry
-        const agentExecutor = new AgentExecutor(enhancedConfig, this.toolRegistry);
+        // The service now passes a bound execute function to the agent.
+        const executeFn = this.runtime.execute.bind(this.runtime);
+        const agentExecutor = new AgentExecutor(config, executeFn);
         
         this.agents.set(agentExecutor.name, agentExecutor);
         
@@ -244,9 +240,11 @@ class TeamService implements ITeamService {
     private logger: Logger;
     private toolRegistry: ToolRegistry;
     private _state: ToolLifecycleState = ToolLifecycleState.READY;
+    private agentService: IAgentService;
 
-    constructor(toolRegistry: ToolRegistry) {
+    constructor(agentService: IAgentService, toolRegistry: ToolRegistry) {
         this.logger = Logger.getInstance('TeamService');
+        this.agentService = agentService;
         this.toolRegistry = toolRegistry;
     }
 
@@ -255,7 +253,7 @@ class TeamService implements ITeamService {
     }
 
     getDependencies(): string[] {
-        return ['ToolRegistry'];
+        return ['ToolRegistry', 'AgentService'];
     }
 
     async create(config: TeamConfig): Promise<TeamCoordinator> {
@@ -265,7 +263,7 @@ class TeamService implements ITeamService {
         });
 
         // Create TeamCoordinator instance with shared ToolRegistry
-        const teamCoordinator = new TeamCoordinator(config, this.toolRegistry);
+        const teamCoordinator = new TeamCoordinator(config, this.toolRegistry, this.agentService);
         
         // Initialize the team
         await teamCoordinator.initialize();
@@ -1104,6 +1102,7 @@ export class Symphony implements Partial<ISymphony> {
     // New services for NLP
     private _contextIntelligenceApi: IContextAPI;
     private _nlpService: INlpService;
+    private _runtime: SymphonyRuntime;
 
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -1136,7 +1135,7 @@ export class Symphony implements Partial<ISymphony> {
         this._llm = LLMHandler.getInstance();
         this._metrics = new MetricsService();
 
-        // Initialize core infrastructure services first
+        // Re-instate the wrappers for public API compatibility
         this._databaseServiceWrapper = new DatabaseServiceWrapper(config);
         const actualDbService = this._databaseServiceWrapper.getService();
 
@@ -1151,9 +1150,18 @@ export class Symphony implements Partial<ISymphony> {
         const sharedToolRegistry = ToolRegistry.getInstance();
         sharedToolRegistry.initializeContextIntegration(actualDbService);
         
+        const runtimeDependencies: RuntimeDependencies = {
+            toolRegistry: sharedToolRegistry,
+            contextAPI: this._contextIntelligenceApi,
+            llmHandler: this._llm,
+            logger: this._logger,
+        };
+        this._runtime = createSymphonyRuntime(runtimeDependencies, this._config.runtime);
+
+        // Correctly instantiate services with all their dependencies
         const toolServiceInstance = new ToolService(sharedToolRegistry, this._nlpService);
-        const agentServiceInstance = new AgentService(sharedToolRegistry);
-        const teamServiceInstance = new TeamService(sharedToolRegistry);
+        const agentServiceInstance = new AgentService(this._runtime);
+        const teamServiceInstance = new TeamService(agentServiceInstance, sharedToolRegistry);
         const pipelineServiceInstance = new PipelineService(agentServiceInstance, teamServiceInstance);
         const validationServiceInstance = new ValidationService();
 

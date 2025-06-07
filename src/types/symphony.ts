@@ -7,6 +7,7 @@ import { IToolService, IAgentService, ITeamService, IPipelineService, IValidatio
 import { IntelligenceOptions } from '../cache/service';
 import { MemoryConfig as InternalMemoryConfig } from '../memory/service';
 import { StreamingConfig } from '../streaming/service';
+import { RuntimeConfiguration } from '../runtime/RuntimeTypes';
 
 export interface SymphonyConfig {
     name?: string;
@@ -21,6 +22,7 @@ export interface SymphonyConfig {
     cache?: IntelligenceOptions;
     memory?: InternalMemoryConfig;
     streaming?: StreamingConfig;
+    runtime?: Partial<RuntimeConfiguration>;
     serviceRegistry: {
         enabled: boolean;
         maxRetries: number;

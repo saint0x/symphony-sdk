@@ -3,6 +3,7 @@ import { Logger } from '../utils/logger';
 import { AgentExecutor } from '../agents/executor';
 import { ToolRegistry } from '../tools/standard/registry';
 import { ToolUsageVerifier, ParameterSchema } from '../utils/verification';
+import { IAgentService } from '../types/interfaces';
 
 export interface TeamMember {
   id: string;
@@ -143,8 +144,9 @@ export class TeamCoordinator {
   private taskQueue: TaskAssignment[];
   private activeExecutions: Map<string, Promise<any>>;
   private toolRegistry: ToolRegistry;
+  private agentService: IAgentService;
 
-  constructor(config: TeamConfig, toolRegistry: ToolRegistry) {
+  constructor(config: TeamConfig, toolRegistry: ToolRegistry, agentService: IAgentService) {
     this.teamId = `team_${Date.now()}`;
     this.config = config;
     this.members = new Map();
@@ -153,6 +155,7 @@ export class TeamCoordinator {
     this.state = ToolLifecycleState.PENDING;
     this.logger = Logger.getInstance(`TeamCoordinator:${config.name}`);
     this.toolRegistry = toolRegistry;
+    this.agentService = agentService;
 
     this.sharedContext = {
       teamId: this.teamId,
@@ -239,15 +242,15 @@ export class TeamCoordinator {
           tools: [...validTools, ...contextTools]
         };
 
-        // Create agent executor with shared registry
-        const executor = new AgentExecutor(enhancedConfig, this.toolRegistry);
+        // CORRECT WAY: Create agent executor using the agent service
+        const executor = await this.agentService.create(enhancedConfig);
         
         // Create team member
         const member: TeamMember = {
           id: `${this.teamId}_${agentConfig.name}`,
           name: agentConfig.name,
           executor,
-          config: enhancedConfig, // Use enhanced config with context tools
+          config: enhancedConfig,
           capabilities: agentConfig.capabilities || [],
           currentLoad: 0,
           status: 'idle',
@@ -258,9 +261,9 @@ export class TeamCoordinator {
         
         this.logger.info('TeamCoordinator', `Initialized team member: ${member.name}`, {
           capabilities: member.capabilities,
-          tools: enhancedConfig.tools,
-          totalTools: enhancedConfig.tools.length,
-          hasCustomTools: enhancedConfig.tools.some(t => !['readFile', 'writeFile', 'webSearch', 'parseDocument', 'writeCode', 'createPlan', 'ponder'].includes(t) && !contextTools.includes(t))
+          tools: agentConfig.tools,
+          totalTools: agentConfig.tools.length,
+          hasCustomTools: agentConfig.tools.some(t => !['readFile', 'writeFile', 'webSearch', 'parseDocument', 'writeCode', 'createPlan', 'ponder'].includes(t) && !contextTools.includes(t))
         });
 
       } catch (error) {
