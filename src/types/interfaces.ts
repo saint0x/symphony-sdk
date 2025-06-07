@@ -1,5 +1,5 @@
 import { ToolLifecycleState } from './lifecycle';
-import { ToolConfig, AgentConfig, TeamConfig, Pipeline, PipelineConfig, ToolResult } from './sdk';
+import { ToolConfig, AgentConfig, TeamConfig, ToolResult } from './sdk';
 import { ComponentInstance, ComponentMetadata, Component, ComponentPath } from './metadata';
 import { AgentExecutor } from '../agents/executor';
 import { TeamCoordinator } from '../teams/coordinator';
@@ -29,11 +29,6 @@ export interface IAgentService extends IService {
 export interface ITeamService extends IService {
     create(config: TeamConfig): Promise<TeamCoordinator>;
     get(name: string): Promise<TeamCoordinator | undefined>;
-    initialize(): Promise<void>;
-}
-
-export interface IPipelineService extends IService {
-    create(config: PipelineConfig): Promise<Pipeline>;
     initialize(): Promise<void>;
 }
 

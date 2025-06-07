@@ -7,18 +7,16 @@ export { Symphony, LogLevel };
 // Export concrete implementation classes for advanced typing
 export { AgentExecutor } from './agents/executor';
 export { TeamCoordinator } from './teams/coordinator';
-export { PipelineExecutor } from './pipelines/executor';
 
 // Export types and utilities
 export type { 
     SymphonyConfig, IMetricsAPI, ISymphony
 } from './types/symphony';
 export type { 
-    Agent, Pipeline, Team, Tool,
     ServiceBaseConfig, ToolConfig, AgentConfig, TeamConfig,
-    PipelineConfig, PipelineStep, LLMBaseConfig, ValidationConfig,
-    RetryConfig, ToolResult, AgentResult, TeamResult, PipelineResult,
-    ErrorStrategy, ToolLifecycleState, AgentOptions, TeamOptions, PipelineOptions,
+    LLMBaseConfig, ValidationConfig,
+    RetryConfig, ToolResult, TeamResult,
+    ToolLifecycleState, AgentOptions, TeamOptions,
     TeamStrategy, DelegationStrategy, MemoryConfig
 } from './types/sdk';
 export type { 
@@ -29,7 +27,7 @@ export type {
     ComponentInstance, ComponentPath
 } from './types/metadata';
 export type {
-    IService, IToolService, IAgentService, ITeamService, IPipelineService,
+    IService, IToolService, IAgentService, ITeamService,
     IValidationService, IMetricsService, IValidationManager,
     IRegistryService, IContextService, ILLMService, IServiceBus,
     IComponentManager, IComponentService

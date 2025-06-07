@@ -223,117 +223,6 @@ export interface ServiceResult {
     metrics?: ExecutionMetrics;
 }
 
-export interface PipelineMetadata {
-    version?: string;
-    owner?: string;
-    tags?: string[];
-    customData?: Record<string, any>;
-}
-
-export interface ErrorStrategy {
-    type: 'stop' | 'skip' | 'retry';
-    maxRetries?: number;
-    fallback?: PipelineStep;
-}
-
-// Pipeline types
-export interface PipelineConfig {
-    name: string;
-    description?: string;
-    steps: PipelineStep[];
-    onError?: (error: Error, context: { step: PipelineStep; input: any; results: Map<string, any> }) => Promise<{ retry: boolean; delay?: number }>;
-    errorStrategy?: {
-        type: 'stop' | 'continue' | 'retry';
-        maxAttempts?: number;
-        delay?: number;
-    };
-    metrics?: {
-        enabled: boolean;
-        detailed: boolean;
-        trackMemory: boolean;
-    };
-}
-
-export interface PipelineStep {
-    name: string;
-    type: 'tool' | 'agent' | 'team';
-    tool?: string | ToolConfig;
-    agent?: string;
-    team?: string;
-    input?: { step: string; field: string }[];
-    config?: Record<string, any>;
-    retryConfig?: {
-        maxAttempts: number;
-        delay: number;
-    };
-    retry?: RetryConfig;
-    chained?: number;
-    expects?: Record<string, string>;
-    outputs?: Record<string, string>;
-    conditions?: {
-        requiredFields?: string[];
-        validateOutput?: (output: any) => boolean;
-        customValidation?: (context: any) => Promise<boolean>;
-    };
-    inputMap?: ((input: any) => Promise<any>) | Record<string, any>;
-    handler?: (params: any) => Promise<ToolResult<any>>;
-}
-
-// Component types
-export interface Agent {
-    name: string;
-    description: string;
-    systemPrompt?: string;
-    tools: string[];
-    state: ToolLifecycleState;
-    run(task: string): Promise<AgentResult>;
-}
-
-export interface Tool<P = any, R = any> {
-    name: string;
-    description: string;
-    state: ToolLifecycleState;
-    run(params: P): Promise<ToolResult<R>>;
-}
-
-export interface Team {
-    name: string;
-    description: string;
-    state: ToolLifecycleState;
-    agents: string[];
-    run(input: any): Promise<any>;
-}
-
-export interface Pipeline {
-    name: string;
-    description: string;
-    state: ToolLifecycleState;
-    steps: PipelineStep[];
-    run(input: any): Promise<any>;
-    getStatus(): any;
-}
-
-// Result types
-export interface AgentResult<T = any> {
-    success: boolean;
-    result?: T;
-    error?: string;
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-        toolCalls: number;
-        confidence?: number;
-        performance?: number;
-        llmUsage?: {
-            promptTokens: number;
-            completionTokens: number;
-            totalTokens: number;
-            model: string;
-        };
-    };
-}
-
 export interface TeamResult<T = any> {
     success: boolean;
     result?: T;
@@ -346,44 +235,6 @@ export interface TeamResult<T = any> {
     };
 }
 
-export interface PipelineStepResult {
-    stepId: string;
-    success: boolean;
-    result?: any;
-    error?: string;
-    outputs?: Record<string, any>;
-    startTime: number;
-    endTime: number;
-    duration: number;
-    retryCount: number;
-    failureAnalysis?: {
-        errorCategory: 'transient' | 'persistent' | 'critical' | 'resource' | 'timeout';
-        severity: 'low' | 'medium' | 'high' | 'critical';
-        isRetryable: boolean;
-        suggestedAction: 'retry' | 'skip' | 'fallback' | 'abort';
-        confidence: number;
-        reasoning: string;
-    };
-    circuitBreakerTripped?: boolean;
-}
-
-export interface PipelineResult<T = any> {
-    success: boolean;
-    result?: T;
-    error?: string;
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-        stepResults: Record<string, any>;
-        intelligence?: {
-            bottlenecksIdentified: number;
-            optimizationRecommendations: number;
-            estimatedImprovement: number;
-        };
-    };
-}
-
 // Option types
 export interface AgentOptions {
     onProgress?: (update: { status: string; result?: any }) => void;
@@ -393,12 +244,6 @@ export interface AgentOptions {
 
 export interface TeamOptions {
     onProgress?: (update: { status: string; agent?: string; result?: any }) => void;
-    onMetrics?: (metrics: { [key: string]: any }) => void;
-    timeout?: number;
-}
-
-export interface PipelineOptions {
-    onStepComplete?: (step: PipelineStep, result: any) => void;
     onMetrics?: (metrics: { [key: string]: any }) => void;
     timeout?: number;
 }

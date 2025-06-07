@@ -3,7 +3,7 @@ import { LLMHandler } from '../llm/handler';
 import { Logger } from '../utils/logger';
 import { IDatabaseService, DatabaseConfig } from '../db/types';
 import { LLMConfig as RichLLMConfig } from '../llm/types';
-import { IToolService, IAgentService, ITeamService, IPipelineService, IValidationManager } from './interfaces';
+import { IToolService, IAgentService, ITeamService, IValidationManager } from './interfaces';
 import { IntelligenceOptions } from '../cache/service';
 import { MemoryConfig as InternalMemoryConfig } from '../memory/service';
 import { StreamingConfig } from '../streaming/service';
@@ -52,7 +52,6 @@ export interface ISymphony {
     readonly tool: IToolService;
     readonly agent: IAgentService;
     readonly team: ITeamService;
-    readonly pipeline: IPipelineService;
     readonly db: IDatabaseService;
     readonly validation: IValidationManager;
     readonly llm: LLMHandler;
