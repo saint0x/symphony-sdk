@@ -19,8 +19,8 @@ import { AgentExecutor } from './agents/executor';
 // import { envConfig } from './utils/env';
 import { INlpService, NlpPatternDefinition, ToolConfig as CoreToolConfig } from './types/tool.types';
 import { NlpService } from './nlp/NlpService';
-import { ContextIntelligenceAPI } from './cache/intelligence-api';
-import { IContextIntelligenceAPI } from './api/IContextIntelligenceAPI';
+import { ContextAPI } from './cache/context-api';
+import { IContextAPI } from './api/IContextAPI';
 
 // Service wrapper interfaces for internal services that don't need to extend IService
 export interface IDatabaseServiceWrapper {
@@ -1102,7 +1102,7 @@ export class Symphony implements Partial<ISymphony> {
     private _streamingServiceWrapper: StreamingServiceWrapper;
     
     // New services for NLP
-    private _contextIntelligenceApi: IContextIntelligenceAPI;
+    private _contextIntelligenceApi: IContextAPI;
     private _nlpService: INlpService;
 
     readonly name = 'Symphony';
@@ -1145,7 +1145,7 @@ export class Symphony implements Partial<ISymphony> {
         this._streamingServiceWrapper = new StreamingServiceWrapper();
 
         // Initialize services needed for NLP and ToolService
-        this._contextIntelligenceApi = new ContextIntelligenceAPI(actualDbService);
+        this._contextIntelligenceApi = new ContextAPI(actualDbService);
         this._nlpService = new NlpService(actualDbService, this._contextIntelligenceApi);
         
         const sharedToolRegistry = ToolRegistry.getInstance();

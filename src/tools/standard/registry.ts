@@ -1,7 +1,8 @@
-import { ToolConfig as CoreToolConfig, ToolResult, INlpService } from '../../types/tool.types';
+import { ToolResult } from '../../types/sdk';
+import { ToolConfig as CoreToolConfig, INlpService } from '../../types/tool.types';
 import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
-import { ContextIntelligenceAPI } from '../../cache/intelligence-api';
+import { ContextAPI } from '../../cache/context-api';
 import { IDatabaseService } from '../../db/types';
 import { LLMFunctionDefinition } from '../../llm/types';
 import { ToolUsageVerifier } from '../../utils/verification';
@@ -10,7 +11,7 @@ export class ToolRegistry {
     private static instance: ToolRegistry;
     private tools: Map<string, CoreToolConfig> = new Map();
     private logger: Logger;
-    private contextAPI?: ContextIntelligenceAPI;
+    private contextAPI?: ContextAPI;
 
     constructor() {
         this.logger = Logger.getInstance('ToolRegistry');
@@ -28,7 +29,7 @@ export class ToolRegistry {
      * Initialize Context Intelligence Integration
      */
     initializeContextIntegration(database: IDatabaseService): void {
-        this.contextAPI = new ContextIntelligenceAPI(database);
+        this.contextAPI = new ContextAPI(database);
         this.registerContextTools();
         this.logger.info('ToolRegistry', 'ToolRegistry initialized');
     }

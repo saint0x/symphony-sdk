@@ -24,10 +24,18 @@ export interface ToolConfig {
     handler?: (params: any) => Promise<ToolResult<any>>;
 }
 
+export interface VerificationError {
+    path: string;
+    message: string;
+    expected?: any;
+    received?: any;
+}
+
 export interface ToolResult<T = any> {
     success: boolean;
     result?: T;
     error?: string;
+    details?: VerificationError[];
     metrics?: {
         duration: number;
         startTime: number;

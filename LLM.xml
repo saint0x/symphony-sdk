@@ -10,10 +10,10 @@
             This sets up all core services, registers standard tools, and prepares the environment.
         </description>
         <syntax>
-            import { symphony, SymphonyConfig } from 'symphonic'; // Or your SDK entry point
+            import { Symphony, SymphonyConfig } from 'symphonic'; // Corrected to PascalCase Symphony
 
             const sdkConfig: SymphonyConfig = { /* ... your configurations ... */ };
-            const sym = new symphony(sdkConfig); // Create instance
+            const sym = new Symphony(sdkConfig); // Corrected to PascalCase Symphony
             await sym.initialize(); // Initialize
             console.log('Symphony SDK Initialized!');
         </syntax>
@@ -42,49 +42,55 @@
             <title>Tool Service (`symphony.tool`)</title>
             <method name="create">
                 <description>
-                    Creates and registers a custom tool. The provided ToolConfig should have a top-level 'handler' function.
+                    Creates and registers a custom tool. The provided ToolConfig should have a top-level 'handler' function and ideally a `config.inputSchema` for robust LLM interaction.
                     This method ensures the tool is correctly structured for the ToolRegistry.
                 </description>
                 <syntax>
                     const customToolConfig: ToolConfig = {
                         name: 'myCustomTool',
                         description: 'My amazing custom tool.',
-                        type: 'custom', // Or any other type
-                        inputs: ['param1', 'param2'], // Optional: Names of input parameters
-                        outputs: ['output1'],      // Optional: Names of output fields
+                        type: 'custom',
+                        config: {
+                            inputSchema: { // Preferred way to define parameters for LLM use
+                                type: 'object',
+                                properties: {
+                                    param1: { type: 'string', description: 'First parameter.' },
+                                    param2: { type: 'number', description: 'Second parameter.' }
+                                },
+                                required: ['param1']
+                            },
+                            myCustomSetting: true // Other tool-specific settings
+                        },
                         handler: async (params) => {
                             // params will be an object like { param1: value, param2: value }
                             console.log('Custom tool handler called with:', params);
-                            // ... your logic ...
                             if (params.param1 === 'magic') {
                                 return { success: true, result: { output1: 'Success!' } };
                             }
                             return { success: false, error: 'Condition not met' };
-                        },
-                        config: { myCustomSetting: true } // Optional: for other non-standard settings
+                        }
                     };
                     const toolInterface = await symphony.tool.create(customToolConfig);
-                    // toolInterface.run({param1: 'magic'}) can be used, but for direct execution by name:
-                    // await symphony.tool.execute('myCustomTool', {param1: 'magic'});
+                    // To execute by name: await symphony.tool.execute('myCustomTool', {param1: 'magic'});
                 </syntax>
-                <returns>A tool object with a `run` method, but for consistent execution by name, use `symphony.tool.execute()` after creation.</returns>
-                <importantNote>Ensure your `handler` is a top-level property of the `customToolConfig` passed to `create`.</importantNote>
+                <returns>A tool object or identifier. For execution by name, use `symphony.tool.execute()`.</returns>
+                <importantNote>Ensure your `handler` is a top-level property and `inputSchema` is within `config`.</importantNote>
             </method>
             <method name="register">
                 <description>
                     Directly registers a pre-constructed tool object (adhering to ToolConfig) with the ToolRegistry.
-                    Use this if you are manually constructing the complete ToolConfig object and want to bypass `symphony.tool.create`.
-                    The `handler` must be a top-level property.
+                    Use this if you are manually constructing the complete ToolConfig object. 
+                    The `handler` must be a top-level property, and `inputSchema` should be in `config`.
                 </description>
                 <syntax>
-                    const myTool: ToolConfig = { /* ... see symphony.tool.create() example ... */ };
-                    symphony.tool.register('myToolName', myTool);
+                    const myTool: ToolConfig = { /* ... see ToolConfig structure ... */ name: 'myRegisteredTool', handler: async () => ({success:true}), config:{} };
+                    symphony.tool.register(myTool.name, myTool); // Pass name and config
                 </syntax>
             </method>
             <method name="execute">
                 <description>Executes a registered tool (standard or custom) by its name with the given parameters.</description>
                 <syntax>
-                    const result: ToolResult = await symphony.tool.execute('toolName', { param1: 'value1', param2: 'value2' });
+                    const result: ToolResult = await symphony.tool.execute('toolName', { param1: 'value1' });
                     if (result.success) {
                         console.log('Tool executed successfully:', result.result);
                     } else {
@@ -95,7 +101,7 @@
             </method>
             <method name="getInfo">
                 <description>Retrieves the configuration information for a registered tool.</description>
-                <syntax>const toolInfo: ToolConfig = symphony.tool.getInfo('toolName');</syntax>
+                <syntax>const toolInfo: ToolConfig | null = symphony.tool.getInfo('toolName');</syntax>
                 <returns>The `ToolConfig` object as stored in the registry, or null if not found.</returns>
             </method>
             <method name="getAvailable">
@@ -107,35 +113,39 @@
         <agentService>
             <title>Agent Service (`symphony.agent`)</title>
             <method name="create">
-                <description>Creates an AI agent instance with specified configurations.</description>
+                <description>Creates an AI agent instance. If tools are provided, JSON mode for LLM interaction is automatically enabled by the SDK, including appending robust JSON structural guidance to the system prompt.</description>
                 <syntax>
                     const agentConfig: AgentConfig = {
                         name: 'MyAgent',
-                        description: 'An agent that performs tasks.',
-                        task: 'Default task description for this agent.',
-                        tools: ['writeFile', 'readFile', 'myCustomTool'], // Names of tools available to this agent
+                        description: 'An agent that performs tasks using tools.',
+                        task: 'Default task: process user requests accurately.',
+                        tools: ['writeFile', 'readFile', 'myCustomTool'],
                         llm: {
                             model: 'gpt-3.5-turbo',
-                            temperature: 0.1,
-                            useFunctionCalling: true // Recommended for tool use; LLM should produce JSON output.
+                            temperature: 0.1
+                            // No useFunctionCalling needed here; it's automatic if tools are present.
                         },
-                        systemPrompt: 'You are a helpful assistant. When you need to use a tool, use the specified JSON format.'
+                        systemPrompt: 'You are MyAgent. Use tools when appropriate by responding in the specified JSON format. If no tool is needed, answer directly.' // SDK appends detailed JSON structure rules.
                     };
-                    const agent = await symphony.agent.create(agentConfig);
+                    const agent = await symphony.agent.create(agentConfig); // Returns an AgentExecutor like object
                 </syntax>
-                <returns>An `AgentExecutor` instance.</returns>
+                <returns>An agent instance (e.g., an `AgentExecutor`).</returns>
             </method>
             <method name="agent.run">
-                <description>Executes a task with the created agent.</description>
+                <description>Executes a task with the created agent instance.</description>
                 <syntax>
-                    const agent = await symphony.agent.create(agentConfig);
-                    const taskResult = await agent.run('User request or task description.');
-                    // taskResult is a ToolResult, where taskResult.result contains the Agent's detailed response,
-                    // including LLM response and toolsExecuted array.
-                    // Example: taskResult.result.response (LLM's textual answer)
-                    //          taskResult.result.toolsExecuted (array of tool calls)
+                    // const agent = await symphony.agent.create(agentConfig);
+                    const agentTaskResult: AgentResult = await agent.run('User request: write \'hello\' to hello.txt');
+                    if (agentTaskResult.success) {
+                        console.log("Agent task successful. Response:", agentTaskResult.result?.response);
+                        if (agentTaskResult.result?.toolsExecuted) {
+                            console.log("Tools executed:", agentTaskResult.result.toolsExecuted);
+                        }
+                    } else {
+                        console.error("Agent task failed:", agentTaskResult.error);
+                    }
                 </syntax>
-                <returns>A `ToolResult` object. The actual agent output (LLM response, tools executed) is nested within `taskResult.result`.</returns>
+                <returns>An `AgentResult` object (see `src/types/sdk.ts` for full structure, includes `success`, `result: {response, reasoning, toolsExecuted}`, `error`, `metrics`).</returns>
             </method>
         </agentService>
 

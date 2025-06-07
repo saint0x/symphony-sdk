@@ -3,7 +3,23 @@ import { ContextTreeBuilder, ContextQuery } from './tree-builder';
 import { Logger } from '../utils/logger';
 import { IDatabaseService } from '../db/types';
 import { ToolResult } from '../types/sdk';
-import { IContextIntelligenceAPI as IContextIntelligenceAPIInterface } from '../api/IContextIntelligenceAPI';
+import { 
+    IContextAPI,
+    ValidateCommandParams,
+    LearningUpdateRequest,
+    ContextPruningRequest,
+    PatternUpdateRequest,
+    SuggestToolsParams,
+    GetInsightsParams,
+    LearnFromExecutionParams,
+    ValidateContextTreeParams,
+    AnalyzePatternsParams,
+    OptimizePerformanceParams,
+    MagicIntent
+} from '../api/IContextAPI';
+import { PatternAnalyzer } from './utils/PatternAnalyzer';
+import { ExecutionAnalyzer } from './utils/ExecutionAnalyzer';
+import { TaskAnalyzer } from './utils/TaskAnalyzer';
 
 export interface ContextIntelligenceConfig {
     sessionId?: string;
@@ -11,36 +27,11 @@ export interface ContextIntelligenceConfig {
     confidenceThreshold?: number;
 }
 
-export interface PatternUpdateRequest {
-    nlpPattern: string;
-    toolName: string;
-    success: boolean;
-    executionTime?: number;
-    metadata?: Record<string, any>;
-}
-
-export interface ContextPruningRequest {
-    sessionId?: string;
-    maxAge?: number;
-    minConfidence?: number;
-    keepRecentCount?: number;
-}
-
-export interface LearningUpdateRequest {
-    toolName: string;
-    parameters: Record<string, any>;
-    result: any;
-    success: boolean;
-    userFeedback?: 'positive' | 'negative' | 'neutral';
-    contextData?: Record<string, any>;
-}
-
 /**
- * Context Intelligence API - Provides tool-compatible interface to cache intelligence
- * This class exposes the map-processor and tree-builder logic as callable functions
- * that can be registered as tools and used by agents through the registry.
+ * Context API - Provides type-safe magic interface to context intelligence
+ * All agents share this collective intelligence brain for learning and insights
  */
-export class ContextIntelligenceAPI implements Pick<IContextIntelligenceAPIInterface, 'registerToolNlpMapping'> {
+export class ContextAPI implements IContextAPI {
     private mapProcessor: CommandMapProcessor;
     private treeBuilder: ContextTreeBuilder;
     private logger: Logger;
@@ -54,9 +45,361 @@ export class ContextIntelligenceAPI implements Pick<IContextIntelligenceAPIInter
             confidenceThreshold: 0.7,
             ...config
         };
-        this.logger = Logger.getInstance('ContextIntelligenceAPI');
+        this.logger = Logger.getInstance('ContextAPI');
         this.mapProcessor = CommandMapProcessor.getInstance(database);
         this.treeBuilder = ContextTreeBuilder.getInstance(database);
+    }
+
+    // ==========================================
+    // TYPE-SAFE MAGIC INTERFACE
+    // ==========================================
+
+    /**
+     * Type-safe magic method with overloads for perfect TypeScript experience
+     */
+    async useMagic(intent: 'validate_command_update', params: ValidateCommandParams): Promise<ToolResult>;
+    async useMagic(intent: 'update_learning', params: LearningUpdateRequest): Promise<ToolResult>;
+    async useMagic(intent: 'prune_context', params: ContextPruningRequest): Promise<ToolResult>;
+    async useMagic(intent: 'update_pattern_stats', params: PatternUpdateRequest): Promise<ToolResult>;
+    async useMagic(intent: 'validate_context_tree', params: ValidateContextTreeParams): Promise<ToolResult>;
+    async useMagic(intent: 'suggest_tools', params: SuggestToolsParams): Promise<ToolResult>;
+    async useMagic(intent: 'get_insights', params: GetInsightsParams): Promise<ToolResult>;
+    async useMagic(intent: 'learn_from_execution', params: LearnFromExecutionParams): Promise<ToolResult>;
+    async useMagic(intent: 'analyze_patterns', params: AnalyzePatternsParams): Promise<ToolResult>;
+    async useMagic(intent: 'optimize_performance', params: OptimizePerformanceParams): Promise<ToolResult>;
+    
+    // Implementation
+    async useMagic(intent: MagicIntent, params: any): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', `Using magic: ${intent}`, { intent, hasParams: !!params });
+
+            switch (intent) {
+                case 'validate_command_update':
+                    return this.validateCommandMapUpdate(params);
+                case 'update_learning':
+                    return this.updateLearningContext(params);
+                case 'prune_context':
+                    return this.executeContextPruning(params);
+                case 'update_pattern_stats':
+                    return this.updatePatternStats(params);
+                case 'validate_context_tree':
+                    return this.validateContextTreeUpdate(params);
+                case 'suggest_tools':
+                    return this.suggestToolsForTask(params);
+                case 'get_insights':
+                    return this.getExecutionInsights(params);
+                case 'learn_from_execution':
+                    return this.learnFromExecution(params);
+                case 'analyze_patterns':
+                    return this.analyzePatterns(params);
+                case 'optimize_performance':
+                    return this.optimizePerformance(params);
+                default:
+                    return {
+                        success: false,
+                        error: `Unknown magic intent: ${intent}`
+                    };
+            }
+        } catch (error) {
+            this.logger.error('ContextAPI', `Magic failed for intent: ${intent}`, { error, intent, params });
+            return {
+                success: false,
+                error: `Magic execution failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
+
+    // ==========================================
+    // NEW MAGIC METHODS
+    // ==========================================
+
+    /**
+     * Suggest tools for a given task using learned patterns
+     */
+    private async suggestToolsForTask(params: SuggestToolsParams): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', 'Suggesting tools for task', { 
+                task: params.task.substring(0, 50),
+                agentName: params.agentName 
+            });
+
+            const patterns = this.mapProcessor.getPatterns();
+            const taskLower = params.task.toLowerCase();
+            
+            // Find patterns that match the task
+            const relevantPatterns = patterns.filter(pattern => {
+                const triggerMatch = taskLower.includes(pattern.trigger.toLowerCase()) ||
+                                  pattern.trigger.toLowerCase().includes(taskLower);
+                const toolMatch = taskLower.includes(pattern.toolName.toLowerCase());
+                return triggerMatch || toolMatch;
+            });
+
+            // Score and rank suggestions
+            const suggestions = relevantPatterns
+                .map(pattern => {
+                    const totalAttempts = pattern.usageStats.successCount + pattern.usageStats.failureCount;
+                    const successRate = totalAttempts > 0 ? pattern.usageStats.successCount / totalAttempts : 0;
+                    
+                    return {
+                        toolName: pattern.toolName,
+                        confidence: pattern.confidence,
+                        successRate: Math.round(successRate * 100),
+                        totalUsage: totalAttempts,
+                        lastUsed: pattern.usageStats.lastUsed,
+                        reason: `Pattern match: "${pattern.trigger}"`,
+                        matchStrength: PatternAnalyzer.calculateMatchStrength(params.task, pattern)
+                    };
+                })
+                .sort((a, b) => (b.confidence * b.matchStrength) - (a.confidence * a.matchStrength))
+                .slice(0, 5); // Top 5 suggestions
+
+            // Add recommendations based on context
+            const recommendations = TaskAnalyzer.generateTaskRecommendations(params.task, suggestions);
+
+            return {
+                success: true,
+                result: {
+                    task: params.task,
+                    suggestions,
+                    recommendations,
+                    totalPatternsAnalyzed: patterns.length,
+                    relevantPatterns: relevantPatterns.length
+                }
+            };
+
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Tool suggestion failed', { error, params });
+            return {
+                success: false,
+                error: `Tool suggestion failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
+
+    /**
+     * Get execution insights and analytics
+     */
+    private async getExecutionInsights(params: GetInsightsParams): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', 'Getting execution insights', params);
+
+            // Get executions from database
+            const allExecutions = await this.database.table('tool_executions').find();
+            
+            let filteredExecutions = allExecutions;
+            
+            // Apply filters
+            if (params.sessionId) {
+                filteredExecutions = filteredExecutions.filter((e: any) => e.session_id === params.sessionId);
+            }
+            if (params.toolName) {
+                filteredExecutions = filteredExecutions.filter((e: any) => e.tool_name === params.toolName);
+            }
+            if (params.timeframe) {
+                const cutoff = Date.now() - params.timeframe;
+                filteredExecutions = filteredExecutions.filter((e: any) => 
+                    new Date(e.created_at).getTime() > cutoff
+                );
+            }
+
+            if (filteredExecutions.length === 0) {
+                return {
+                    success: true,
+                    result: {
+                        message: 'No executions found matching criteria',
+                        totalExecutions: 0
+                    }
+                };
+            }
+
+            // Calculate insights
+            const successfulExecutions = filteredExecutions.filter((e: any) => e.success);
+            const failedExecutions = filteredExecutions.filter((e: any) => !e.success);
+            
+            const insights = {
+                totalExecutions: filteredExecutions.length,
+                successRate: Math.round((successfulExecutions.length / filteredExecutions.length) * 100),
+                avgExecutionTime: ExecutionAnalyzer.calculateAverageExecutionTime(filteredExecutions),
+                toolBreakdown: ExecutionAnalyzer.analyzeToolUsage(filteredExecutions),
+                commonFailures: ExecutionAnalyzer.analyzeCommonFailures(failedExecutions),
+                performanceTrends: ExecutionAnalyzer.analyzePerformanceTrends(filteredExecutions),
+                recommendations: ExecutionAnalyzer.generatePerformanceRecommendations(filteredExecutions)
+            };
+
+            return {
+                success: true,
+                result: insights
+            };
+
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Getting execution insights failed', { error, params });
+            return {
+                success: false,
+                error: `Execution insights failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
+
+    /**
+     * Learn from execution results and update patterns
+     */
+    private async learnFromExecution(params: LearnFromExecutionParams): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', 'Learning from execution', {
+                toolName: params.toolName,
+                success: params.success,
+                executionTime: params.executionTime
+            });
+
+            // Update learning context
+            const learningResult = await this.updateLearningContext({
+                toolName: params.toolName,
+                parameters: params.context?.parameters || {},
+                result: params.context?.result || {},
+                success: params.success,
+                userFeedback: params.userFeedback,
+                contextData: params.context
+            });
+
+            // Update pattern stats if pattern exists
+            const patterns = this.mapProcessor.getPatterns();
+            const pattern = patterns.find(p => p.toolName === params.toolName);
+            let patternResult = null;
+            
+            if (pattern) {
+                patternResult = await this.updatePatternStats({
+                    nlpPattern: pattern.trigger,
+                    toolName: params.toolName,
+                    success: params.success,
+                    executionTime: params.executionTime,
+                    metadata: params.context
+                });
+            }
+
+            // Generate learning insights
+            const insights = TaskAnalyzer.generateLearningInsights(params, pattern);
+
+            return {
+                success: true,
+                result: {
+                    learned: true,
+                    learningUpdated: learningResult.success,
+                    patternUpdated: !!pattern && patternResult?.success,
+                    patternId: pattern?.id,
+                    confidence: pattern?.confidence,
+                    insights,
+                    recommendations: this.generateLearningRecommendations(
+                        params.toolName, 
+                        params.success, 
+                        params.userFeedback
+                    )
+                }
+            };
+
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Learning from execution failed', { error, params });
+            return {
+                success: false,
+                error: `Learning from execution failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
+
+    /**
+     * Analyze patterns and performance trends
+     */
+    private async analyzePatterns(params: AnalyzePatternsParams): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', 'Analyzing patterns', params);
+
+            const patterns = this.mapProcessor.getPatterns();
+            let filteredPatterns = patterns;
+
+            // Apply filters
+            if (params.toolName) {
+                filteredPatterns = patterns.filter(p => p.toolName === params.toolName);
+            }
+            if (params.minConfidence !== undefined) {
+                filteredPatterns = filteredPatterns.filter(p => p.confidence >= params.minConfidence!);
+            }
+
+            // Analyze patterns
+            const analysis = {
+                totalPatterns: patterns.length,
+                filteredPatterns: filteredPatterns.length,
+                averageConfidence: filteredPatterns.reduce((sum, p) => sum + p.confidence, 0) / filteredPatterns.length,
+                topPerformers: filteredPatterns
+                    .sort((a, b) => b.confidence - a.confidence)
+                    .slice(0, 5)
+                    .map(p => ({
+                        toolName: p.toolName,
+                        trigger: p.trigger,
+                        confidence: p.confidence,
+                        successRate: PatternAnalyzer.calculatePatternSuccessRate(p)
+                    })),
+                underPerformers: filteredPatterns
+                    .filter(p => p.confidence < 0.5 || PatternAnalyzer.calculatePatternSuccessRate(p) < 50)
+                    .map(p => ({
+                        toolName: p.toolName,
+                        trigger: p.trigger,
+                        confidence: p.confidence,
+                        successRate: PatternAnalyzer.calculatePatternSuccessRate(p),
+                        issues: PatternAnalyzer.identifyPatternIssues(p)
+                    })),
+                trends: PatternAnalyzer.analyzePatternTrends(filteredPatterns),
+                recommendations: PatternAnalyzer.generatePatternRecommendations(filteredPatterns)
+            };
+
+            return {
+                success: true,
+                result: analysis
+            };
+
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Pattern analysis failed', { error, params });
+            return {
+                success: false,
+                error: `Pattern analysis failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
+    }
+
+    /**
+     * Get performance optimization recommendations
+     */
+    private async optimizePerformance(params: OptimizePerformanceParams): Promise<ToolResult> {
+        try {
+            this.logger.info('ContextAPI', 'Optimizing performance', params);
+
+            const executions = await this.database.table('tool_executions').find();
+            const patterns = this.mapProcessor.getPatterns();
+
+            let targetExecutions = executions;
+            if (params.targetTool) {
+                targetExecutions = executions.filter((e: any) => e.tool_name === params.targetTool);
+            }
+
+            const optimization = {
+                currentPerformance: ExecutionAnalyzer.analyzeCurrentPerformance(targetExecutions),
+                bottlenecks: ExecutionAnalyzer.identifyBottlenecks(targetExecutions),
+                optimizationOpportunities: ExecutionAnalyzer.identifyOptimizationOpportunities(targetExecutions, patterns),
+                recommendations: params.includeRecommendations !== false ? 
+                    ExecutionAnalyzer.generateOptimizationRecommendations(targetExecutions, patterns) : [],
+                estimatedImpact: ExecutionAnalyzer.estimateOptimizationImpact(targetExecutions)
+            };
+
+            return {
+                success: true,
+                result: optimization
+            };
+
+        } catch (error) {
+            this.logger.error('ContextAPI', 'Performance optimization failed', { error, params });
+            return {
+                success: false,
+                error: `Performance optimization failed: ${error instanceof Error ? error.message : String(error)}`
+            };
+        }
     }
 
     /**
@@ -638,6 +981,31 @@ export class ContextIntelligenceAPI implements Pick<IContextIntelligenceAPIInter
                 return 0;
             default:
                 throw new Error('Invalid user feedback format');
+        }
+    }
+
+    /**
+     * Health check for the Context Intelligence API
+     */
+    async healthCheck(): Promise<boolean> {
+        try {
+            // Test database connectivity
+            const dbHealthy = await this.database.healthCheck();
+            if (!dbHealthy.connected) {
+                return false;
+            }
+
+            // Test map processor functionality
+            const patterns = this.mapProcessor.getPatterns();
+            const mapProcessorHealthy = Array.isArray(patterns);
+
+            // Test basic functionality
+            const basicTest = this.config && typeof this.config === 'object';
+
+            return mapProcessorHealthy && basicTest;
+        } catch (error) {
+            this.logger.error('ContextIntelligenceAPI', 'Health check failed', { error });
+            return false;
         }
     }
 } 

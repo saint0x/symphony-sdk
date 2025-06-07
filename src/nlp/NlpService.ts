@@ -7,7 +7,7 @@ import {
     ErrorDetail
 } from '../types/tool.types';
 import { IDatabaseService } from '../db/types';
-import { IContextIntelligenceAPI } from '../api/IContextIntelligenceAPI';
+import { IContextAPI } from '../api/IContextAPI';
 import { Logger } from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -22,7 +22,7 @@ export class NlpService implements INlpService {
 
     constructor(
         private databaseService: IDatabaseService,
-        private contextIntelligenceApi: IContextIntelligenceAPI
+        private contextIntelligenceApi: IContextAPI
     ) {}
 
     async seedPatterns(patterns: NlpPatternDefinition[], options?: NlpSeedOptions): Promise<NlpManagementResult> {
