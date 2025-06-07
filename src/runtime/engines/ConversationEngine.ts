@@ -1,5 +1,6 @@
 import { ConversationEngineInterface, RuntimeContext, Conversation, RuntimeDependencies } from "../RuntimeTypes";
 import { ConversationManager } from '../conversation/ConversationManager';
+import { LLMRequestConfig } from '../../llm/types';
 
 /**
  * The ConversationEngine is responsible for managing the conversational flow of an agent's task.
@@ -61,10 +62,51 @@ export class ConversationEngine implements ConversationEngineInterface {
 
     /**
      * Concludes the conversation after execution is complete.
-     * (This will be implemented in a later step)
+     * This involves generating a final summary response.
      */
-    async conclude(conversation: Conversation, _context: { sessionId: string }): Promise<Conversation> {
-        this.dependencies.logger.warn('ConversationEngine', 'conclude method is not yet implemented.');
+    async conclude(conversation: Conversation, context: RuntimeContext): Promise<Conversation> {
+        this.dependencies.logger.info('ConversationEngine', 'Concluding conversation.', {
+            conversationId: conversation.id,
+            sessionId: context.sessionId
+        });
+
+        // Generate a final summary using the LLM
+        const history = conversation.turns.map((turn: any) => `${turn.role}: ${turn.content}`).join('\n');
+        const summaryPrompt = `Based on the following conversation, provide a concise summary of the outcome:\n\n${history}`;
+
+        try {
+            // Extract model from agent config, handling both string and object types
+            let model: string | undefined;
+            if (typeof context.agentConfig.llm === 'string') {
+                model = context.agentConfig.llm;
+            } else if (context.agentConfig.llm && typeof context.agentConfig.llm === 'object') {
+                model = context.agentConfig.llm.model;
+            }
+
+            const request: any = {
+                messages: [{ role: 'user', content: summaryPrompt }],
+                llmConfig: {
+                    model: model,
+                    temperature: 0.5
+                } as LLMRequestConfig
+            };
+            const response = await this.dependencies.llmHandler.complete(request);
+            const finalResponse = response.content || 'I was unable to summarize my work.';
+
+            conversation.addTurn('assistant', finalResponse);
+            conversation.finalResponse = finalResponse;
+            conversation.currentState = 'completed';
+
+            this.dependencies.logger.info('ConversationEngine', 'Conversation concluded successfully.', {
+                conversationId: conversation.id
+            });
+
+        } catch (error) {
+            this.dependencies.logger.error('ConversationEngine', 'Failed to generate final summary', { error });
+            conversation.currentState = 'error';
+            conversation.finalResponse = 'I was unable to summarize my work.';
+        }
+
         return conversation;
     }
 } 

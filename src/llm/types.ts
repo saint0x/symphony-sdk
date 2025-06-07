@@ -95,6 +95,6 @@ export interface LLMProvider {
     name: string;
     supportsStreaming: boolean;
     initialize(): Promise<void>;
-    complete(request: LLMRequest): Promise<LLMResponse>;
-    completeStream(request: LLMRequest): AsyncIterable<LLMResponse>;
+    complete(request: LLMRequest, configOverride?: LLMRequestConfig): Promise<LLMResponse>;
+    completeStream(request: LLMRequest, configOverride?: LLMRequestConfig): AsyncIterable<LLMResponse>;
 } 

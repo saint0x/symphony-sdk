@@ -18,6 +18,7 @@ interface Thought {
 
 interface ThinkingContext {
     thinkingPatterns: typeof THINKING_PATTERNS;
+    steps: string;
     depth: number;
     iteration: number;
     parentThought?: Thought;
@@ -80,16 +81,20 @@ export const ponderTool: ToolConfig = {
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
             const { 
-                query, 
+                topic,
+                query = topic, // Use topic as query if query not provided
+                steps,
+                consciousness_level,
                 context = {}, 
-                depth = 2,
+                depth = consciousness_level === 'deep' ? 3 : 2,
                 llmConfig = {} as LLMRequestConfig
             } = params;
 
-            if (!query) {
+            const finalQuery = query || topic;
+            if (!finalQuery) {
                 return {
                     success: false,
-                    error: 'Query parameter is required'
+                    error: 'Topic or query parameter is required'
                 };
             }
 
@@ -128,6 +133,7 @@ Your thinking should demonstrate:
             const enhancedContext: ThinkingContext = {
                 ...context,
                 thinkingPatterns: THINKING_PATTERNS,
+                steps: steps || 'No specific steps provided',
                 depth,
                 iteration: 0
             };
@@ -231,7 +237,7 @@ Generate at least 2-3 ${THOUGHT_TAGS.INSIGHT} tags with key realizations.
                 console.log(`[PONDER] Structured thought with confidence: ${thought.confidence}`);
 
                 // Fix 3: Generate new queries for deeper analysis based on actual insights
-                const newQueries = generateNewQueries(thought, currentQuery);
+                const newQueries = generateNewQueries(thought, finalQuery);
                 console.log(`[PONDER] Generated ${newQueries.length} new queries for deeper analysis`);
 
                 // Fix 4: Recursive call with incremented depth
@@ -252,7 +258,7 @@ Generate at least 2-3 ${THOUGHT_TAGS.INSIGHT} tags with key realizations.
 
             // Start the deep thinking process
             console.log('[PONDER] Starting deep thinking process...');
-            await thinkDeeply(query, enhancedContext, 0);
+            await thinkDeeply(finalQuery, enhancedContext, 0);
             console.log(`[PONDER] Completed deep thinking with ${thoughts.length} thoughts generated`);
 
             // Synthesize final conclusion

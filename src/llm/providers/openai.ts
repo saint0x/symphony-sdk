@@ -1,5 +1,5 @@
 import { logger, LogCategory } from '../../utils/logger';
-import { LLMConfig, LLMRequest, LLMResponse, LLMProvider } from '../types';
+import { LLMConfig, LLMRequest, LLMResponse, LLMProvider, LLMRequestConfig } from '../types';
 import { createMetricsTracker } from '../../utils/metrics';
 import { Logger } from '../../utils/logger';
 import { envConfig } from '../../utils/env';
@@ -44,33 +44,37 @@ export class OpenAIProvider implements LLMProvider {
         this.config = { provider: 'openai', apiKey: openAIKey, ...config };
         this.logger = Logger.getInstance('OpenAIProvider');
         this.logger.info('OpenAIProvider', 'OpenAIProvider initialized', { model: this.config.model });
-        this.model = this.config.model || 'gpt-3.5-turbo';
+        this.model = this.config.model || envConfig.defaultModel;
     }
 
     async initialize(): Promise<void> {
         // OpenAI doesn't require initialization
     }
 
-    async complete(request: LLMRequest): Promise<LLMResponse> {
+    async complete(request: LLMRequest, configOverride?: LLMRequestConfig): Promise<LLMResponse> {
         const metrics = createMetricsTracker();
         // Caching logic is simplified for now, assuming it's handled by LLMHandler or CacheServiceWrapper if available.
 
         try {
             metrics.trackOperation('request_preparation');
             
+            const effectiveModel = configOverride?.model || this.model;
+            const effectiveTemp = configOverride?.temperature ?? this.config.temperature;
+            const effectiveMaxTokens = configOverride?.maxTokens ?? this.config.maxTokens;
+
             this.logger.info('OpenAIProvider', 'Making OpenAI API request via SDK client with effective config:', {
-                model: this.model,
-                temperature: this.config.temperature,
-                maxTokens: this.config.maxTokens,
+                model: effectiveModel,
+                temperature: effectiveTemp,
+                maxTokens: effectiveMaxTokens,
                 expectsJsonResponse: request.expectsJsonResponse,
                 numMessages: request.messages.length,
             });
 
             const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
-                model: this.model,
+                model: effectiveModel,
                 messages: request.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-                temperature: this.config.temperature ?? 0.7,
-                max_tokens: this.config.maxTokens ?? 2000,
+                temperature: effectiveTemp ?? 0.7,
+                max_tokens: effectiveMaxTokens ?? 2000,
             };
 
             if (request.expectsJsonResponse) { 
@@ -144,7 +148,7 @@ export class OpenAIProvider implements LLMProvider {
         };
     }
 
-    async *completeStream(request: LLMRequest): AsyncIterable<LLMResponse> {
+    async *completeStream(request: LLMRequest, configOverride?: LLMRequestConfig): AsyncIterable<LLMResponse> {
         // If JSON mode is requested, it's better to use the non-streaming complete() method
         // as the entire JSON object is expected as one coherent unit.
         if (request.response_format?.type === 'json_object') {
@@ -164,14 +168,18 @@ export class OpenAIProvider implements LLMProvider {
             const apiKey = this.config.apiKey;
             if (!apiKey) throw new Error('OpenAI API key not found in provider config');
 
+            const effectiveModel = configOverride?.model || this.model;
+            const effectiveTemp = configOverride?.temperature ?? this.config.temperature;
+            const effectiveMaxTokens = configOverride?.maxTokens ?? this.config.maxTokens;
+
             const body: any = {
-                model: this.model,
+                model: effectiveModel,
                 messages: request.messages,
-                temperature: this.config.temperature ?? 0.7,
-                max_tokens: this.config.maxTokens ?? 2000,
+                temperature: effectiveTemp ?? 0.7,
+                max_tokens: effectiveMaxTokens ?? 2000,
                 stream: true
             };
-             logger.info(LogCategory.AI, 'Making OpenAI streaming API request (no function calls)', { model: this.model });
+             logger.info(LogCategory.AI, 'Making OpenAI streaming API request (no function calls)', { model: effectiveModel });
 
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',

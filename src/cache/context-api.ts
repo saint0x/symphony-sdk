@@ -151,8 +151,7 @@ export class ContextAPI implements IContextAPI {
             this.logger.info('ContextAPI', `Pruning tool executions older than ${cutoffDate}`);
 
             const result = await this.database.table('tool_executions')
-                .whereLte('created_at', cutoffDate)
-                .delete();
+                .delete({ created_at: { $lte: cutoffDate } });
 
             const prunedCount = result.rowsDeleted || 0;
             this.logger.info('ContextAPI', `Pruning complete. Pruned ${prunedCount} entries.`);

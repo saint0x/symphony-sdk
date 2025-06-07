@@ -37,32 +37,19 @@ export class SystemPromptService {
         try {
             // Check for custom system prompt override
             if (config.systemPrompt) {
-                // If using function calling, we might want to ensure the custom prompt doesn't conflict
-                // For now, we'll assume custom prompts are aware or need manual adjustment
                 this.logger.info('SystemPromptService', `Using custom system prompt. Function calling: ${useFunctionCalling}`);
                 return this.loadCustomSystemPrompt(config.systemPrompt);
             }
 
-            // Determine which template/instructions to use
-            let template = this.systemPromptTemplate;
-            if (useFunctionCalling) {
-                // Potentially use a different template or modify the existing one
-                // For now, we'll modify the basic prompt if the XML one is not function-call-aware
-                // This is a placeholder - ideally, you'd have specific templates.
-                template = this.getFunctionCallingAwareBasicPrompt(); 
-                this.logger.info('SystemPromptService', 'Using function-calling aware basic prompt (placeholder)');
-            } else if (this.systemPromptTemplate.includes("<ToolExecution>")) {
-                 this.logger.info('SystemPromptService', 'Using XML system prompt template with TOOL_CALL format');
-            } else {
-                 this.logger.info('SystemPromptService', 'Using basic system prompt with TOOL_CALL format');
-                 template = this.getBasicSystemPrompt(); // Fallback to old basic if XML failed and not func calling
-            }
+            // Always use the basic prompt that's compatible with our JSON contract
+            let template = this.getBasicSystemPrompt();
+            this.logger.info('SystemPromptService', 'Using function-calling aware basic prompt (placeholder)');
 
             const variables: SystemPromptVariables = {
                 name: config.name,
                 description: config.description,
                 task: config.task,
-                tool_registry: useFunctionCalling ? "Functions will be provided via API." : this.formatToolRegistry(config.tools),
+                tool_registry: this.formatToolRegistry(config.tools),
                 llm_model: typeof config.llm === 'string' ? config.llm : config.llm.model,
                 directives: config.directives || 'None specified'
             };
@@ -72,16 +59,6 @@ export class SystemPromptService {
                 const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
                 prompt = prompt.replace(regex, value);
             });
-
-            // If using function calling, remove the old TOOL_CALL block if it exists from a generic template
-            if (useFunctionCalling && prompt.includes("TOOL_CALL:")) {
-                prompt = prompt.replace(/<Instructions>[\s\S]*?IMPORTANT: When you need to use a tool[\s\S]*?<\/Instructions>/gm, 
-                    `<Instructions>
-        You are an intelligent AI agent. Analyze tasks and use the provided functions to accomplish them.
-        When a function is needed, the system will handle the call based on your arguments.
-    </Instructions>`);
-                prompt = prompt.replace(/<ToolExecution>[\s\S]*?<\/ToolExecution>/gm, '');
-            }
 
             return prompt;
 
@@ -110,9 +87,6 @@ export class SystemPromptService {
     }
 
     private getBasicSystemPrompt(): string {
-        // Generate dynamic parameter reference
-        const parameterReference = this.generateParameterReference();
-        
         return `<?xml version="1.0" encoding="UTF-8"?>
 <SystemPrompt>
     <AgentIdentity>
@@ -129,75 +103,16 @@ export class SystemPromptService {
         Your role:
         1. Understand and analyze the user's request
         2. Determine which tools are needed to complete the task
-        3. Execute tools by using the TOOL_CALL format
-        4. Provide the results and any additional analysis
+        3. Respond with proper JSON format for tool usage or direct responses
+        4. Provide analysis and explanations as needed
         
-        IMPORTANT: When you need to use a tool, you MUST format your response exactly as:
-        TOOL_CALL: toolName
-        PARAMETERS: {"param1": "value1", "param2": "value2"}
-        
-        Then continue with your analysis or explanation.
-        
-        Tool Parameter Reference:
-${parameterReference}
-        
-        Example:
-        If asked to "create a file test.txt with content 'Hello World'", respond:
-        TOOL_CALL: writeFile
-        PARAMETERS: {"path": "test.txt", "content": "Hello World"}
-        
-        I will create the file test.txt with the content "Hello World".
+        Available tools: \${tool_registry}
     </Instructions>
     
     <Directives>
         \${directives}
     </Directives>
 </SystemPrompt>`;
-    }
-
-    private getFunctionCallingAwareBasicPrompt(): string {
-        return `<?xml version="1.0" encoding="UTF-8"?>
-<SystemPrompt>
-    <AgentIdentity>
-        <Description>You are an agent that \${description}</Description>
-        <Task>You have been tasked to \${task}</Task>
-        <Capabilities>
-            <Tools>Available tools (functions) will be provided by the system.</Tools>
-        </Capabilities>
-    </AgentIdentity>
-    
-    <Instructions>
-        You are an intelligent AI agent designed to analyze tasks and use available functions to accomplish them.
-        Your role:
-        1. Understand and analyze the user's request.
-        2. Determine if a function call is needed to complete the task.
-        3. If so, indicate the function and parameters to the system.
-        4. Provide the results and any additional analysis based on function outputs or direct reasoning.
-        The system will handle the actual function execution.
-    </Instructions>
-    
-    <Directives>
-        \${directives}
-    </Directives>
-</SystemPrompt>`;
-    }
-
-    private generateParameterReference(): string {
-        // Get common tools for parameter reference
-        const commonTools = ['writeFile', 'readFile', 'webSearch'];
-        const references: string[] = [];
-        
-        for (const toolName of commonTools) {
-            const metadata = this.toolRegistry.getToolMetadata(toolName);
-            if (metadata && metadata.parameters && metadata.parameters.inputs) {
-                const params = metadata.parameters.inputs
-                    .map((p: { name: string }) => `"${p.name}": "${p.name}_value"`)
-                    .join(', ');
-                references.push(`        - ${toolName}: {${params}}`);
-            }
-        }
-        
-        return references.length > 0 ? references.join('\n') : '        - No parameter reference available';
     }
 
     private formatToolRegistry(tools: string[]): string {

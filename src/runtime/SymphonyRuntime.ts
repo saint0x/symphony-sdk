@@ -288,7 +288,9 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
     } as ExecutionStep);
 
     if (executionResult.success) {
-        conversation.addTurn('assistant', `Completed task successfully. Result: ${JSON.stringify(executionResult.result)}`);
+        const finalContent = executionResult.result?.response || JSON.stringify(executionResult.result);
+        conversation.addTurn('assistant', `Completed task successfully. Result: ${finalContent}`);
+        conversation.finalResponse = finalContent;
     } else {
         conversation.addTurn('assistant', `Failed to complete task. Error: ${executionResult.error}`);
     }

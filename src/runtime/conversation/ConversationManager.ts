@@ -12,6 +12,7 @@ export class ConversationManager implements Conversation {
     
     public turns: ConversationTurn[] = [];
     public currentState: ConversationState = 'initiated';
+    public finalResponse?: string;
 
     constructor(task: string, sessionId: string) {
         this.id = uuidv4();
@@ -70,7 +71,7 @@ export class ConversationManager implements Conversation {
             id: this.id,
             originalTask: this.originalTask,
             turns: this.turns,
-            finalResponse: this.getFinalResponse() || "",
+            finalResponse: this.finalResponse || this.getFinalResponse() || "",
             reasoningChain: this.getReasoningChain(),
             duration: Date.now() - this.createdAt,
             state: this.currentState

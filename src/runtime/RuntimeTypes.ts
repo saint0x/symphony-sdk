@@ -172,6 +172,7 @@ export interface Conversation {
   
   turns: ConversationTurn[];
   currentState: ConversationState;
+  finalResponse?: string;
   
   addTurn(role: 'user' | 'assistant', content: string, metadata?: ConversationMetadata): ConversationTurn;
   getRecentTurns(count: number): ConversationTurn[];

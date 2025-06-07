@@ -2,7 +2,8 @@ import {
     LLMProvider, 
     LLMConfig, 
     LLMRequest, 
-    LLMResponse 
+    LLMResponse,
+    LLMRequestConfig
 } from './types';
 import { OpenAIProvider } from './providers/openai';
 import { logger, LogCategory } from '../utils/logger';
@@ -185,29 +186,16 @@ export class LLMHandler {
             }
         }
         
-        // If request includes llmConfig, we might need to use a provider instance
-        // that reflects these specific settings. The current approach of global
-        // re-registration in `registerProvider` will affect subsequent calls.
-        // A truly request-specific provider instance or config override on the provider is ideal.
-        if (request.llmConfig) {
-            // Create a combined config for this request
-            const currentProviderConfig = (providerInstance as any).config as LLMConfig; // Cast to access config
-            const requestSpecificConfig: LLMConfig = {
-                provider: targetProviderName as any,
-                apiKey: currentProviderConfig.apiKey, // Keep original API key
-                model: request.llmConfig.model || currentProviderConfig.model,
-                temperature: request.llmConfig.temperature ?? currentProviderConfig.temperature,
-                maxTokens: request.llmConfig.maxTokens ?? currentProviderConfig.maxTokens,
-                timeout: request.llmConfig.timeout ?? currentProviderConfig.timeout,
-            };
-            
-            // Re-register the provider with this specific config for this call.
-            // This means the provider instance stored in `this.providers` is updated.
-            await this.registerProvider(requestSpecificConfig);
-            providerInstance = this.providers.get(targetProviderName)!; // Re-fetch the updated provider
-        }
-        
-        return providerInstance.complete(request);
+        return providerInstance.complete(request, request.llmConfig);
+    }
+
+    async inference(prompt: string, llmConfig?: LLMRequestConfig): Promise<string> {
+        const request: LLMRequest = {
+            messages: [{ role: 'user', content: prompt }],
+            llmConfig: llmConfig
+        };
+        const response = await this.complete(request);
+        return response.content || '';
     }
 
     async *completeStream(
@@ -238,28 +226,13 @@ export class LLMHandler {
             }
         }
         
-        if (request.llmConfig) {
-            const currentProviderConfig = (providerInstance as any).config as LLMConfig;
-            const requestSpecificConfig: LLMConfig = {
-                provider: targetProviderName as any,
-                apiKey: currentProviderConfig.apiKey,
-                model: request.llmConfig.model || currentProviderConfig.model,
-                temperature: request.llmConfig.temperature ?? currentProviderConfig.temperature,
-                maxTokens: request.llmConfig.maxTokens ?? currentProviderConfig.maxTokens,
-                timeout: request.llmConfig.timeout ?? currentProviderConfig.timeout,
-            };
-            
-            await this.registerProvider(requestSpecificConfig);
-            providerInstance = this.providers.get(targetProviderName)!;
-        }
-        
         if (!providerInstance.supportsStreaming) {
             // Fallback to non-streaming
-            const response = await providerInstance.complete(request);
+            const response = await providerInstance.complete(request, request.llmConfig);
             yield response;
             return;
         }
 
-        yield* providerInstance.completeStream(request);
+        yield* providerInstance.completeStream(request, request.llmConfig);
     }
 } 
