@@ -8,7 +8,8 @@ import {
   RuntimeMetrics,
   RuntimeConfiguration,
   RuntimeDependencies,
-  RuntimeExecutionMode
+  RuntimeExecutionMode,
+  Conversation
 } from './RuntimeTypes';
 import { ExecutionEngine } from './engines/ExecutionEngine';
 import { ConversationEngine } from './engines/ConversationEngine';
@@ -75,7 +76,6 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
 
   async execute(task: string, agentConfig: AgentConfig): Promise<RuntimeResult> {
     await this.initialize();
-    
     if (this.status !== 'ready') throw new Error(`Runtime not ready. Status: ${this.status}`);
 
     const startTime = Date.now();
@@ -90,83 +90,24 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
         const taskAnalysis = await this.planningEngine.analyzeTask(task, context);
         
         if (this.config.enhancedRuntime && taskAnalysis.requiresPlanning) {
-            this.logger.info('SymphonyRuntime', 'Task requires planning. Executing multi-step plan.');
-            const plan = await this.planningEngine.createExecutionPlan(task, context);
-            context.setExecutionPlan(plan);
-
-            for (const step of plan.steps) {
-                conversation.addTurn('assistant', `Executing step: ${step.description}`);
-                
-                // Execute the step using the same magic engine
-                const stepResult = await this.executionEngine.execute(step.description, context);
-                const executionStep = context.addExecutionStep({
-                    description: step.description,
-                    success: stepResult.success,
-                    result: stepResult.result,
-                    error: stepResult.error,
-                    summary: `Step "${step.description}" ${stepResult.success ? 'succeeded' : 'failed'}.`,
-                    toolUsed: stepResult.result?.toolsExecuted?.[0]?.name, // Best guess
-                    parameters: stepResult.result?.toolsExecuted?.[0]?.parameters
-                });
-
-                // New Reflection Step
-                if (this.config.reflectionEnabled) {
-                    const reflection = await this.reflectionEngine.reflect(executionStep, context, conversation);
-                    context.addReflection(reflection);
-                    conversation.addTurn('assistant', `Reflection: ${reflection.reasoning}`);
-
-                    if (reflection.suggestedAction === 'abort') {
-                        this.logger.warn('SymphonyRuntime', `Aborting plan based on reflection: ${reflection.reasoning}`);
-                        break; // Abort the plan
-                    }
-                    // Future: Handle 'retry' and 'modify_plan'
-                }
-
-                if (!stepResult.success) {
-                    conversation.addTurn('assistant', `Step failed: ${step.description}. Error: ${stepResult.error}`);
-                    conversation.currentState = 'error';
-                    // For now, we stop on failure. Day 6 will add reflection/recovery.
-                    break; 
-                }
-            }
+            await this.executePlannedTask(task, context, conversation);
         } else {
-            this.logger.info('SymphonyRuntime', 'Executing single-shot task.');
-            const executionResult = await this.executionEngine.execute(task, context);
-            if (executionResult.success) {
-                conversation.addTurn('assistant', `Completed task successfully. Result: ${JSON.stringify(executionResult.result)}`);
-            } else {
-                conversation.addTurn('assistant', `Failed to complete task. Error: ${executionResult.error}`);
-            }
+            await this.executeSingleShotTask(task, context, conversation);
         }
         
         conversation = await this.conversationEngine.conclude(conversation, context);
         
-        const finalSuccess = context.errorHistory.length === 0;
-        const finalResult: RuntimeResult = {
-            success: finalSuccess,
-            mode: context.currentPlan ? 'enhanced_planning' : 'legacy_with_conversation',
-            conversation: conversation.toJSON(),
-            plan: context.currentPlan,
-            executionDetails: {
-                mode: context.currentPlan ? 'enhanced_planning' : 'legacy_with_conversation',
-                stepResults: context.executionHistory,
-                totalSteps: context.totalSteps || 1,
-                completedSteps: context.executionHistory.filter(s => s.success).length,
-                failedSteps: context.executionHistory.filter(s => !s.success).length,
-                adaptations: [] // To be implemented
-            },
-            error: finalSuccess ? undefined : context.errorHistory[context.errorHistory.length - 1].message,
-            metrics: this.createFinalMetrics(startTime, context)
-        };
-
+        const finalResult = this.constructFinalResult(context, conversation, startTime);
         this.updateMetrics(finalResult.mode, startTime, finalResult.success);
         return finalResult;
 
     } catch (error) {
-        this.logger.error('SymphonyRuntime', 'Execution failed', {
-            executionId, error: error instanceof Error ? error.message : String(error), duration: Date.now() - startTime
+        this.logger.error('SymphonyRuntime', 'Execution failed catastrophically', {
+            executionId, error: error instanceof Error ? error.message : String(error)
         });
-        throw error;
+        // In case of a catastrophic failure, construct a failed result
+        const failedResult = this.constructFinalResult(context, undefined, startTime, error as Error);
+        return failedResult;
     } finally {
         this.activeContexts.delete(executionId);
         this.status = 'ready';
@@ -274,6 +215,81 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
       reflectionCount: 0, // To be implemented
       adaptationCount: 0 // To be implemented
     };
+  }
+
+  private async executePlannedTask(task: string, context: RuntimeContext, conversation: Conversation): Promise<void> {
+    this.logger.info('SymphonyRuntime', 'Task requires planning. Executing multi-step plan.');
+    const plan = await this.planningEngine.createExecutionPlan(task, context);
+    context.setExecutionPlan(plan);
+
+    for (const step of plan.steps) {
+        conversation.addTurn('assistant', `Executing step: ${step.description}`);
+        
+        // Execute the step using the same magic engine
+        const stepResult = await this.executionEngine.execute(step.description, context);
+        const executionStep = context.addExecutionStep({
+            description: step.description,
+            success: stepResult.success,
+            result: stepResult.result,
+            error: stepResult.error,
+            summary: `Step "${step.description}" ${stepResult.success ? 'succeeded' : 'failed'}.`,
+            toolUsed: stepResult.result?.toolsExecuted?.[0]?.name, // Best guess
+            parameters: stepResult.result?.toolsExecuted?.[0]?.parameters
+        });
+
+        // New Reflection Step
+        if (this.config.reflectionEnabled) {
+            const reflection = await this.reflectionEngine.reflect(executionStep, context, conversation);
+            context.addReflection(reflection);
+            conversation.addTurn('assistant', `Reflection: ${reflection.reasoning}`);
+
+            if (reflection.suggestedAction === 'abort') {
+                this.logger.warn('SymphonyRuntime', `Aborting plan based on reflection: ${reflection.reasoning}`);
+                break; // Abort the plan
+            }
+            // Future: Handle 'retry' and 'modify_plan'
+        }
+
+        if (!stepResult.success) {
+            conversation.addTurn('assistant', `Step failed: ${step.description}. Error: ${stepResult.error}`);
+            conversation.currentState = 'error';
+            // For now, we stop on failure. Day 6 will add reflection/recovery.
+            break; 
+        }
+    }
+  }
+
+  private async executeSingleShotTask(task: string, context: RuntimeContext, conversation: Conversation): Promise<void> {
+    this.logger.info('SymphonyRuntime', 'Executing single-shot task.');
+    const executionResult = await this.executionEngine.execute(task, context);
+    if (executionResult.success) {
+        conversation.addTurn('assistant', `Completed task successfully. Result: ${JSON.stringify(executionResult.result)}`);
+    } else {
+        conversation.addTurn('assistant', `Failed to complete task. Error: ${executionResult.error}`);
+    }
+  }
+
+  private constructFinalResult(context: RuntimeContext, conversation: Conversation | undefined, startTime: number, error?: Error): RuntimeResult {
+    const finalSuccess = !error && context.errorHistory.length === 0;
+    
+    const finalResult: RuntimeResult = {
+        success: finalSuccess,
+        mode: context.currentPlan ? 'enhanced_planning' : 'legacy_with_conversation',
+        conversation: conversation?.toJSON(),
+        plan: context.currentPlan,
+        executionDetails: {
+            mode: context.currentPlan ? 'enhanced_planning' : 'legacy_with_conversation',
+            stepResults: context.executionHistory,
+            totalSteps: context.totalSteps || (finalSuccess ? 1 : 0),
+            completedSteps: context.executionHistory.filter(s => s.success).length,
+            failedSteps: context.executionHistory.filter(s => !s.success).length,
+            adaptations: [] // This should be empty for now
+        },
+        error: error ? error.message : (finalSuccess ? undefined : context.errorHistory[context.errorHistory.length - 1].message),
+        metrics: this.createFinalMetrics(startTime, context)
+    };
+
+    return finalResult;
   }
 }
 
