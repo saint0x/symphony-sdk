@@ -36,11 +36,7 @@ export interface ToolResult<T = any> {
     result?: T;
     error?: string;
     details?: VerificationError[];
-    metrics?: {
-        duration: number;
-        startTime: number;
-        endTime: number;
-    };
+    metrics?: any;
 }
 
 export interface RetryConfig {

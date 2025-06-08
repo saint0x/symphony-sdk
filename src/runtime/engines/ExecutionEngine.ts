@@ -1,11 +1,11 @@
-import { ExecutionEngineInterface } from "../RuntimeTypes";
-import { RuntimeDependencies } from "../RuntimeTypes";
+import { ExecutionEngineInterface } from "../types";
+import { RuntimeDependencies } from "../types";
 import { ToolResult, AgentConfig } from "../../types/sdk";
 import { LLMRequest, LLMMessage, LLMConfig as RichLLMAgentConfig } from "../../llm/types";
 import { SystemPromptService } from "../../agents/sysprompt";
 import { ExecutionState } from "../context/ExecutionState";
 import { LLMHandler } from '../../llm/handler';
-import { RuntimeExecutionResult, RuntimeTask } from '../RuntimeTypes';
+import { RuntimeExecutionResult, RuntimeTask } from '../types';
 import { logger, LogCategory } from '../../utils/logger';
 import { ToolRegistry } from '../../tools/standard/registry';
 import { ToolConfig } from '../../types/tool.types';
@@ -49,6 +49,29 @@ export class ExecutionEngine implements ExecutionEngineInterface {
      * @returns A promise that resolves with the result of the tool execution.
      */
     async execute(task: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ToolResult> {
+        // Find the current step from the plan based on the task description
+        const currentStep = state.plan?.steps.find(s => s.description === task);
+
+        // If the step is a non-tool step, perform a simple LLM completion
+        if (currentStep && currentStep.toolName === 'none') {
+            this.dependencies.logger.info('ExecutionEngine', `Executing non-tool reasoning step: ${task}`);
+            const llm = LLMHandler.getInstance();
+            const response = await llm.complete({
+                messages: [
+                    { role: 'system', content: agentConfig.systemPrompt || 'You are a helpful assistant.' },
+                    { role: 'user', content: `Continue with the plan. The current step is to: ${task}` }
+                ]
+            });
+
+            return {
+                success: true,
+                result: {
+                    response: response.toString(),
+                    reasoning: `Executed a non-tool reasoning step as per the plan.`
+                }
+            };
+        }
+
         try {
             this.dependencies.logger.info('ExecutionEngine', `Executing task: ${task}`);
 
@@ -97,6 +120,34 @@ export class ExecutionEngine implements ExecutionEngineInterface {
                 { task, agentName: agentConfig.name }
             );
             throw symphonyError;
+        }
+    }
+
+    /**
+     * Executes a single, concrete tool call from a plan step.
+     * @param toolName The name of the tool to execute.
+     * @param parameters The parameters for the tool.
+     * @returns A promise that resolves with the result of the tool execution.
+     */
+    async executeStep(toolName: string, parameters: any): Promise<ToolResult> {
+        this.dependencies.logger.info('ExecutionEngine', `Directly executing planned step`, { toolName, parameters });
+        if (toolName === 'none') {
+            return {
+                success: true,
+                result: { response: 'No tool action required for this step.' }
+            };
+        }
+        try {
+            return await this.dependencies.toolRegistry.executeTool(toolName, parameters);
+        } catch (error: any) {
+            this.dependencies.logger.error('ExecutionEngine', 'Direct step execution failed', {
+                error: error.message,
+                toolName
+            });
+            return {
+                success: false,
+                error: `Tool '${toolName}' execution failed: ${error.message}`
+            };
         }
     }
 

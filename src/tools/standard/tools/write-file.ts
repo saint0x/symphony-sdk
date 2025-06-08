@@ -13,11 +13,12 @@ export const writeFileTool: ToolConfig = {
     },
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            const { path: filePath, content, encoding = 'utf-8' } = params;
+            const { path: legacyPath, filePath: newPath, content, encoding = 'utf-8' } = params;
+            const filePath = newPath || legacyPath;
             
             if (!filePath || content === undefined) {
                 throw new ValidationError(
-                    'Path and content parameters are required',
+                    'Path (or filePath) and content parameters are required',
                     { provided: params, required: ['path', 'content'] },
                     { component: 'WriteFileTool', operation: 'execute' }
                 );

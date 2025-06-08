@@ -30,27 +30,76 @@ export const createPlanTool: ToolConfig = {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are an expert project planning assistant. Create detailed, actionable execution plans.'
+                        content: `You are a meticulous project planning assistant. Your sole purpose is to create a JSON execution plan.
+Given an objective and a list of available tools, you MUST generate a JSON array of plan steps.
+Each object in the array represents a single, concrete step.
+
+**RULES:**
+1.  **Tool-Centric:** Every single step MUST map directly to one of the provided tools, or be a non-tool step for reasoning or summarization.
+2.  **JSON ONLY:** Your entire output must be a single, raw JSON array. Do not include any text, markdown, or explanations before or after the JSON.
+3.  **Data Flow:** The 'parameters' for a step can and should reference the output of a previous step. Use a placeholder string like '{{step_1_output}}' to indicate this.
+4.  **Strict Schema:** Each JSON object in the array must have these exact keys:
+    - "step": A number representing the order of execution.
+    - "useTool": A boolean (true/false) indicating if a tool is being called.
+    - "tool": If useTool is true, the exact name of the tool. If useTool is false, this MUST be "none".
+    - "description": A concise description of what this step achieves.
+    - "parameters": If useTool is true, a JSON object of the parameters for the tool. If useTool is false, this can be an empty object.
+
+**Example:**
+[
+  {
+    "step": 1,
+    "useTool": true,
+    "tool": "ponder",
+    "description": "Analyze the project requirements to inform the architecture.",
+    "parameters": {
+      "query": "Analyze the requirements for a production-grade Rust cron job, focusing on scheduler, jobs, config, and error handling."
+    }
+  },
+  {
+    "step": 2,
+    "useTool": true,
+    "tool": "writeFile",
+    "description": "Create the project's Cargo.toml file.",
+    "parameters": {
+      "filePath": "./code-review.md",
+      "content": "Code Review: {{step_1_output.conclusion.summary}}"
+    }
+  },
+  {
+    "step": 3,
+    "useTool": true,
+    "tool": "writeFile",
+    "description": "Create the main application entry point.",
+    "parameters": {
+      "filePath": "./cron-job/src/main.rs",
+      "content": "fn main() {\\n    println!(\\"Hello, from the cron job!\\");\\n}"
+    }
+  },
+  {
+    "step": 4,
+    "useTool": true,
+    "tool": "writeFile",
+    "description": "Create the project's Cargo.toml file.",
+    "parameters": {
+      "filePath": "./cron-job/Cargo.toml",
+      "content": "[package]\\nname = \\"cron-job\\"\\nversion = \\"0.1.0\\"\\nedition = \\"2021\\"\\n\\n[dependencies]"
+    }
+  }
+]`
                     },
                     {
                         role: 'user',
-                        content: `Create a detailed execution plan for: ${objective}
+                        content: `Create a JSON execution plan for the objective: "${objective}"
 
+Available Tools: ${JSON.stringify(context.availableTools)}
 Constraints: ${JSON.stringify(constraints)}
-Context: ${JSON.stringify(context)}
-
-Provide a structured plan with:
-1. Clear phases/steps
-2. Estimated timelines  
-3. Resource requirements
-4. Dependencies
-5. Risk considerations
-
-Format as a concise but complete execution roadmap.`
+Context: ${JSON.stringify(context)}`
                     }
                 ],
-                temperature: 0.7,
-                maxTokens: 1024
+                temperature: 0.1,
+                maxTokens: 2048,
+                response_format: { type: 'json_object' }
             });
 
             const planContent = response.toString();

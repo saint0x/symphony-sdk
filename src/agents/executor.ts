@@ -1,6 +1,6 @@
 import { BaseAgent } from './base';
 import { AgentConfig, ToolResult } from '../types/sdk';
-import { RuntimeResult, ExecutionStep } from '../runtime/RuntimeTypes';
+import { RuntimeResult, ExecutionStep } from '../runtime/types';
 
 type ExecuteTaskFn = (task: string, agentConfig: AgentConfig) => Promise<RuntimeResult>;
 
@@ -39,7 +39,8 @@ export class AgentExecutor extends BaseAgent {
         return {
             success,
             error,
-            result: formattedResult
+            result: formattedResult,
+            metrics
         };
     }
 

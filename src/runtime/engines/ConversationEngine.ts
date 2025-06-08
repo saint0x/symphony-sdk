@@ -1,4 +1,4 @@
-import { ConversationEngineInterface, RuntimeContext, Conversation, RuntimeDependencies } from "../RuntimeTypes";
+import { ConversationEngineInterface, RuntimeContext, Conversation, RuntimeDependencies } from "../types";
 import { ConversationManager } from '../conversation/ConversationManager';
 import { LLMRequestConfig } from '../../llm/types';
 

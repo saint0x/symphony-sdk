@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
 import { AgentConfig } from '../types/sdk';
-import { RuntimeContext, createRuntimeContext } from './RuntimeContext';
+import { RuntimeContext, createRuntimeContext } from './context';
 import {
   SymphonyRuntimeInterface,
   RuntimeResult,
@@ -12,7 +12,7 @@ import {
   RuntimeExecutionMode,
   Conversation,
   ExecutionStep
-} from './RuntimeTypes';
+} from './types';
 import { ExecutionEngine } from './engines/ExecutionEngine';
 import { ConversationEngine } from './engines/ConversationEngine';
 import { Logger } from '../utils/logger';
@@ -134,7 +134,7 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
         const taskAnalysis = await this.planningEngine.analyzeTask(task, context.toExecutionState());
         
         if (this.config.enhancedRuntime && taskAnalysis.requiresPlanning) {
-            await this.executePlannedTask(task, contextManager, context.agentConfig, conversation);
+            await this.executePlannedTask(task, contextManager, context.agentConfig, conversation, context);
         } else {
             await this.executeSingleShotTask(task, contextManager, context.agentConfig, conversation);
         }
@@ -285,7 +285,7 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
     };
   }
 
-  private async executePlannedTask(task: string, contextManager: RuntimeContextManager, agentConfig: AgentConfig, conversation: Conversation): Promise<void> {
+  private async executePlannedTask(task: string, contextManager: RuntimeContextManager, agentConfig: AgentConfig, conversation: Conversation, context: RuntimeContext): Promise<void> {
     this.logger.info('SymphonyRuntime', 'Task requires planning. Executing multi-step plan.');
     const plan = await this.planningEngine.createExecutionPlan(task, agentConfig, contextManager.getExecutionState());
     contextManager.setPlan(plan);
@@ -293,7 +293,9 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
     for (const step of plan.steps) {
         conversation.addTurn('assistant', `Executing step: ${step.description}`);
         
-        const stepResult = await this.executionEngine.execute(step.description, agentConfig, contextManager.getExecutionState());
+        const resolvedParameters = this.resolvePlaceholders(step.parameters, context.executionHistory);
+
+        const stepResult = await this.executionEngine.executeStep(step.toolName, resolvedParameters);
         
         const executionStep: ExecutionStep = {
             stepId: uuidv4(),
@@ -310,16 +312,10 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
         };
         await contextManager.recordStep(executionStep);
 
-        if (this.config.reflectionEnabled) {
+        if (this.config.reflectionEnabled && !stepResult.success) {
             const reflection = await this.reflectionEngine.reflect(executionStep, contextManager.getExecutionState(), conversation);
             contextManager.recordReflection(reflection);
             conversation.addTurn('assistant', `Reflection: ${reflection.reasoning}`);
-
-            if (reflection.suggestedAction === 'abort') {
-                this.logger.warn('SymphonyRuntime', `Aborting plan based on reflection: ${reflection.reasoning}`);
-                contextManager.updateStatus('aborted');
-                break;
-            }
         }
 
         if (!stepResult.success) {
@@ -329,6 +325,51 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
             break; 
         }
     }
+  }
+
+  private resolvePlaceholders(parameters: any, history: ReadonlyArray<ExecutionStep>): any {
+    if (!parameters || typeof parameters !== 'object') {
+        return parameters;
+    }
+
+    const resolved = { ...parameters };
+    const placeholderRegex = /\{\{step_(\d+)_output(?:\.(.*))?\}\}/g;
+
+    for (const key in resolved) {
+        if (typeof resolved[key] === 'string') {
+            resolved[key] = resolved[key].replace(placeholderRegex, (match, stepIndexStr, propertyPath) => {
+                const stepIndex = parseInt(stepIndexStr, 10) - 1;
+                
+                if (history[stepIndex] && history[stepIndex].success) {
+                    let currentValue = history[stepIndex].result;
+                    if (propertyPath) {
+                        const props = propertyPath.split('.');
+                        for (const prop of props) {
+                            if (currentValue && typeof currentValue === 'object' && prop in currentValue) {
+                                currentValue = (currentValue as any)[prop];
+                            } else {
+                                currentValue = undefined;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (currentValue === undefined) {
+                        return match; // Return original placeholder if value is not found
+                    }
+                    
+                    // If the value is an object, stringify it. Otherwise, use as is.
+                    return typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : currentValue;
+                }
+                return match; // Return original placeholder if step failed or doesn't exist
+            });
+        } else if (typeof resolved[key] === 'object') {
+            // Recurse for nested objects
+            resolved[key] = this.resolvePlaceholders(resolved[key], history);
+        }
+    }
+
+    return resolved;
   }
 
   private async executeSingleShotTask(task: string, contextManager: RuntimeContextManager, agentConfig: AgentConfig, conversation: Conversation): Promise<void> {

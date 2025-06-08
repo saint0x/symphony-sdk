@@ -8,9 +8,9 @@ import {
   RuntimeError,
   PlannedStep,
   Reflection
-} from './RuntimeTypes';
+} from './types';
 import { ExecutionState } from './context/ExecutionState';
-import { ConversationJSON, RuntimeSnapshot } from './RuntimeTypes';
+import { ConversationJSON, RuntimeSnapshot } from './types';
 
 /**
  * Manages the state of a single execution flow. It is a state container

@@ -1,7 +1,7 @@
 import { IContextAPI } from '../../api/IContextAPI';
 import { Logger } from '../../utils/logger';
-import { RuntimeContext } from '../RuntimeContext';
-import { ExecutionStep, Insight, Reflection, InsightType, ExecutionPlan } from '../RuntimeTypes';
+import { RuntimeContext } from '../context';
+import { ExecutionStep, Insight, Reflection, InsightType, ExecutionPlan } from '../types';
 import { ExecutionState } from './ExecutionState';
 import { v4 as uuidv4 } from 'uuid';
 

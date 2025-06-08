@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ReflectionEngineInterface, RuntimeDependencies, Reflection, ExecutionStep, Conversation, ReflectionAssessment } from "../RuntimeTypes";
+import { ReflectionEngineInterface, RuntimeDependencies, Reflection, ExecutionStep, Conversation, ReflectionAssessment } from "../types";
 import { ToolResult } from '../../types/sdk';
 import { ExecutionState } from '../context/ExecutionState';
 
@@ -82,12 +82,12 @@ export class ReflectionEngine implements ReflectionEngineInterface {
         let suggestedAction: 'continue' | 'retry' | 'abort' | 'modify_plan' = 'continue';
         if (!stepResult.success) {
             // A simple keyword search in the ponder conclusion to suggest next action
-            const conclusionText = conclusion.summary.toLowerCase();
+            const conclusionText = (conclusion.summary || '').toLowerCase();
             if (conclusionText.includes('retry')) {
                 suggestedAction = 'retry';
             } else if (conclusionText.includes('modify') || conclusionText.includes('alternative')) {
                 suggestedAction = 'modify_plan';
-            } else {
+            } else if (conclusionText.includes('abort')) {
                 suggestedAction = 'abort';
             }
         }

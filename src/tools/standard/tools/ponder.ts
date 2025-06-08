@@ -83,6 +83,8 @@ export const ponderTool: ToolConfig = {
             const { 
                 topic,
                 query = topic, // Use topic as query if query not provided
+                requirements,
+                analysis,
                 steps,
                 consciousness_level,
                 context = {}, 
@@ -90,7 +92,11 @@ export const ponderTool: ToolConfig = {
                 llmConfig = {} as LLMRequestConfig
             } = params;
 
-            const finalQuery = query || topic;
+            let finalQuery = query || topic || analysis;
+            if (requirements) {
+                finalQuery = typeof requirements === 'string' ? requirements : JSON.stringify(requirements, null, 2);
+            }
+
             if (!finalQuery) {
                 return {
                     success: false,

@@ -7,7 +7,7 @@ import { IToolService, IAgentService, ITeamService, IValidationManager } from '.
 import { IntelligenceOptions } from '../cache/service';
 import { MemoryConfig as InternalMemoryConfig } from '../memory/service';
 import { StreamingConfig } from '../streaming/service';
-import { RuntimeConfiguration } from '../runtime/RuntimeTypes';
+import { RuntimeConfiguration } from '../runtime/types';
 
 export interface SymphonyConfig {
     name?: string;

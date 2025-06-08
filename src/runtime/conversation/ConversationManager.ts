@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Conversation, ConversationTurn, ConversationState, ConversationMetadata, ConversationJSON } from "../RuntimeTypes";
+import { Conversation, ConversationTurn, ConversationState, ConversationMetadata, ConversationJSON } from "../types";
 
 /**
  * Manages the state and flow of a single conversation.

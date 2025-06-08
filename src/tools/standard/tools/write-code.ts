@@ -12,8 +12,12 @@ export const writeCodeTool: ToolConfig = {
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
             // Accept 'prompt', 'spec', and 'query' for flexibility
-            const spec = params.prompt || params.spec || params.query;
-            const { language = 'javascript', context = {} } = params;
+            let spec = params.prompt || params.spec || params.query;
+            const { language = 'javascript', context = {}, components } = params;
+
+            if (components) {
+                spec = `Implement the following components: ${JSON.stringify(components, null, 2)}`;
+            }
             
             if (!spec) {
                 return {

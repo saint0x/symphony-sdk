@@ -66,16 +66,15 @@ export abstract class BaseAgent {
             this.logger.info('Agent', `Starting task: ${task}`);
             const result = await this.executeTask(task);
             
-            const metrics = {
-                duration: Date.now() - startTime,
-                startTime,
-                endTime: Date.now()
-            };
+            if (!result.metrics) {
+                result.metrics = {
+                    duration: Date.now() - startTime,
+                    startTime,
+                    endTime: Date.now()
+                };
+            }
 
-            return {
-                ...result,
-                metrics
-            };
+            return result;
         } catch (error) {
             const metrics = {
                 duration: Date.now() - startTime,

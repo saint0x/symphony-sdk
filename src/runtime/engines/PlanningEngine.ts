@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { PlanningEngineInterface, RuntimeDependencies, ExecutionPlan, TaskAnalysis, TaskComplexity, PlannedStep } from "../RuntimeTypes";
+import { PlanningEngineInterface, RuntimeDependencies, ExecutionPlan, TaskAnalysis, TaskComplexity, PlannedStep } from "../types";
 import { ToolResult, AgentConfig } from "../../types/sdk";
 import { ExecutionState } from '../context/ExecutionState';
 import { ToolError, ErrorCode } from '../../errors/index';
@@ -89,7 +89,7 @@ export class PlanningEngine implements PlanningEngineInterface {
                 }
             });
 
-            if (!planToolResult.success || !planToolResult.result || !planToolResult.result.response) {
+            if (!planToolResult.success || !planToolResult.result || !planToolResult.result.plan) {
                 throw new ToolError(
                     'createPlanTool',
                     ErrorCode.TOOL_EXECUTION_FAILED,
@@ -124,15 +124,70 @@ export class PlanningEngine implements PlanningEngineInterface {
      * This will be improved later with more robust LLM-guided JSON generation.
      */
     private parseRawPlanToSteps(rawPlan: string): PlannedStep[] {
-        return rawPlan.split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0 && /^\d+\./.test(line)) // Look for lines starting with "1.", "2.", etc.
-            .map(line => ({
-                id: uuidv4(),
-                description: line.replace(/^\d+\.\s*/, ''),
-                toolName: 'TBD', // This will be determined by a future LLM call per step
-                parameters: {},
-                successCriteria: 'Step completes without error.'
-            }));
+        if (!rawPlan) {
+            this.dependencies.logger.warn('PlanningEngine', 'Received an empty or null raw plan string.');
+            return [];
+        }
+
+        this.dependencies.logger.info('PlanningEngine', 'Attempting to parse raw plan...', { rawPlan });
+
+        try {
+            const parsedJson = JSON.parse(rawPlan);
+            let stepsArray: any[] | null = null;
+
+            // Log the keys of the parsed object to understand its structure
+            this.dependencies.logger.info('PlanningEngine', 'Parsed raw plan JSON object.', { keys: Object.keys(parsedJson) });
+
+            // More robustly find the array of steps
+            if (Array.isArray(parsedJson)) {
+                stepsArray = parsedJson;
+            } else if (parsedJson.plan && Array.isArray(parsedJson.plan)) {
+                stepsArray = parsedJson.plan;
+            } else if (parsedJson.steps && Array.isArray(parsedJson.steps)) {
+                stepsArray = parsedJson.steps;
+            } else {
+                // Look for any key that holds an array
+                const arrayKey = Object.keys(parsedJson).find(key => Array.isArray(parsedJson[key]));
+                if (arrayKey) {
+                    this.dependencies.logger.info('PlanningEngine', `Found plan array under unexpected key: '${arrayKey}'`);
+                    stepsArray = parsedJson[arrayKey];
+                }
+            }
+
+            if (!stepsArray) {
+                this.dependencies.logger.warn('PlanningEngine', 'Could not find a valid step array in the parsed JSON.', { parsedJson });
+                return [];
+            }
+
+            this.dependencies.logger.info('PlanningEngine', `Successfully extracted ${stepsArray.length} steps from the plan.`);
+
+            return stepsArray.map((step, index) => {
+                if (!step || typeof step !== 'object') {
+                    this.dependencies.logger.warn('PlanningEngine', `Step ${index} is not a valid object.`, { step });
+                    return null;
+                }
+                return {
+                    id: uuidv4(),
+                    description: step.description || `Execute step for ${step.tool || 'TBD'}`,
+                    toolName: step.useTool === false ? 'none' : step.tool || 'TBD',
+                    parameters: step.parameters || {},
+                    successCriteria: 'Step completes without error.'
+                };
+            }).filter((step): step is PlannedStep => step !== null);
+
+        } catch (error) {
+            this.dependencies.logger.error('PlanningEngine', 'Failed to parse raw plan JSON, falling back to line-by-line.', { rawPlan, error });
+            // Fallback to line-by-line parsing if JSON fails
+            return rawPlan.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0 && /^\d+\./.test(line))
+                .map(line => ({
+                    id: uuidv4(),
+                    description: line.replace(/^\d+\.\s*/, ''),
+                    toolName: 'TBD',
+                    parameters: {},
+                    successCriteria: 'Step completes without error.'
+                }));
+        }
     }
 } 

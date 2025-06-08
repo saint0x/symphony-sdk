@@ -1,5 +1,5 @@
 import { AgentConfig, ToolResult } from '../../types/sdk';
-import { ExecutionPlan, Insight, RuntimeError, ConversationJSON } from '../RuntimeTypes';
+import { ExecutionPlan, Insight, RuntimeError, ConversationJSON } from '../types';
 
 /**
  * Represents a clean, serializable snapshot of the entire execution state.

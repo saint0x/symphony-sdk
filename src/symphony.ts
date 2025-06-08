@@ -15,11 +15,11 @@ import { TeamCoordinator } from './teams/coordinator';
 import { AgentExecutor } from './agents/executor';
 // import { envConfig } from './utils/env';
 import { INlpService, NlpPatternDefinition, ToolConfig as CoreToolConfig } from './types/tool.types';
-import { NlpService } from './nlp/NlpService';
+import { NlpService } from './nlp/service';
 import { ContextAPI } from './cache/context-api';
 import { IContextAPI } from './api/IContextAPI';
-import { SymphonyRuntime, createSymphonyRuntime } from './runtime/SymphonyRuntime';
-import { RuntimeDependencies } from './runtime/RuntimeTypes';
+import { SymphonyRuntime, createSymphonyRuntime } from './runtime/symphony';
+import { RuntimeDependencies } from './runtime/types';
 
 // Service implementations
 class ToolService implements IToolService {
@@ -651,6 +651,8 @@ export class Symphony implements Partial<ISymphony> {
                 this._logger.info('Symphony', 'NLP Service initialized (no persistent patterns in memory mode).');
             }
             
+            await this._runtime.initialize();
+
             this._state = ToolLifecycleState.READY;
             (this as any).initialized = true;
             (this as any).isInitialized = true;
