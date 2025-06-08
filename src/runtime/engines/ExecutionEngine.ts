@@ -267,7 +267,7 @@ Start with the FIRST tool needed for this task.`;
      * Executes a single-step task (original behavior)
      */
     private async _executeSingleStep(task: string, systemPrompt: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ToolResult> {
-        const analysisResult = await this._analyzeAndExecute(task, systemPrompt, agentConfig, state);
+            const analysisResult = await this._analyzeAndExecute(task, systemPrompt, agentConfig, state);
             
             let overallTaskSuccess = true;
             let primaryError: string | undefined;

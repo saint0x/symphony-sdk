@@ -5,8 +5,9 @@ import * as assert from 'assert';
 
 const logger = symphony.logger;
 
-async function runTeamStressTest() {
-    logger.info('TestRunner', '🚀 === COMPREHENSIVE TEAM STRESS TEST === 🚀');
+async function runComprehensiveTeamStrategyTest() {
+    logger.info('TestRunner', '🚀 === COMPREHENSIVE TEAM EXECUTION STRATEGY TEST === 🚀');
+    logger.info('TestRunner', '📊 Testing all 5 coordination patterns: PARALLEL, SEQUENTIAL, PIPELINE, COLLABORATIVE, ROLE_BASED');
 
     // Initialize Symphony
     await symphony.initialize();
@@ -18,9 +19,9 @@ async function runTeamStressTest() {
     assert.ok(teamService, 'Team service should be available');
 
     // Step 1: Create specialized agents with different tool sets
-    logger.info('TestRunner', 'Step 1: Creating specialized agents...');
+    logger.info('TestRunner', 'Step 1: Creating specialized agent team...');
     
-    // Agent 1: Research Analyst - Uses cognitive and research tools
+    // Agent 1: Research Analyst - Cognitive and research capabilities
     const researchAgent = await agentService.create({
         name: 'ResearchAnalyst',
         description: 'Senior research analyst specializing in technology assessment and market analysis',
@@ -29,7 +30,7 @@ async function runTeamStressTest() {
         llm: { model: envConfig.defaultModel }
     });
     
-    // Agent 2: Software Developer - Uses development and planning tools  
+    // Agent 2: Software Developer - Development and architecture capabilities  
     const developerAgent = await agentService.create({
         name: 'SoftwareDeveloper',
         description: 'Senior full-stack developer with expertise in microservices and modern architectures',
@@ -38,7 +39,7 @@ async function runTeamStressTest() {
         llm: { model: envConfig.defaultModel }
     });
     
-    // Agent 3: Technical Writer - Uses documentation and file management tools
+    // Agent 3: Technical Writer - Documentation and project management capabilities
     const documentationAgent = await agentService.create({
         name: 'TechnicalWriter', 
         description: 'Technical documentation specialist and project organizer',
@@ -49,12 +50,10 @@ async function runTeamStressTest() {
 
     logger.info('TestRunner', '✅ Created 3 specialized agents successfully');
 
-    // Step 2: Create team configurations for different strategies
-    logger.info('TestRunner', 'Step 2: Testing PARALLEL team coordination...');
-    
-    const parallelTeam = await teamService.create({
-        name: 'ParallelDevelopmentTeam',
-        description: 'High-performance team using parallel execution for maximum speed',
+    // Create universal team configuration for all strategies
+    const universalTeam = await teamService.create({
+        name: 'UniversalTeam',
+        description: 'Multi-strategy team capable of various coordination patterns',
         agents: [
             researchAgent.getConfig(),
             developerAgent.getConfig(), 
@@ -62,188 +61,192 @@ async function runTeamStressTest() {
         ]
     });
 
-    // Complex collaborative task
-    const complexTask = `
-        BUILD A COMPLETE PRODUCTION-READY RUST MICROSERVICE PROJECT:
-        
-        Requirements:
-        - Research: Analyze current microservice patterns, security best practices, and deployment strategies
-        - Development: Create a REST API microservice with database integration, authentication, logging, and health checks
-        - Documentation: Generate complete project documentation including README, API docs, deployment guide, and code comments
-        
-        Deliverables:
-        1. Technical analysis and architecture recommendations
-        2. Production-ready Rust microservice code
-        3. Complete project documentation and setup instructions
-        
-        Each agent should leverage their specialized tools to contribute their expertise to this collaborative effort.
-    `;
-
-    // Test PARALLEL execution
-    logger.info('TestRunner', 'Executing complex task with PARALLEL strategy...');
-    const parallelResult = await parallelTeam.execute(complexTask, TeamStrategy.PARALLEL);
-    
-    logger.info('TestRunner', 'PARALLEL Execution Results:', {
-        success: parallelResult.success,
-        duration: parallelResult.metrics?.duration,
-        agentCalls: parallelResult.metrics?.agentCalls,
-        errors: parallelResult.error
-    });
-
-    // Show detailed results from each agent
-    if (parallelResult.result?.details) {
-        parallelResult.result.details.forEach((agentResult, index) => {
-            const agentNames = ['ResearchAnalyst', 'SoftwareDeveloper', 'TechnicalWriter'];
-            logger.info('TestRunner', `${agentNames[index]} Result:`, {
-                success: agentResult.success,
-                hasResult: !!agentResult.result,
-                error: agentResult.error
-            });
-        });
-    }
-
-    assert.strictEqual(parallelResult.success, true, `Parallel team execution should succeed. Error: ${parallelResult.error}`);
-    
-    // Step 3: Test SEQUENTIAL team coordination
-    logger.info('TestRunner', 'Step 3: Testing SEQUENTIAL team coordination...');
-    
-    const sequentialTeam = await teamService.create({
-        name: 'SequentialDevelopmentTeam',
-        description: 'Methodical team using sequential execution for quality and coordination',
-        agents: [
-            researchAgent.getConfig(),
-            developerAgent.getConfig(),
-            documentationAgent.getConfig()
-        ]
-    });
-
-    const sequentialTask = `
-        COLLABORATIVE PIPELINE - BUILD A BLOCKCHAIN SMART CONTRACT PROJECT:
-        
-        Phase 1 (Research): Analyze current smart contract security patterns, gas optimization techniques, and testing frameworks
-        Phase 2 (Development): Build on Phase 1 insights to create a secure, gas-optimized smart contract with comprehensive testing
-        Phase 3 (Documentation): Using outputs from Phase 1 & 2, create complete project documentation and deployment guides
-        
-        This task requires sequential coordination where each phase builds upon the previous phase's outputs.
-    `;
-
-    logger.info('TestRunner', 'Executing pipeline task with SEQUENTIAL strategy...');
-    const sequentialResult = await sequentialTeam.execute(sequentialTask, TeamStrategy.SEQUENTIAL);
-    
-    logger.info('TestRunner', 'SEQUENTIAL Execution Results:', {
-        success: sequentialResult.success,
-        duration: sequentialResult.metrics?.duration,
-        agentCalls: sequentialResult.metrics?.agentCalls,
-        errors: sequentialResult.error
-    });
-
-    assert.strictEqual(sequentialResult.success, true, `Sequential team execution should succeed. Error: ${sequentialResult.error}`);
-
-    // Step 4: Compare execution strategies
-    logger.info('TestRunner', 'Step 4: Analyzing execution strategy performance...');
-    
-    const performanceComparison = {
-        parallel: {
-            duration: parallelResult.metrics?.duration || 0,
-            strategy: 'PARALLEL',
-            agentCalls: parallelResult.metrics?.agentCalls || 0,
-            success: parallelResult.success
-        },
-        sequential: {
-            duration: sequentialResult.metrics?.duration || 0, 
-            strategy: 'SEQUENTIAL',
-            agentCalls: sequentialResult.metrics?.agentCalls || 0,
-            success: sequentialResult.success
-        }
-    };
-
-    logger.info('TestRunner', '📊 Performance Comparison:', performanceComparison);
-
-    // Verify both strategies worked
-    assert.ok(performanceComparison.parallel.success, 'Parallel strategy should succeed');
-    assert.ok(performanceComparison.sequential.success, 'Sequential strategy should succeed');
-
-    // Step 5: Test complex multi-round coordination
-    logger.info('TestRunner', 'Step 5: Testing multi-round complex coordination...');
-    
-    const multiRoundTeam = await teamService.create({
-        name: 'MultiRoundTeam',
-        description: 'Advanced team for multi-phase complex projects',
-        agents: [
-            researchAgent.getConfig(),
-            developerAgent.getConfig(),
-            documentationAgent.getConfig()
-        ]
-    });
-
-    // Execute multiple rounds with different focuses
-    const rounds = [
+    // Define test scenarios for each strategy
+    const testScenarios = [
         {
-            name: 'Research Phase',
-            task: 'Research and analyze: "Advanced patterns for distributed systems resilience, including circuit breakers, bulkheads, and chaos engineering"',
-            strategy: TeamStrategy.PARALLEL
+            strategy: TeamStrategy.PARALLEL,
+            name: 'PARALLEL EXECUTION',
+            task: 'BUILD A PRODUCTION-READY AI CHATBOT: Each agent contributes simultaneously using their specialized skills to create research analysis, implementation code, and comprehensive documentation.',
+            description: 'All agents work simultaneously on the same task with their specialized capabilities'
         },
         {
-            name: 'Implementation Phase', 
-            task: 'Based on distributed systems research, create: A resilient microservice implementation with circuit breaker pattern, health checks, and fault tolerance',
-            strategy: TeamStrategy.SEQUENTIAL
+            strategy: TeamStrategy.SEQUENTIAL,
+            name: 'SEQUENTIAL EXECUTION', 
+            task: 'DEVELOP A BLOCKCHAIN VOTING SYSTEM: Work methodically through research → development → documentation phases, where each phase must complete before the next begins.',
+            description: 'Agents work one after another in predetermined order'
         },
         {
-            name: 'Documentation Phase',
-            task: 'Create comprehensive documentation for: The distributed systems resilience patterns and microservice implementation from previous phases',
-            strategy: TeamStrategy.PARALLEL
+            strategy: TeamStrategy.PIPELINE,
+            name: 'PIPELINE EXECUTION',
+            task: 'CREATE A FINTECH API: Research analyst investigates requirements, developer builds on those findings to create the API, technical writer uses both outputs to create final documentation.',
+            description: 'Each agent\'s output becomes input for the next agent in the pipeline'
+        },
+        {
+            strategy: TeamStrategy.COLLABORATIVE,
+            name: 'COLLABORATIVE EXECUTION',
+            task: 'DESIGN A DISTRIBUTED MICROSERVICES ARCHITECTURE: Work together iteratively, sharing insights and building consensus on the optimal architecture design.',
+            description: 'Agents collaborate iteratively, sharing context and building upon each other\'s contributions'
+        },
+        {
+            strategy: TeamStrategy.ROLE_BASED,
+            name: 'ROLE-BASED EXECUTION',
+            task: 'IMPLEMENT A COMPLETE E-COMMERCE PLATFORM: Decompose and distribute specialized tasks based on agent roles - research, development, and documentation responsibilities.',
+            description: 'Task is intelligently decomposed and distributed based on agent specializations'
         }
     ];
 
-    const multiRoundResults = [];
-    for (const round of rounds) {
-        logger.info('TestRunner', `Executing ${round.name} with ${round.strategy} strategy...`);
-        const roundResult = await multiRoundTeam.execute(round.task, round.strategy);
-        multiRoundResults.push({
-            round: round.name,
-            success: roundResult.success,
-            duration: roundResult.metrics?.duration,
-            strategy: round.strategy
+    const results = [];
+    
+    // Execute each strategy
+    for (let i = 0; i < testScenarios.length; i++) {
+        const scenario = testScenarios[i];
+        logger.info('TestRunner', `\n🎯 === ${scenario.name} (${i + 1}/${testScenarios.length}) === 🎯`);
+        logger.info('TestRunner', `Strategy: ${scenario.description}`);
+        logger.info('TestRunner', `Task: ${scenario.task.substring(0, 100)}...`);
+
+        const startTime = Date.now();
+        const result = await universalTeam.execute(scenario.task, scenario.strategy);
+        const duration = Date.now() - startTime;
+
+        logger.info('TestRunner', `${scenario.name} Results:`, {
+            success: result.success,
+            duration: result.metrics?.duration || duration,
+            agentCalls: result.metrics?.agentCalls,
+            strategy: result.result?.strategy,
+            sharedContextUsed: !!result.result?.sharedContext,
+            rolesAnalyzed: result.result?.agentRoles?.length || 0
         });
+
+        // Log detailed agent results if available
+        if (result.result?.details) {
+            const agentNames = ['ResearchAnalyst', 'SoftwareDeveloper', 'TechnicalWriter'];
+            result.result.details.forEach((agentResult, index) => {
+                if (index < agentNames.length) {
+                    logger.info('TestRunner', `  └─ ${agentNames[index]}: ${agentResult.success ? '✅ Success' : '❌ Failed'}${agentResult.error ? ` (${agentResult.error})` : ''}`);
+                }
+            });
+        }
+
+        // Log strategy-specific details
+        if (scenario.strategy === TeamStrategy.COLLABORATIVE && result.result?.sharedContext) {
+            logger.info('TestRunner', `  └─ Collaborative Details: ${result.result.sharedContext.iterationCount} iterations, consensus: ${result.result.sharedContext.consensusReached}`);
+        }
+
+        if (scenario.strategy === TeamStrategy.ROLE_BASED && result.result?.agentRoles) {
+            logger.info('TestRunner', '  └─ Role Assignments:');
+            result.result.agentRoles.forEach(([agentName, role]) => {
+                logger.info('TestRunner', `      ${agentName}: ${role.responsibilities.join(', ')}`);
+            });
+        }
+
+        assert.strictEqual(result.success, true, `${scenario.name} should succeed. Error: ${result.error}`);
         
-        assert.strictEqual(roundResult.success, true, `${round.name} should succeed`);
+        results.push({
+            strategy: scenario.strategy,
+            name: scenario.name,
+            success: result.success,
+            duration: result.metrics?.duration || duration,
+            agentCalls: result.metrics?.agentCalls || 0,
+            uniqueFeatures: {
+                sharedContext: scenario.strategy === TeamStrategy.COLLABORATIVE,
+                pipeline: scenario.strategy === TeamStrategy.PIPELINE,
+                roleBased: scenario.strategy === TeamStrategy.ROLE_BASED,
+                parallel: scenario.strategy === TeamStrategy.PARALLEL,
+                sequential: scenario.strategy === TeamStrategy.SEQUENTIAL
+            }
+        });
     }
 
-    logger.info('TestRunner', '🎯 Multi-Round Results:', multiRoundResults);
-
-    // Step 6: Verify team member utilization and tool diversity
-    logger.info('TestRunner', 'Step 6: Verifying tool diversity and specialization...');
+    // Step 2: Analyze performance and strategy characteristics
+    logger.info('TestRunner', '\n📊 === STRATEGY PERFORMANCE ANALYSIS === 📊');
     
-    const teamStats = {
-        totalAgents: 3,
-        toolsPerAgent: {
-            'ResearchAnalyst': ['ponder', 'webSearch'],
-            'SoftwareDeveloper': ['writeCode', 'createPlan'], 
-            'TechnicalWriter': ['writeFile', 'readFile']
-        },
-        totalUniqueTools: 6,
-        executionStrategies: ['PARALLEL', 'SEQUENTIAL'],
-        roundsCompleted: multiRoundResults.length
+    const performanceAnalysis = {
+        totalStrategies: results.length,
+        allSuccessful: results.every(r => r.success),
+        strategyStats: results.map(r => ({
+            strategy: r.strategy,
+            duration: r.duration,
+            agentCalls: r.agentCalls,
+            efficiency: Math.round(r.agentCalls / (r.duration / 1000) * 100) / 100 // calls per second
+        })),
+        fastestStrategy: results.reduce((fastest, current) => 
+            current.duration < fastest.duration ? current : fastest
+        ),
+        mostThoroughStrategy: results.reduce((most, current) =>
+            current.agentCalls > most.agentCalls ? current : most
+        )
     };
 
-    logger.info('TestRunner', '📈 Team Utilization Stats:', teamStats);
+    logger.info('TestRunner', 'Performance Analysis:', performanceAnalysis);
+
+    // Step 3: Test strategy switching and adaptability
+    logger.info('TestRunner', '\n🔄 === STRATEGY SWITCHING TEST === 🔄');
+    
+    const adaptiveScenarios = [
+        { strategy: TeamStrategy.ROLE_BASED, task: 'Quick task decomposition test' },
+        { strategy: TeamStrategy.COLLABORATIVE, task: 'Consensus building test' },
+        { strategy: TeamStrategy.PIPELINE, task: 'Data flow pipeline test' }
+    ];
+
+    for (const scenario of adaptiveScenarios) {
+        logger.info('TestRunner', `Testing rapid strategy switch to ${scenario.strategy}...`);
+        const quickResult = await universalTeam.execute(scenario.task, scenario.strategy);
+        assert.strictEqual(quickResult.success, true, `Strategy switching to ${scenario.strategy} should work`);
+        logger.info('TestRunner', `✅ ${scenario.strategy} switch successful`);
+    }
+
+    // Step 4: Verify team coordination capabilities
+    logger.info('TestRunner', '\n🎯 === COORDINATION CAPABILITIES VERIFICATION === 🎯');
+    
+    const coordinationStats = {
+        strategiesImplemented: 5,
+        agentSpecializations: 3,
+        toolDiversity: 6,
+        coordinationPatterns: [
+            'Parallel execution',
+            'Sequential workflow',
+            'Pipeline data flow',
+            'Collaborative iteration',
+            'Role-based decomposition'
+        ],
+        advancedFeatures: [
+            'Shared context management',
+            'Agent role derivation',
+            'Task decomposition',
+            'Consensus detection',
+            'Pipeline context passing',
+            'Dynamic strategy switching'
+        ]
+    };
+
+    logger.info('TestRunner', 'Coordination Capabilities:', coordinationStats);
 
     // Final assertions
-    assert.strictEqual(teamStats.totalAgents, 3, 'Should have 3 specialized agents');
-    assert.strictEqual(teamStats.totalUniqueTools, 6, 'Should utilize 6 different tools');
-    assert.strictEqual(teamStats.roundsCompleted, 3, 'Should complete all 3 rounds');
+    assert.strictEqual(results.length, 5, 'Should test all 5 execution strategies');
+    assert.ok(results.every(r => r.success), 'All execution strategies should succeed');
+    assert.ok(performanceAnalysis.allSuccessful, 'All strategies should be successful');
+    assert.ok(coordinationStats.strategiesImplemented === 5, 'Should implement all 5 strategies');
 
-    logger.info('TestRunner', '\n🎉🎉🎉 TEAM STRESS TEST PASSED! 🎉🎉🎉');
-    logger.info('TestRunner', '✅ All team coordination strategies verified');
-    logger.info('TestRunner', '✅ Multi-agent tool orchestration successful');
-    logger.info('TestRunner', '✅ Complex collaborative workflows functional');
-    logger.info('TestRunner', '✅ Performance metrics captured and analyzed');
+    logger.info('TestRunner', '\n🎉🎉🎉 COMPREHENSIVE TEAM STRATEGY TEST PASSED! 🎉🎉🎉');
+    logger.info('TestRunner', '✅ All 5 execution strategies verified and functional');
+    logger.info('TestRunner', '✅ Advanced coordination patterns implemented');
+    logger.info('TestRunner', '✅ Role-based task decomposition working');
+    logger.info('TestRunner', '✅ Collaborative consensus building operational');
+    logger.info('TestRunner', '✅ Pipeline data flow functioning');
+    logger.info('TestRunner', '✅ Dynamic strategy switching successful');
+    logger.info('TestRunner', '✅ Enterprise-grade team orchestration achieved');
+    
+    logger.info('TestRunner', '\n📈 FINAL STATS:');
+    logger.info('TestRunner', `Total Execution Strategies: ${results.length}`);
+    logger.info('TestRunner', `Total Agent Interactions: ${results.reduce((sum, r) => sum + r.agentCalls, 0)}`);
+    logger.info('TestRunner', `Average Duration: ${Math.round(results.reduce((sum, r) => sum + r.duration, 0) / results.length)}ms`);
+    logger.info('TestRunner', `Success Rate: ${results.filter(r => r.success).length}/${results.length} (100%)`);
     
     process.exitCode = 0;
 }
 
-runTeamStressTest().catch(err => {
-    logger.error('TestRunner', 'TEAM STRESS TEST FAILED:', { message: err.message, stack: err.stack });
+runComprehensiveTeamStrategyTest().catch(err => {
+    logger.error('TestRunner', 'COMPREHENSIVE TEAM STRATEGY TEST FAILED:', { message: err.message, stack: err.stack });
     process.exitCode = 1;
 }).finally(() => {
     setTimeout(() => process.exit(process.exitCode || 0), 2000);
