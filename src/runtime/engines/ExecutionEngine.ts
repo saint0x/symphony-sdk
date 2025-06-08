@@ -268,53 +268,53 @@ Start with the FIRST tool needed for this task.`;
      */
     private async _executeSingleStep(task: string, systemPrompt: string, agentConfig: AgentConfig, state: ExecutionState): Promise<ToolResult> {
         const analysisResult = await this._analyzeAndExecute(task, systemPrompt, agentConfig, state);
-        
-        let overallTaskSuccess = true;
-        let primaryError: string | undefined;
-        let finalResponse = analysisResult.response;
+            
+            let overallTaskSuccess = true;
+            let primaryError: string | undefined;
+            let finalResponse = analysisResult.response;
 
-        if (analysisResult.toolsExecuted && analysisResult.toolsExecuted.length > 0) {
-            const firstFailedTool = analysisResult.toolsExecuted.find(t => !t.success);
-            if (firstFailedTool) {
-                overallTaskSuccess = false;
-                primaryError = `Tool '${firstFailedTool.name}' failed: ${firstFailedTool.error || 'Unknown tool error'}`;
-            }
-        } else {
-            const agentHasTools = agentConfig.tools && agentConfig.tools.length > 0;
-            if (agentHasTools) {
-                let llmIndicatedNoToolViaJson = false;
-                if (analysisResult.response) { 
-                    try {
-                        const parsedResponse = JSON.parse(analysisResult.response);
-                        if (parsedResponse.tool_name === 'none' || parsedResponse.toolName === 'none') {
-                            llmIndicatedNoToolViaJson = true;
+            if (analysisResult.toolsExecuted && analysisResult.toolsExecuted.length > 0) {
+                const firstFailedTool = analysisResult.toolsExecuted.find(t => !t.success);
+                if (firstFailedTool) {
+                    overallTaskSuccess = false;
+                    primaryError = `Tool '${firstFailedTool.name}' failed: ${firstFailedTool.error || 'Unknown tool error'}`;
+                }
+            } else {
+                const agentHasTools = agentConfig.tools && agentConfig.tools.length > 0;
+                if (agentHasTools) {
+                    let llmIndicatedNoToolViaJson = false;
+                    if (analysisResult.response) { 
+                        try {
+                            const parsedResponse = JSON.parse(analysisResult.response);
+                            if (parsedResponse.tool_name === 'none' || parsedResponse.toolName === 'none') {
+                                llmIndicatedNoToolViaJson = true;
+                            }
+                        } catch (e) {
+                             this.dependencies.logger.debug('ExecutionEngine', 'execute: Could not parse analysisResult.response as JSON.', { response: analysisResult.response });
                         }
-                    } catch (e) {
-                         this.dependencies.logger.debug('ExecutionEngine', 'execute: Could not parse analysisResult.response as JSON.', { response: analysisResult.response });
+                    }
+
+                    if (!llmIndicatedNoToolViaJson) {
+                        overallTaskSuccess = false;
+                        primaryError = `Agent ${agentConfig.name} has tools but did not select one.`;
+                        this.dependencies.logger.warn('ExecutionEngine', primaryError, { agentName: agentConfig.name });
                     }
                 }
-
-                if (!llmIndicatedNoToolViaJson) {
-                    overallTaskSuccess = false;
-                    primaryError = `Agent ${agentConfig.name} has tools but did not select one.`;
-                    this.dependencies.logger.warn('ExecutionEngine', primaryError, { agentName: agentConfig.name });
-                }
             }
-        }
 
-        return {
-            success: overallTaskSuccess,
-            result: {
-                response: finalResponse,
-                reasoning: analysisResult.reasoning,
-                agent: analysisResult.agent,
-                timestamp: analysisResult.timestamp,
-                model: analysisResult.model,
-                tokenUsage: analysisResult.tokenUsage,
-                toolsExecuted: analysisResult.toolsExecuted
-            },
-            error: primaryError
-        };
+            return {
+                success: overallTaskSuccess,
+                result: {
+                    response: finalResponse,
+                    reasoning: analysisResult.reasoning,
+                    agent: analysisResult.agent,
+                    timestamp: analysisResult.timestamp,
+                    model: analysisResult.model,
+                    tokenUsage: analysisResult.tokenUsage,
+                    toolsExecuted: analysisResult.toolsExecuted
+                },
+                error: primaryError
+            };
     }
 
     /**

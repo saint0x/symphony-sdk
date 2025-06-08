@@ -6,7 +6,7 @@ export const writeCodeTool: ToolConfig = {
     description: 'Generate code using LLM',
     type: 'code',
     config: {
-        inputs: ['prompt', 'language', 'context'],
+        inputs: ['prompt', 'spec', 'query', 'language', 'context'],
         outputs: ['code', 'explanation'],
     },
     handler: async (params: any): Promise<ToolResult<any>> => {
