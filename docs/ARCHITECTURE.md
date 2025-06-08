@@ -1,109 +1,588 @@
-# Symphony SDK: Architecture Overview
+# Symphony SDK: Enterprise Architecture Overview
 
-This document provides a technical breakdown of the Symphony SDK's architecture, its core layers, and how they interact to enable complex AI-driven applications.
+This document provides a comprehensive technical breakdown of the Symphony SDK's sophisticated architecture, covering core layers, enterprise-grade error handling, intelligent database management, and advanced orchestration patterns that enable complex AI-driven applications.
 
 ## Core Philosophy
 
-The Symphony SDK is designed to be a modular, extensible, and robust framework for building and orchestrating AI agents and workflows. Key design principles include:
-- **Layered Abstraction**: Clear separation of concerns between tools, agents, teams, and pipelines.
-- **Developer Experience**: Intuitive APIs and sensible defaults, with flexibility for customization.
-- **Determinism & Reliability**: Emphasis on structured communication (e.g., JSON for tool calls), robust error handling, and clear success/failure reporting.
-- **Observability**: Built-in mechanisms for logging, metrics, and health monitoring.
-- **Extensibility**: Easy integration of custom tools, agents, and even LLM providers.
+The Symphony SDK is architected as an enterprise-grade, modular framework for building sophisticated AI agent systems. Key design principles include:
 
-## SDK Layers and Components
+- **Enterprise Reliability**: Comprehensive error handling with recovery patterns, structured errors, and operational resilience
+- **Intelligent Configuration**: Smart service initialization with automatic optimization and graceful fallbacks
+- **Layered Abstraction**: Clear separation between tools, agents, teams, and runtime execution
+- **Adaptive Intelligence**: Runtime planning, reflection, and self-correction capabilities
+- **Developer Experience**: Progressive complexity with sensible defaults and powerful customization
+- **Operational Excellence**: Built-in monitoring, metrics, streaming, and health management
 
-The SDK is structured into several key layers and supporting components:
+## Enterprise Architecture Layers
 
-### 1. Core Orchestration Layers
+### 1. Error Handling & Resilience Foundation
 
-These form the primary hierarchy for building applications:
+#### Structured Error System
+```typescript
+// Error hierarchy with rich context
+SymphonyError (base)
+├── ValidationError (E1xxx)    // Input validation and schema errors
+├── ConfigurationError (E2xxx) // Configuration and setup errors  
+├── RuntimeError (E3xxx)       // Execution and runtime errors
+├── LLMError (E4xxx)           // LLM provider and API errors
+├── ToolError (E5xxx)          // Tool execution and validation errors
+├── DatabaseError (E6xxx)      // Database connection and query errors
+├── NetworkError (E7xxx)       // Network and connectivity errors
+├── PermissionError (E8xxx)    // Authorization and access errors
+└── TimeoutError (E9xxx)       // Timeout and resource errors
+```
 
-- **Tools (`ToolRegistry`, `ToolConfig`, `ToolResult`):**
-  - **Functionality**: The most granular layer, representing individual, executable capabilities (e.g., file I/O, web search, custom business logic).
-  - **Implementation**: Each tool is defined by a `ToolConfig` (specifying its name, description, input schema, and handler function) and registered with the global `ToolRegistry`.
-  - **Interaction**: Tools are invoked by agents (via the `AgentExecutor`) or pipeline steps, receiving parameters and returning a `ToolResult` (indicating success/failure and data).
+Each error includes:
+- **Error Code**: Structured codes (E1001-E9999) for operational monitoring
+- **Category & Severity**: Classification for automated handling
+- **User Guidance**: Clear explanations for developers
+- **Recovery Actions**: Specific steps to resolve issues
+- **Context**: Component, operation, and environmental details
+- **Correlation ID**: For distributed system tracing
 
-- **Agents (`AgentExecutor`, `AgentConfig`, `AgentResult`):**
-  - **Functionality**: Intelligent entities that use an LLM to reason about tasks and utilize a defined set of tools to achieve goals.
-  - **Implementation**: Defined by `AgentConfig` (specifying name, description, task, tools, LLM settings, system prompt, directives). Execution is primarily handled by `AgentExecutor`.
-  - **Interaction**: `AgentExecutor` takes a task description and the agent's configuration. It:
-    1.  Constructs a system prompt (combining agent-specific prompts with SDK-appended JSON structural guidance if tools are present).
-    2.  Communicates with the configured LLM (via `LLMHandler` and the appropriate `LLMProvider`).
-    3.  If tools are present, it expects a JSON response from the LLM indicating a tool call (`{"tool_name": "...", "parameters": {...}}`) or no tool (`{"tool_name": "none", "response": "..."}`).
-    4.  Parses the LLM's JSON response and, if a tool is indicated, invokes the tool via `ToolRegistry.executeTool()`.
-    5.  Formats the final `AgentResult`, including the LLM's response/reasoning and details of any tools executed.
-  - **JSON Mode**: This is a critical, automatic feature for agents configured with tools. The SDK (specifically `AgentExecutor`) appends robust instructions to the system prompt to ensure the LLM responds in a parsable JSON format. For OpenAI, this is further enhanced by setting `response_format: { type: "json_object" }` in the API call (handled by the `OpenAIProvider` based on an `expectsJsonResponse` hint from `AgentExecutor`).
+#### Resilience Patterns
+```typescript
+// Automatic retry with exponential backoff
+RetryHandler: {
+  baseDelay: 1000ms,
+  maxDelay: 30000ms,
+  maxAttempts: 3,
+  jitter: true,
+  retryableErrors: [TIMEOUT, RATE_LIMITED, NETWORK_ERROR]
+}
 
-- **Teams (`TeamCoordinator` - Conceptual, `TeamConfig`, `TeamResult`):**
-  - **Functionality**: Groups of specialized agents collaborating on larger tasks, managed by coordination strategies (e.g., parallel, sequential, role-based delegation).
-  - **Implementation**: Defined by `TeamConfig` (specifying member agents, strategy, delegation rules). Execution is orchestrated by a `TeamCoordinator` (exposed via `symphony.team.run()`).
-  - **Interaction**: The `TeamCoordinator` receives a team-level task, breaks it down (potentially using a manager agent or LLM-driven planning), delegates sub-tasks to appropriate member agents, and aggregates results.
+// Circuit breaker for failing services
+CircuitBreaker: {
+  failureThreshold: 5,
+  monitoringWindow: 60000ms,
+  resetTimeout: 30000ms,
+  states: [CLOSED, OPEN, HALF_OPEN]
+}
 
-- **Pipelines (`PipelineExecutor` - Conceptual, `PipelineConfig`, `PipelineResult`):**
-  - **Functionality**: Define and execute complex, multi-step workflows involving sequences of tools, agents, or even other teams/pipelines. Support data flow, conditional logic, error handling, and parallelism.
-  - **Implementation**: Defined by `PipelineConfig` (specifying steps, variables, error strategies). Execution is managed by a `PipelineExecutor` (potentially exposed via `symphony.pipeline.run()`).
-  - **Interaction**: The `PipelineExecutor` processes steps sequentially (respecting dependencies), passing outputs from one step as inputs to another, evaluating conditions, and managing the overall workflow state.
+// Combined resilience manager
+ResilienceManager.executeWithResilience(operation, context, service)
+```
 
-### 2. LLM Abstraction Layer
+### 2. Intelligent Database Layer
 
-- **`LLMHandler`**: A central service that manages different LLM provider instances. It handles:
-  - Registration of LLM providers (e.g., OpenAI, Anthropic).
-  - Selection of the appropriate provider based on configuration or request.
-  - Potentially request-specific configuration overrides.
-- **`LLMProvider` (Interface and Implementations, e.g., `OpenAIProvider`):**
-  - **Functionality**: Adapters for specific LLM APIs (e.g., OpenAI API, Anthropic API).
-  - **Implementation**: Each provider implements the `LLMProvider` interface (`complete`, `completeStream`).
-  - **Interaction**: `AgentExecutor` (via `this.llm`) calls `complete()` or `completeStream()` on the active `LLMProvider` instance, passing an `LLMRequest`. The provider translates this into an API call to the specific LLM service.
-  - **OpenAIProvider Specifics**: Leverages the `expectsJsonResponse` flag in `LLMRequest` (set by `AgentExecutor` for tool-enabled agents) to enable OpenAI's native `response_format: { type: "json_object" }`.
-- **`LLMRequest` / `LLMResponse` / `LLMConfig` / `LLMMessage` (Types):** Standardized interfaces for interacting with LLMs, ensuring consistency across providers.
+#### Smart Configuration Detection
+```typescript
+class Symphony {
+  private shouldEnableDatabase(config?: DatabaseConfig): boolean {
+    // Intelligent detection of database requirements
+    // Based on explicit configuration, environment, or inferred usage
+  }
+  
+  private configureDatabaseForProduction(config?: DatabaseConfig): DatabaseConfig {
+    // Automatic SQLite optimization for production
+    // Connection pooling, WAL mode, performance tuning
+  }
+  
+  private createMockDatabaseService(): IDatabaseService {
+    // Seamless in-memory fallback for development
+    // Full API compatibility without persistence
+  }
+}
+```
 
-### 3. Supporting Systems
+#### Database Configuration Modes
 
-- **System Prompt Service (`SystemPromptService`):**
-  - **Functionality**: Responsible for generating the initial system prompt for an agent based on its `AgentConfig` (including its description, task, and list of tools) and whether tools are present.
-  - **Interaction**: Called by `AgentExecutor` during task execution. The output of this service is then further augmented by `AgentExecutor` with the verbose JSON structural requirements if tools are enabled.
+**Production Mode** (db: { enabled: true })
+- SQLite with optimized settings (WAL mode, connection pooling)
+- Automatic table creation and migration
+- Performance monitoring and health checks
+- Backup and recovery capabilities
 
-- **Cache Intelligence (`symphony.cache`, `ContextIntelligenceAPI` - Conceptual):
-  - **Functionality**: Provides mechanisms for caching LLM calls, tool responses, and employing advanced techniques like pattern matching and context trees to optimize performance and reduce redundant computations.
-  - **Interaction**: Can be integrated at various levels (e.g., `LLMHandler` might use it for caching LLM responses, `AgentExecutor` might cache tool results).
+**Development Mode** (db: { enabled: false })
+- In-memory mock database service
+- Full API compatibility without persistence
+- Zero configuration required
+- Instant startup and teardown
 
-- **Memory System (`symphony.memory`):
-  - **Functionality**: Offers short-term (session-based) and long-term (persistent) memory capabilities for agents and the system to store and retrieve contextual information, user preferences, conversation history, etc.
-  - **Interaction**: Agents can be designed to interact with this system to maintain context across interactions or learn over time.
+**Custom Mode**
+- User-defined database adapters
+- Connection string configuration
+- Custom schema and migration support
 
-- **Streaming Service (`symphony.streaming`):
-  - **Functionality**: Facilitates real-time progress updates and intermediate data streaming for long-running operations, particularly useful for pipelines and complex agent tasks.
-  - **Interaction**: Components like `AgentExecutor` or `PipelineExecutor` can publish updates to streams, which client applications can subscribe to.
+### 3. Enhanced Service Architecture
 
-- **Database Service (`symphony.db`):
-  - **Functionality**: Provides an abstraction layer for database interactions, used for persisting SDK configurations, logs, metrics, memory, and cache data (if configured).
-  - **Interaction**: Various SDK components might use this service for persistence. Users might also be exposed to limited query capabilities for operational data.
+#### Service Initialization Patterns
+```typescript
+// Dependency-aware service initialization
+interface IService {
+  state: ToolLifecycleState;
+  getDependencies(): string[];
+  initialize(): Promise<void>;
+}
 
-- **Logging (`Logger`) & Metrics (`symphony.metrics`):
-  - **Functionality**: Core services for observability. The `Logger` provides structured logging across the SDK. The metrics system collects data on performance, token usage, etc.
-  - **Interaction**: Used throughout the SDK. Users can configure log levels and access collected metrics.
+// Services with proper lifecycle management
+class Symphony {
+  constructor(config: SymphonyConfig) {
+    // 1. Core infrastructure
+    this.initializeErrorHandling();
+    this.configureDatabaseLayer(config.db);
+    
+    // 2. Dependent services
+    this.initializeCache(this.db);
+    this.initializeMemory(this.db);
+    this.initializeStreaming();
+    
+    // 3. Intelligence services
+    this.initializeContextAPI(this.db);
+    this.initializeNLPService(this.db, this.contextAPI);
+    
+    // 4. Runtime and orchestration
+    this.initializeRuntime(dependencies);
+    this.initializeFunctionalServices();
+  }
+}
+```
 
-## Data Flow for a Tool-Enabled Agent Task
+#### Service Registry Pattern
+```typescript
+interface ServiceRegistry {
+  enabled: boolean;
+  maxRetries: number;
+  retryDelay: number;
+  healthCheckInterval: number;
+}
 
-1.  `AgentExecutor.executeTask(taskDescription)` is called.
-2.  `AgentExecutor` determines the agent has tools.
-3.  `SystemPromptService.generateSystemPrompt()` creates a base system prompt (including tool descriptions).
-4.  `AgentExecutor` appends the verbose JSON structural requirements to this system prompt.
-5.  `AgentExecutor` prepares an `LLMRequest` containing the full system prompt and user task, and sets `expectsJsonResponse = true`.
-6.  `AgentExecutor` calls `this.llm.complete(llmRequest)` (where `this.llm` is an `LLMProvider` instance obtained from `LLMHandler`).
-7.  The specific `LLMProvider` (e.g., `OpenAIProvider`):
-    - If OpenAI, sees `expectsJsonResponse` and adds `response_format: { type: "json_object" }` to its API call parameters.
-    - Makes the API call to the LLM service.
-8.  LLM responds (ideally with structured JSON).
-9.  `LLMProvider` returns an `LLMResponse`.
-10. `AgentExecutor` parses `llmResponse.content` as JSON.
-11. If a tool call is found (`tool_name` and `parameters`):
-    - `AgentExecutor` calls `ToolRegistry.getInstance().executeTool(toolName, parameters)`.
-    - The tool's `handler` executes and returns a `ToolResult`.
-12. `AgentExecutor` processes the `ToolResult` and formulates the final `AgentResult` for the `executeTask` call.
-13. If `tool_name: "none"` is found, `AgentExecutor` uses the content of the `response` field as the agent's textual answer.
+// Centralized service health monitoring
+ServiceHealthMonitor: {
+  services: Map<string, ServiceHealth>,
+  checkInterval: 30000ms,
+  alertThresholds: {
+    responseTime: 5000ms,
+    errorRate: 0.05
+  }
+}
+```
 
-This architecture aims to provide a powerful yet manageable framework for developing sophisticated AI applications.
+### 4. Sophisticated Runtime Engine
+
+#### Multi-Phase Execution Architecture
+```typescript
+interface RuntimeDependencies {
+  toolRegistry: ToolRegistry;
+  contextAPI: IContextAPI;
+  llmHandler: LLMHandler;
+  logger: Logger;
+}
+
+class SymphonyRuntime {
+  // Phase 1: Planning and Analysis
+  planningEngine: PlanningEngine;
+  
+  // Phase 2: Execution and Coordination
+  executionEngine: ExecutionEngine;
+  
+  // Phase 3: Reflection and Learning
+  reflectionEngine: ReflectionEngine;
+  
+  // Context and memory management
+  contextManager: RuntimeContextManager;
+}
+```
+
+#### Planning Engine
+```typescript
+class PlanningEngine {
+  // Task complexity assessment
+  async assessComplexity(task: string, config: AgentConfig): Promise<TaskComplexity>;
+  
+  // Goal decomposition for complex tasks
+  async decomposeGoal(task: string, context: DecompositionContext): Promise<GoalDecomposition>;
+  
+  // Execution plan creation with dependencies
+  async createExecutionPlan(planningContext: PlanningContext): Promise<ExecutionPlan>;
+  
+  // Adaptive plan modification
+  async adaptPlan(plan: ExecutionPlan, feedback: ExecutionFeedback): Promise<ExecutionPlan>;
+}
+```
+
+#### Reflection Engine
+```typescript
+class ReflectionEngine {
+  // Pre-step analysis and optimization
+  async preStepReflection(step: ExecutionStep, context: ExecutionContext): Promise<ReflectionResult>;
+  
+  // Error correction and recovery
+  async attemptCorrection(failedResult: StepResult, context: ExecutionContext): Promise<CorrectionResult>;
+  
+  // Final learning and adaptation
+  async finalReflection(summary: ExecutionSummary): Promise<FinalReflection>;
+  
+  // Pattern recognition and optimization
+  async identifyPatterns(executionHistory: ExecutionHistory[]): Promise<Pattern[]>;
+}
+```
+
+### 5. Core Orchestration Layers
+
+#### Enhanced Tool System
+```typescript
+interface ToolConfig {
+  name: string;
+  description?: string;
+  type: string;
+  handler: (params: any) => Promise<ToolResult<any>>;
+  
+  // Enhanced configuration
+  nlp?: string;                    // Natural language invocation pattern
+  timeout?: number;                // Execution timeout
+  retryCount?: number;             // Automatic retry attempts
+  capabilities?: string[];         // Tool capability tags
+  
+  // Validation and schema
+  config: {
+    inputSchema?: JSONSchema;      // Input validation schema
+    outputSchema?: JSONSchema;     // Output validation schema
+  };
+  
+  // Error handling
+  errorHandling?: {
+    retryableErrors?: ErrorCode[];
+    fallbackStrategy?: FallbackStrategy;
+  };
+}
+
+interface ToolResult<T = any> {
+  success: boolean;
+  result?: T;
+  error?: string;
+  details?: VerificationError[];   // Structured validation errors
+  metrics?: ExecutionMetrics;      // Performance metrics
+}
+```
+
+#### Sophisticated Agent System
+```typescript
+interface AgentConfig {
+  name: string;
+  description: string;
+  task: string;
+  tools: string[];
+  llm: LLMBaseConfig | string;
+  
+  // Advanced configuration
+  systemPrompt?: string;
+  directives?: string;
+  capabilities?: string[];
+  
+  // Execution control
+  maxCalls?: number;
+  timeout?: number;
+  requireApproval?: boolean;
+  
+  // Intelligence features
+  enableCache?: boolean;
+  enableStreaming?: boolean;
+  streamOptions?: StreamConfig;
+  
+  // Logging and monitoring
+  log?: {
+    inputs?: boolean;
+    outputs?: boolean;
+    llmCalls?: boolean;
+    toolCalls?: boolean;
+  };
+}
+```
+
+#### Team Coordination Architecture
+```typescript
+interface TeamConfig {
+  name: string;
+  description: string;
+  agents: Array<string | AgentConfig>;
+  
+  // Coordination strategy
+  strategy?: {
+    name: string;
+    description?: string;
+    assignmentLogic?: (task: string, agents: string[]) => Promise<string[]>;
+    coordinationRules?: {
+      maxParallelTasks?: number;
+      taskTimeout?: number;
+    };
+  };
+  
+  // Delegation patterns
+  delegationStrategy?: {
+    type: 'custom' | 'rule-based';
+    rules?: DelegationRule[];
+    customLogic?: DelegationFunction;
+  };
+  
+  // Team intelligence
+  capabilities?: string[];
+  manager?: boolean;
+  
+  // Monitoring and logging
+  log?: {
+    inputs?: boolean;
+    outputs?: boolean;
+    metrics?: boolean;
+  };
+}
+```
+
+### 6. Advanced Intelligence Systems
+
+#### Cache Intelligence Layer
+```typescript
+interface CacheIntelligence {
+  // Pattern matching for optimization
+  patternMatching: {
+    enableXMLPatterns: boolean;
+    confidenceThreshold: number;
+    learningRate: number;
+  };
+  
+  // Context trees for relationship mapping
+  contextTrees: {
+    enableContextTrees: boolean;
+    maxNodes: number;
+    relationshipDepth: number;
+  };
+  
+  // Fast path optimization
+  fastPath: {
+    threshold: number;
+    cacheStrategy: CacheStrategy;
+  };
+}
+```
+
+#### Memory System Architecture
+```typescript
+interface MemorySystem {
+  // Short-term memory (session-based)
+  shortTerm: {
+    provider: 'memory' | 'redis';
+    defaultTTL: number;
+    maxSize: number;
+    compressionEnabled: boolean;
+  };
+  
+  // Long-term memory (persistent)
+  longTerm: {
+    provider: 'database' | 'file' | 'cloud';
+    defaultTTL: number;
+    maxSize: number;
+    indexingEnabled: boolean;
+  };
+  
+  // Memory intelligence
+  intelligence: {
+    aggregationEnabled: boolean;
+    patternDetection: boolean;
+    autoCleanup: boolean;
+  };
+}
+```
+
+#### NLP Service Integration
+```typescript
+interface NLPService {
+  // Pattern management
+  patterns: Map<string, NlpPatternDefinition>;
+  
+  // Runtime integration
+  runtimeCommandMap: Map<string, string>;
+  
+  // Learning and adaptation
+  learning: {
+    confidenceTracking: boolean;
+    usageAnalytics: boolean;
+    patternOptimization: boolean;
+  };
+}
+```
+
+### 7. Streaming and Real-time Systems
+
+#### Streaming Architecture
+```typescript
+interface StreamingSystem {
+  // Stream management
+  streams: Map<string, StreamContext>;
+  maxConcurrentStreams: number;
+  
+  // Update mechanisms
+  progressUpdates: {
+    interval: number;
+    enableBuffering: boolean;
+    bufferSize: number;
+  };
+  
+  // Subscription management
+  subscribers: Map<string, Set<StreamSubscriber>>;
+  
+  // WebSocket support
+  webSocket: {
+    enabled: boolean;
+    port?: number;
+    authentication?: boolean;
+  };
+}
+```
+
+### 8. Configuration and Initialization Flow
+
+#### Symphony Initialization Sequence
+```typescript
+async initialize(): Promise<void> {
+  // 1. Error handling foundation
+  this.initializeErrorSystem();
+  
+  // 2. Database layer with intelligence
+  if (this.shouldEnableDatabase()) {
+    await this.db.initialize(this.configureDatabaseForProduction());
+    await this.verifyDatabaseSetup();
+  } else {
+    await this.db.initialize(); // Mock database
+  }
+  
+  // 3. Core services with dependencies
+  await Promise.all([
+    this.cache.initialize(this.config.cache),
+    this.memory.initialize(this.config.memory),
+    this.streaming.initialize(this.config.streaming)
+  ]);
+  
+  // 4. Intelligence services
+  await this.nlp.loadAllPersistedPatternsToRuntime();
+  this.llm.setCacheService(this.cache);
+  
+  // 5. Functional services
+  await Promise.all([
+    this.tool.initialize(),
+    this.agent.initialize(),
+    this.team.initialize(),
+    this.validation.initialize()
+  ]);
+  
+  // 6. Health and monitoring
+  this.startHealthMonitoring();
+  this.initializeMetricsCollection();
+}
+```
+
+#### Configuration Intelligence
+```typescript
+interface SymphonyConfig {
+  // Core LLM configuration
+  llm: LLMConfig;
+  
+  // Intelligent database configuration
+  db?: {
+    enabled: boolean;
+    adapter?: string;
+    path?: string;
+    options?: DatabaseOptions;
+  };
+  
+  // Enhanced runtime configuration
+  runtime?: {
+    enhancedRuntime: boolean;
+    planningThreshold: 'simple' | 'multi_step' | 'complex';
+    reflectionEnabled: boolean;
+    maxStepsPerPlan: number;
+  };
+  
+  // Service management
+  serviceRegistry?: {
+    enabled: boolean;
+    maxRetries: number;
+    retryDelay: number;
+  };
+  
+  // Enterprise features
+  metrics?: {
+    enabled: boolean;
+    detailed: boolean;
+  };
+  
+  // Resilience configuration
+  resilience?: {
+    retryEnabled: boolean;
+    circuitBreakerEnabled: boolean;
+    timeoutMs: number;
+  };
+}
+```
+
+## Data Flow Architecture
+
+### Enhanced Agent Execution Flow
+```
+1. Task Reception & Analysis
+   ├── Task complexity assessment
+   ├── Planning strategy selection
+   └── Context initialization
+
+2. Planning Phase
+   ├── Goal decomposition (complex tasks)
+   ├── Execution plan creation
+   └── Resource requirement analysis
+
+3. Execution Phase
+   ├── Pre-step reflection
+   ├── Step execution with error handling
+   ├── Post-step correction (if needed)
+   └── Context updates
+
+4. Learning Phase
+   ├── Result synthesis
+   ├── Final reflection
+   └── Pattern learning
+```
+
+### Error Propagation and Recovery
+```
+Error Detection
+├── Structured Error Creation
+├── Context Enrichment
+├── Recovery Strategy Selection
+├── Automatic Retry (if applicable)
+├── Circuit Breaker Check
+├── Alternative Strategy Execution
+└── Learning Update
+```
+
+### Intelligence Integration Flow
+```
+Task Input
+├── Cache Intelligence Check
+├── Pattern Recognition
+├── Fast Path Detection
+├── Context Tree Lookup
+├── Memory Retrieval
+├── Execution with Learning
+└── Cache/Memory Updates
+```
+
+## Operational Excellence
+
+### Health Monitoring
+- **Service Health**: Real-time status of all components
+- **Performance Metrics**: Response times, throughput, resource usage
+- **Error Analytics**: Error rates, patterns, and trends
+- **Capacity Monitoring**: Memory, connections, and scaling indicators
+
+### Observability Stack
+- **Structured Logging**: JSON-formatted logs with correlation IDs
+- **Metrics Collection**: Performance, business, and technical metrics
+- **Distributed Tracing**: End-to-end request tracing across components
+- **Health Dashboards**: Real-time system health visualization
+
+### Deployment Patterns
+- **Development**: In-memory services, enhanced logging, mock integrations
+- **Staging**: Production-like setup with test data and monitoring
+- **Production**: Optimized performance, full resilience, comprehensive monitoring
+
+This enterprise architecture enables Symphony to operate as a sophisticated, reliable, and scalable AI agent platform suitable for production environments while maintaining developer-friendly APIs and configuration patterns.
 
 --- 

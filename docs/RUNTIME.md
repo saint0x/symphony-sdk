@@ -1,117 +1,395 @@
-# Symphony SDK: Runtime Engine Explained
+# Symphony SDK: Enhanced Runtime Engine
 
-This document details the runtime behavior of the Symphony SDK, focusing on the dynamic interactions and operational flow within its core components. It explains how requests are processed, how agents execute tasks, and how different parts of the SDK collaborate during execution. This complements `ARCHITECTURE.md` which describes the static structure.
+This document details the sophisticated runtime behavior of the Symphony SDK, focusing on the enhanced execution capabilities, planning system, reflection engine, and intelligent context management. The runtime has evolved from basic tool execution to a comprehensive agentic platform with multi-step planning, self-correction, and adaptive execution strategies.
 
-## 1. Agent Task Execution Lifecycle (`AgentExecutor.executeTask()`)
+## 1. Enhanced Runtime Architecture
 
-When a task is assigned to an agent via `AgentExecutor.executeTask(taskDescription)`, the following runtime sequence occurs:
+### Runtime Configuration
+```typescript
+interface RuntimeConfig {
+  enhancedRuntime?: boolean;         // Enable sophisticated runtime features
+  planningThreshold?: 'simple' | 'multi_step' | 'complex';  // Planning complexity
+  reflectionEnabled?: boolean;       // Enable reflection and self-correction
+  maxStepsPerPlan?: number;         // Maximum steps in execution plan
+  timeoutMs?: number;               // Overall execution timeout
+  retryAttempts?: number;           // Retry attempts for failed operations
+  debugMode?: boolean;              // Enable detailed debug logging
+}
+```
 
-1.  **Initialization & Configuration Loading**:
-    - The `AgentExecutor` instance uses its `AgentConfig` (provided during its instantiation).
-    - It identifies if the agent has tools (`agentHasTools = this.config.tools && this.config.tools.length > 0`). This is a crucial check that dictates much of the subsequent logic.
+### Runtime Dependencies
+The Symphony Runtime integrates multiple sophisticated systems:
+- **ToolRegistry**: Tool discovery and execution
+- **ContextAPI**: Intelligence context and learning
+- **LLMHandler**: Provider abstraction and caching
+- **PlanningEngine**: Multi-step task decomposition
+- **ReflectionEngine**: Self-correction and adaptation
+- **ExecutionEngine**: Sophisticated execution orchestration
 
-2.  **System Prompt Generation**:
-    - `SystemPromptService.generateSystemPrompt(agentConfig, agentHasTools)` is called. This service constructs a base system prompt. If `agentHasTools` is true, it typically includes descriptions of the available tools, their input schemas, and general instructions for how the agent should consider using them.
-    - If `agentConfig.systemPrompt` is provided, it's used as a base or override.
-    - If `agentConfig.directives` are present, they are appended to the system-generated system prompt.
+## 2. Multi-Phase Execution Lifecycle
 
-3.  **JSON Mode Enforcement (if `agentHasTools` is true)**:
-    - The `AgentExecutor` appends its standardized, verbose JSON structural requirements (the "ALL CAPS" instructions) to the system prompt. This addendum explicitly tells the LLM:
-        - Its entire response MUST be a single valid JSON object.
-        - The structure required for calling a tool (`{"tool_name": "...", "parameters": {...}}`), emphasizing the use of EXACT tool names.
-        - The structure required if no tool is needed (`{"tool_name": "none", "response": "..."}`).
-        - That failure to adhere will result in an error.
+### Phase 1: Task Analysis and Planning
 
-4.  **LLM Request Preparation**:
-    - An array of `LLMMessage` objects is created: `[{ role: 'system', content: finalSystemPrompt }, { role: 'user', content: taskDescription }]`.
-    - An `LLMRequest` object is constructed:
-        - `messages`: Set to the array above.
-        - `llmConfig`: Populated from `agentConfig.llm` (model, temperature, maxTokens, etc.).
-        - `expectsJsonResponse`: Set to `true` if `agentHasTools` is true. This is a hint for the `LLMProvider`.
+When a task is submitted to the runtime via `symphony.runtime.execute(task, agentConfig)`, the enhanced execution lifecycle begins:
 
-5.  **LLM Interaction via `LLMHandler`**:
-    - `AgentExecutor` calls `this.llm.complete(llmRequest)`. `this.llm` is an instance of an `LLMProvider` (e.g., `OpenAIProvider`) obtained via `LLMHandler.getInstance().getProvider(...)` (during `AgentExecutor` initialization).
-    - **Inside `LLMHandler.getProvider()`** (Simplified):
-        - Determines the target provider (from `request.provider`, or default).
-        - Retrieves or initializes the `LLMProvider` instance.
-    - **Inside `LLMHandler.complete()`** (Simplified for this context, actual logic involves `request.llmConfig` overrides which might re-register/fetch a provider instance):
-        - It ultimately calls `providerInstance.complete(request)`.
-    - **Inside `OpenAIProvider.complete()`**:
-        - Sees `request.expectsJsonResponse === true`.
-        - Sets `response_format: { type: "json_object" }` in the parameters for the OpenAI API call.
-        - Makes the actual HTTPS request to the OpenAI API.
-    - Other `LLMProvider` implementations would adapt the `LLMRequest` to their specific API needs, relying primarily on the strong system prompting if `expectsJsonResponse` is true and they don't have a native JSON mode toggle like OpenAI.
+1. **Task Complexity Assessment**
+   ```typescript
+   const complexity = await this.planningEngine.assessComplexity(task, agentConfig);
+   // Returns: 'simple' | 'multi_step' | 'complex'
+   ```
 
-6.  **LLM Response Processing (if `agentHasTools` is true)**:
-    - The `LLMProvider` returns an `LLMResponse`.
-    - `AgentExecutor` attempts to `JSON.parse(llmResponse.content)`.
-    - **If parsing succeeds**:
-        - It looks for `tool_name` (or `toolName`) and `parameters`.
-        - **If `tool_name` is valid and not "none", and `parameters` exist**:
-            - `ToolRegistry.getInstance().executeTool(toolName, parameters)` is called.
-            - **Inside `ToolRegistry.executeTool()`**:
-                - The tool's registered `handler` function is retrieved.
-                - Input validation against the tool's `inputSchema` is performed.
-                - The `handler(parameters)` is invoked.
-                - The `ToolResult` from the handler is returned.
-            - `AgentExecutor` records this `ToolResult` in its `toolsExecuted` array.
-            - The `actualResponseContent` for the agent is set to a summary of the tool execution (e.g., "Tool X executed. Success: true. Result: ...").
-        - **If `tool_name` is "none"**:
-            - The agent decided no tool was needed.
-            - `actualResponseContent` is set to `parsedJson.response` (the LLM's direct textual answer).
-        - **If JSON structure is unexpected (e.g., no `tool_name` but JSON is valid)**:
-            - A warning is logged.
-            - `actualResponseContent` defaults to the raw `llmResponse.content`.
-    - **If parsing fails**:
-        - An error is logged.
-        - `actualResponseContent` defaults to the raw (non-JSON) `llmResponse.content` and likely leads to the task being marked as failed if a tool was expected.
+2. **Planning Strategy Selection**
+   - **Simple Tasks**: Direct execution without planning
+   - **Multi-Step Tasks**: Create execution plan with tool sequence
+   - **Complex Tasks**: Deep planning with goal decomposition and reflection points
 
-7.  **LLM Response Processing (if `agentHasTools` is false)**:
-    - The `llmResponse.content` is treated as the direct textual answer from the LLM. No JSON parsing is attempted by `AgentExecutor` for tool calls.
-    - `actualResponseContent` is `llmResponse.content`.
+3. **Goal Decomposition** (for complex tasks)
+   ```typescript
+   const decomposition = await this.planningEngine.decomposeGoal(task, {
+     availableTools: agentConfig.tools,
+     constraints: agentConfig.constraints,
+     context: this.contextManager.getCurrentContext()
+   });
+   ```
 
-8.  **Final `AgentResult` Construction & Task Success Determination**:
-    - An `AgentResult` object is assembled.
-    - `overallTaskSuccess` is determined:
-        - If any executed tool failed, `overallTaskSuccess` is `false`.
-        - If `agentHasTools` was true but NO tools were executed:
-            - The system checks if the LLM explicitly outputted `{"tool_name": "none", ...}` by attempting to parse `analysisResult.response` (which is `actualResponseContent` from `analyzeAndExecuteTask`).
-            - If `tool_name: "none"` was found, `overallTaskSuccess` remains `true` (LLM made a decision).
-            - Otherwise (no tool executed, no explicit "none" tool, and tools were configured), `overallTaskSuccess` is set to `false` (task likely incomplete).
-        - Otherwise (tools executed successfully, or no tools configured and LLM responded), `overallTaskSuccess` is `true`.
-    - The `AgentResult` (containing `success`, `result: { response, reasoning, toolsExecuted }`, `error`, `metrics`) is returned.
+4. **Execution Plan Creation**
+   ```typescript
+   const executionPlan = await this.planningEngine.createExecutionPlan({
+     task,
+     subGoals: decomposition.subGoals,
+     availableTools: agentConfig.tools,
+     planningDepth: this.config.planningThreshold
+   });
+   ```
 
-## 2. Tool Execution Runtime (`ToolRegistry.executeTool()`)
+### Phase 2: Structured Execution
 
-1.  **Tool Lookup**: Retrieves the `ToolConfig` for the given `toolName` from its internal map.
-2.  **Input Validation** (if `tool.inputSchema` is defined):
-    - Uses `ToolUsageVerifier.verifyData(params, tool.inputSchema)` (conceptual).
-    - If validation fails, returns a `ToolResult` with `success: false` and error details.
-3.  **Handler Invocation**: If validation passes (or no schema), calls `tool.handler(params)`.
-4.  **Result Propagation**: Returns the `Promise<ToolResult>` from the handler.
-5.  **Contextual Updates**:
-    - Updates learning context via `ContextIntelligenceAPI` if the tool is not a context management tool itself.
-6.  **Metrics**: Wraps the result with execution metrics (duration, start/end times).
+5. **Context Initialization**
+   ```typescript
+   const executionContext = this.contextManager.createExecutionContext({
+     sessionId: sessionId || uuidv4(),
+     task,
+     agentConfig,
+     executionPlan,
+     timestamp: new Date()
+   });
+   ```
 
-## 3. LLM Provider Interaction (`LLMHandler`)
+6. **Step-by-Step Execution**
+   ```typescript
+   for (const step of executionPlan.steps) {
+     // Pre-step reflection (if enabled)
+     if (this.config.reflectionEnabled) {
+       const reflection = await this.reflectionEngine.preStepReflection(step, executionContext);
+       if (reflection.shouldSkip) continue;
+       if (reflection.shouldModify) {
+         step = reflection.modifiedStep;
+       }
+     }
+     
+     // Execute step
+     const stepResult = await this.executionEngine.executeStep(step, executionContext);
+     
+     // Post-step reflection and error correction
+     if (this.config.reflectionEnabled && !stepResult.success) {
+       const correction = await this.reflectionEngine.attemptCorrection(stepResult, executionContext);
+       if (correction.canRecover) {
+         stepResult = await this.executionEngine.executeStep(correction.correctedStep, executionContext);
+       }
+     }
+     
+     // Update context with results
+     this.contextManager.updateExecutionContext(executionContext, stepResult);
+   }
+   ```
 
-- **Provider Initialization**: During `LLMHandler` instantiation (singleton), it attempts to initialize default providers (e.g., OpenAI if `OPENAI_API_KEY` is present).
-- **Provider Registration (`registerProvider`)**: Allows adding or updating provider configurations. For OpenAI, it ensures the environment API key is used.
-- **Provider Retrieval (`getProvider`)**: Gets a provider instance by name or the default.
-- **Request-Specific Configuration (`complete`, `completeStream` methods)**:
-    - If an `LLMRequest` includes `llmConfig` (for overriding model, temp, etc., for that specific call), the `LLMHandler` currently re-registers (effectively updates) the provider instance with these temporary settings before the call and then uses that updated instance. This means a request-specific config temporarily alters the shared provider instance. *Note: A more advanced method might be to clone a provider or apply overrides without mutating the shared instance if true request isolation is needed without re-registration.* The current approach implies that sequential calls with different `llmConfig`s will use a provider reflecting the latest `llmConfig` passed through `registerProvider`.
+### Phase 3: Result Synthesis and Learning
 
-## 4. System Prompt Assembly
+7. **Result Synthesis**
+   ```typescript
+   const synthesizedResult = await this.executionEngine.synthesizeResults(
+     executionContext.stepResults,
+     executionPlan.originalGoal
+   );
+   ```
 
-- The final system prompt sent to the LLM is a combination of:
-    1.  **Base System Prompt**: Generated by `SystemPromptService(agentConfig, agentHasTools)`. This includes:
-        - Agent's role, goal, personality (from `agentConfig.description`, `agentConfig.task`).
-        - Descriptions and input schemas of available tools (if `agentHasTools` is true).
-        - General instructions on tool usage or task approach.
-    2.  **Agent Directives**: `agentConfig.directives`, if provided.
-    3.  **SDK JSON Requirements**: The verbose, "ALL CAPS" instructions for JSON structure, appended by `AgentExecutor` if `agentHasTools` is true.
-- If `agentConfig.systemPrompt` is provided, it often forms the primary basis, potentially with tool descriptions and JSON requirements still appended by the SDK if tools are present.
+8. **Final Reflection** (if enabled)
+   ```typescript
+   if (this.config.reflectionEnabled) {
+     const finalReflection = await this.reflectionEngine.finalReflection({
+       originalTask: task,
+       executionPlan,
+       results: synthesizedResult,
+       context: executionContext
+     });
+     
+     // Update learning based on reflection
+     await this.contextManager.updateLearning(finalReflection.insights);
+   }
+   ```
 
-This runtime design prioritizes structured LLM interaction for tool-enabled agents and provides a clear flow for task processing and tool invocation.
+## 3. Planning Engine Operations
+
+### Task Complexity Assessment
+```typescript
+class PlanningEngine {
+  async assessComplexity(task: string, agentConfig: AgentConfig): Promise<TaskComplexity> {
+    const factors = {
+      toolRequirements: this.analyzeToolRequirements(task, agentConfig.tools),
+      stepCount: this.estimateStepCount(task),
+      dependencyComplexity: this.analyzeDependencies(task),
+      domainSpecificity: this.assessDomainComplexity(task)
+    };
+    
+    return this.calculateComplexity(factors);
+  }
+}
+```
+
+### Goal Decomposition
+```typescript
+async decomposeGoal(task: string, context: DecompositionContext): Promise<GoalDecomposition> {
+  const llmRequest = {
+    messages: [
+      { role: 'system', content: this.getDecompositionSystemPrompt() },
+      { role: 'user', content: this.formatDecompositionRequest(task, context) }
+    ],
+    expectsJsonResponse: true
+  };
+  
+  const response = await this.llmHandler.complete(llmRequest);
+  return this.parseDecompositionResponse(response);
+}
+```
+
+### Execution Plan Creation
+The planning engine creates sophisticated execution plans with:
+- **Dependencies**: Step dependencies and execution order
+- **Resource Requirements**: Tool and computational requirements
+- **Checkpoints**: Reflection and validation points
+- **Fallback Strategies**: Alternative approaches for critical steps
+
+## 4. Reflection Engine Capabilities
+
+### Pre-Step Reflection
+```typescript
+async preStepReflection(step: ExecutionStep, context: ExecutionContext): Promise<ReflectionResult> {
+  // Analyze if step is still necessary given current context
+  const necessity = await this.analyzeStepNecessity(step, context);
+  
+  // Check if step parameters need adjustment based on previous results
+  const parameterOptimization = await this.optimizeStepParameters(step, context);
+  
+  // Assess risk factors for the step
+  const riskAssessment = await this.assessStepRisks(step, context);
+  
+  return {
+    shouldSkip: !necessity.isNecessary,
+    shouldModify: parameterOptimization.hasOptimizations,
+    modifiedStep: parameterOptimization.optimizedStep,
+    riskFactors: riskAssessment.risks,
+    confidence: necessity.confidence
+  };
+}
+```
+
+### Error Correction and Recovery
+```typescript
+async attemptCorrection(failedResult: StepResult, context: ExecutionContext): Promise<CorrectionResult> {
+  // Analyze the failure
+  const failureAnalysis = await this.analyzeFailure(failedResult);
+  
+  // Generate recovery strategies
+  const recoveryStrategies = await this.generateRecoveryStrategies(failureAnalysis, context);
+  
+  // Select best strategy
+  const selectedStrategy = this.selectOptimalStrategy(recoveryStrategies);
+  
+  return {
+    canRecover: selectedStrategy.feasible,
+    correctedStep: selectedStrategy.correctedStep,
+    confidence: selectedStrategy.confidence,
+    reasoning: selectedStrategy.reasoning
+  };
+}
+```
+
+### Learning and Adaptation
+```typescript
+async finalReflection(executionSummary: ExecutionSummary): Promise<FinalReflection> {
+  const insights = {
+    // What worked well
+    successPatterns: await this.identifySuccessPatterns(executionSummary),
+    
+    // What could be improved
+    improvementAreas: await this.identifyImprovements(executionSummary),
+    
+    // Updated strategy preferences
+    strategyUpdates: await this.updateStrategyPreferences(executionSummary),
+    
+    // Tool effectiveness analysis
+    toolPerformance: await this.analyzeToolPerformance(executionSummary)
+  };
+  
+  return {
+    insights,
+    recommendations: await this.generateRecommendations(insights),
+    confidence: this.calculateInsightConfidence(insights)
+  };
+}
+```
+
+## 5. Context Management and Intelligence
+
+### Execution Context Structure
+```typescript
+interface ExecutionContext {
+  sessionId: string;
+  task: string;
+  agentConfig: AgentConfig;
+  executionPlan: ExecutionPlan;
+  currentStep: number;
+  stepResults: StepResult[];
+  workingMemory: WorkingMemory;
+  learnedConstraints: Constraint[];
+  adaptations: Adaptation[];
+  timestamp: Date;
+  metrics: ExecutionMetrics;
+}
+```
+
+### Working Memory Management
+```typescript
+interface WorkingMemory {
+  goals: Goal[];                     // Current and completed goals
+  hypotheses: Hypothesis[];          // Working hypotheses about the task
+  evidence: Evidence[];              // Collected evidence and facts
+  constraints: Constraint[];         // Discovered constraints
+  toolPreferences: ToolPreference[]; // Learned tool preferences
+  patterns: Pattern[];               // Recognized execution patterns
+}
+```
+
+### Context Intelligence Integration
+The runtime integrates with the Cache Intelligence system to:
+- **Pattern Recognition**: Identify similar task patterns from history
+- **Fast Path Optimization**: Use cached results for repeated operations
+- **Learning Acceleration**: Build on previous successful execution patterns
+
+## 6. Error Handling and Resilience
+
+### Structured Error Management
+The runtime uses the comprehensive error handling system:
+
+```typescript
+try {
+  const result = await this.executeStep(step, context);
+} catch (error) {
+  if (error instanceof ToolError) {
+    // Tool-specific error handling
+    const recovery = await this.handleToolError(error, step, context);
+    return recovery;
+  } else if (error instanceof LLMError) {
+    // LLM provider error handling
+    const recovery = await this.handleLLMError(error, step, context);
+    return recovery;
+  } else if (error instanceof ValidationError) {
+    // Validation error handling with parameter correction
+    const recovery = await this.handleValidationError(error, step, context);
+    return recovery;
+  }
+}
+```
+
+### Resilience Patterns
+```typescript
+// Automatic retry with exponential backoff
+const result = await this.resilienceManager.executeWithResilience(
+  () => this.executeStep(step, context),
+  `step-${step.id}`,
+  'execution-service'
+);
+
+// Circuit breaker for problematic tools
+if (this.circuitBreaker.isOpen('problematicTool')) {
+  // Use alternative tool or approach
+  const alternative = await this.planningEngine.findAlternativeApproach(step);
+  return this.executeStep(alternative, context);
+}
+```
+
+## 7. Runtime Execution Modes
+
+### Development Mode
+- **Enhanced Logging**: Detailed execution traces
+- **Mock Services**: Database and external service mocking
+- **Debugging Support**: Step-by-step execution with breakpoints
+
+### Production Mode
+- **Optimized Performance**: Reduced logging, optimized paths
+- **Resilience Features**: Full error recovery and retry logic
+- **Monitoring Integration**: Comprehensive metrics and health checks
+
+### Streaming Mode
+- **Real-time Updates**: Progress streaming for long-running tasks
+- **Intermediate Results**: Partial result streaming
+- **User Interaction**: Support for approval workflows
+
+## 8. Performance Optimization
+
+### Intelligent Caching
+```typescript
+// Tool result caching
+const cacheKey = this.generateCacheKey(toolName, parameters);
+const cachedResult = await this.cache.get(cacheKey);
+if (cachedResult && this.isCacheValid(cachedResult)) {
+  return cachedResult;
+}
+
+// LLM response caching
+const llmCacheKey = this.generateLLMCacheKey(request);
+const cachedResponse = await this.llmCache.get(llmCacheKey);
+```
+
+### Parallel Execution
+```typescript
+// Execute independent steps in parallel
+const independentSteps = this.identifyIndependentSteps(executionPlan);
+const parallelResults = await Promise.all(
+  independentSteps.map(step => this.executeStep(step, context))
+);
+```
+
+### Resource Management
+- **Memory Monitoring**: Track and optimize memory usage
+- **Connection Pooling**: Efficient database and API connections
+- **Adaptive Timeouts**: Dynamic timeout adjustment based on task complexity
+
+## 9. Metrics and Monitoring
+
+### Execution Metrics
+```typescript
+interface ExecutionMetrics {
+  totalDuration: number;
+  planningDuration: number;
+  executionDuration: number;
+  reflectionDuration: number;
+  stepCount: number;
+  toolCallCount: number;
+  llmCallCount: number;
+  errorCount: number;
+  recoveryCount: number;
+  cacheHitRate: number;
+  successRate: number;
+}
+```
+
+### Runtime Health Monitoring
+- **Performance Tracking**: Response times and throughput
+- **Error Rate Monitoring**: Track and alert on error patterns
+- **Resource Utilization**: Memory, CPU, and connection monitoring
+- **Learning Effectiveness**: Track improvement in execution patterns
+
+This enhanced runtime architecture transforms Symphony from a simple tool execution framework into a sophisticated agentic runtime capable of complex reasoning, self-correction, and continuous learning.
 
 --- 

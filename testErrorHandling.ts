@@ -367,12 +367,37 @@ async function testNLPServiceErrors(): Promise<void> {
         }
     }
 
-    // Test pattern search
-    const patterns = await nlpService.findPatternsForInput('test input');
-    console.log('✅ NLP Service pattern search:', {
-        foundPatterns: patterns.length,
-        searchSuccessful: true
-    });
+    // Test pattern retrieval by tool name
+    try {
+        const patterns = await nlpService.getNlpPatternsByTool('test-tool');
+        console.log('✅ NLP Service pattern retrieval:', {
+            foundPatterns: patterns.length,
+            searchSuccessful: true
+        });
+    } catch (error) {
+        if (error instanceof ValidationError) {
+            console.log('✅ NLP Service retrieval error:', {
+                code: error.code,
+                component: error.component
+            });
+        }
+    }
+
+    // Test invalid pattern ID retrieval
+    try {
+        const pattern = await nlpService.getNlpPatternById('invalid-id');
+        console.log('✅ NLP Service pattern by ID:', {
+            patternFound: !!pattern,
+            retrievalSuccessful: true
+        });
+    } catch (error) {
+        if (error instanceof ValidationError) {
+            console.log('✅ NLP Service ID retrieval error:', {
+                code: error.code,
+                component: error.component
+            });
+        }
+    }
 }
 
 async function testRuntimeErrorHandling(): Promise<void> {

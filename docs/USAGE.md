@@ -15,6 +15,7 @@ This guide provides comprehensive documentation for using the Symphony SDK with 
 - [Memory System](#memory-system)
   - [Streaming](#streaming)
 - [Advanced Features](#advanced-features)
+- [Error Handling](#error-handling)
 
 ## Installation & Setup
 
@@ -1240,68 +1241,139 @@ const metrics = symphony.metrics.getAll();
 console.log('Performance Metrics:', metrics);
 ```
 
-### Error Handling
+## Error Handling
+
+Symphony SDK features enterprise-grade error handling with structured errors, user guidance, and recovery patterns.
+
+### Error Types and Hierarchy
 
 ```typescript
-// Comprehensive error handling
-async function safeOperation() {
-  try {
-    const result = await agent.run('Complex analytical task');
-    
-    if (result.success) {
-      console.log('Success:', result.result);
-      return result.result;
-    } else {
-      console.error('Agent execution failed:', result.error);
-      
-      // Check for specific error types
-      if (result.error?.includes('timeout')) {
-        console.log('Handling timeout - retrying with extended timeout');
-        return await agent.run('Complex analytical task', { timeout: 120000 });
-      } else if (result.error?.includes('rate limit')) {
-        console.log('Rate limited - waiting before retry');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return await agent.run('Complex analytical task');
-      }
-      
-      throw new Error(`Agent execution failed: ${result.error}`);
-    }
-  } catch (error) {
-    console.error('Unexpected error:', error);
-    
-    // Fallback strategies
-    console.log('Attempting fallback approach...');
-    
-    // Could try different agent, simpler task, or manual intervention
-    throw error;
+import { 
+  SymphonyError, 
+  LLMError, 
+  ToolError, 
+  ValidationError,
+  ConfigurationError,
+  DatabaseError,
+  ErrorCode,
+  ErrorSeverity,
+  ErrorCategory
+} from 'symphonic';
+
+// Basic error handling
+try {
+  const result = await agent.run('Complex task');
+} catch (error) {
+  if (error instanceof SymphonyError) {
+    console.log('Structured Error:', {
+      code: error.code,           // e.g., 'E4001'
+      category: error.category,   // e.g., 'LLM'
+      severity: error.severity,   // e.g., 'HIGH'
+      component: error.component, // e.g., 'OpenAIProvider'
+      operation: error.operation, // e.g., 'complete'
+      userGuidance: error.userGuidance,
+      recoveryActions: error.recoveryActions,
+      isRecoverable: error.isRecoverable()
+    });
   }
 }
 ```
 
-### Configuration Management
+### Error Categories and Codes
 
 ```typescript
-// Get current configuration
-const config = symphony.getConfig();
-console.log('Current Config:', {
-  llmProvider: config.llm.provider,
-  llmModel: config.llm.model,
-  databaseEnabled: config.db?.enabled,
-  logLevel: config.logLevel
-});
+// Error codes are organized by category:
+ErrorCode.VALIDATION_FAILED        // E1001 - Input validation errors
+ErrorCode.CONFIGURATION_INVALID    // E2001 - Configuration errors
+ErrorCode.EXECUTION_FAILED         // E3001 - Runtime execution errors
+ErrorCode.LLM_API_ERROR            // E4001 - LLM provider errors
+ErrorCode.LLM_RATE_LIMITED         // E4002 - Rate limiting
+ErrorCode.TOOL_NOT_FOUND           // E5001 - Tool registry errors
+ErrorCode.TOOL_EXECUTION_FAILED    // E5002 - Tool execution errors
+ErrorCode.DATABASE_CONNECTION_ERROR // E6001 - Database errors
+```
 
-// Update configuration dynamically
-symphony.updateConfig({
-  llm: {
-    temperature: 0.8,
-    maxTokens: 4000
+### Tool Error Handling
+
+```typescript
+// Tools return ToolResult with structured error info
+const result = await symphony.tool.execute('webSearch', { query: 'test' });
+
+if (!result.success) {
+  console.log('Tool Error:', {
+    error: result.error,           // Human-readable error message
+    details: result.details,       // Structured error details
+    metrics: result.metrics        // Execution metrics
+  });
+}
+
+// Custom tool with error handling
+const customTool = await symphony.tool.create({
+  name: 'validateData',
+  description: 'Validates input data',
+  handler: async (params) => {
+    if (!params.data) {
+      throw new ValidationError(
+        'Data parameter is required',
+        { provided: params, required: ['data'] },
+        { component: 'ValidateDataTool', operation: 'execute' }
+      );
+    }
+    return { success: true, result: 'validated' };
+  }
+});
+```
+
+### Resilience Patterns
+
+```typescript
+import { ResilienceManager, RetryHandler, CircuitBreaker } from 'symphonic';
+
+// Configure resilience for error-prone operations
+const resilienceManager = new ResilienceManager(
+  { maxAttempts: 3, baseDelay: 1000 },     // Retry config
+  { failureThreshold: 5, resetTimeout: 30000 } // Circuit breaker config
+);
+
+// Execute with automatic retry and circuit breaking
+const result = await resilienceManager.executeWithResilience(
+  async () => {
+    return await agent.run('Potentially failing task');
   },
-  logLevel: 'debug'
-});
+  'agent-execution',
+  'critical-service'
+);
 
-// Get dependencies
-const dependencies = symphony.getDependencies();
-console.log('Service Dependencies:', dependencies);
+if (result.success) {
+  console.log('Result:', result.data);
+} else {
+  console.log('Failed after resilience attempts:', result.error);
+}
+```
+
+### Error Recovery and User Guidance
+
+```typescript
+// Symphony errors include built-in recovery guidance
+try {
+  await symphony.initialize();
+} catch (error) {
+  if (error instanceof ConfigurationError) {
+    console.log('Configuration Error:');
+    console.log('- Message:', error.message);
+    console.log('- User Guidance:', error.userGuidance);
+    console.log('- Recovery Actions:');
+    error.recoveryActions.forEach(action => console.log(`  * ${action}`));
+    
+    // Example output:
+    // - Message: OpenAI API key is missing
+    // - User Guidance: Set OPENAI_API_KEY environment variable or provide apiKey in config
+    // - Recovery Actions:
+    //   * Set OPENAI_API_KEY environment variable
+    //   * Add apiKey to LLM configuration
+    //   * Check API key validity
+  }
+}
 ```
 
 This usage guide reflects the actual Symphony implementation with accurate examples, proper error handling, and comprehensive feature coverage. All code examples are based on the real API definitions and will work with the current Symphony SDK.
