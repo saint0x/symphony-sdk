@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { Logger } from '../utils/logger';
-import { IDatabaseService, SessionContext } from '../db/types';
+import { IDatabaseService, SessionContext } from '../db/IDatabaseService';
 
 export interface ContextNode {
     id: string;

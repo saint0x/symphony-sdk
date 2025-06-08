@@ -6,13 +6,13 @@ import {
     NlpSeedOptions,
     ErrorDetail
 } from '../types/tool.types';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService } from '../db/IDatabaseService';
 import { IContextAPI } from '../api/IContextAPI';
 import { Logger } from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
-import { ValidationError, ErrorCode } from '../errors/index';
+import { ValidationError } from '../errors/index';
 
 /**
  * NlpService provides functionalities to manage NLP patterns associated with tools,

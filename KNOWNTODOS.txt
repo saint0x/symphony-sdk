@@ -9,3 +9,6 @@
 - test script for when llm uses a tool but pattern match was incorrect (should negatively update cmd map)
 
 - actually apply to CONTEXT.json???
+
+- symphony.ts entry, symphony.config etc
+- prepare compiler for cloud firmware

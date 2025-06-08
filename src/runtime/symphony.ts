@@ -332,44 +332,80 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
         return parameters;
     }
 
-    const resolved = { ...parameters };
-    const placeholderRegex = /\{\{step_(\d+)_output(?:\.(.*))?\}\}/g;
+    const resolved = JSON.parse(JSON.stringify(parameters));
 
-    for (const key in resolved) {
-        if (typeof resolved[key] === 'string') {
-            resolved[key] = resolved[key].replace(placeholderRegex, (match, stepIndexStr, propertyPath) => {
-                const stepIndex = parseInt(stepIndexStr, 10) - 1;
-                
-                if (history[stepIndex] && history[stepIndex].success) {
-                    let currentValue = history[stepIndex].result;
-                    if (propertyPath) {
-                        const props = propertyPath.split('.');
-                        for (const prop of props) {
-                            if (currentValue && typeof currentValue === 'object' && prop in currentValue) {
-                                currentValue = (currentValue as any)[prop];
-                            } else {
-                                currentValue = undefined;
-                                break;
-                            }
-                        }
+    const fullPlaceholderRegex = /^\{\{step_(\d+)_output(?:\.(.*))?\}\}$/;
+    const partialPlaceholderRegex = /\{\{step_(\d+)_output(?:\.(.*))?\}\}/g;
+
+    const resolveValue = (stepIndexStr: string, propertyPath: string | undefined): any => {
+        const stepIndex = parseInt(stepIndexStr, 10) - 1;
+        
+        if (history[stepIndex] && history[stepIndex].success) {
+            let currentValue = history[stepIndex].result;
+            
+            if (propertyPath) {
+                const props = propertyPath.split('.');
+                for (const prop of props) {
+                    if (currentValue && typeof currentValue === 'object' && prop in currentValue) {
+                        currentValue = (currentValue as any)[prop];
+                    } else {
+                        this.logger.warn('SymphonyRuntime', `Could not resolve property path "${propertyPath}" in step ${stepIndex + 1} output.`, { propertyPath, stepOutput: history[stepIndex].result });
+                        return undefined; // Property path not found
                     }
-                    
-                    if (currentValue === undefined) {
-                        return match; // Return original placeholder if value is not found
-                    }
-                    
-                    // If the value is an object, stringify it. Otherwise, use as is.
-                    return typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : currentValue;
                 }
-                return match; // Return original placeholder if step failed or doesn't exist
-            });
-        } else if (typeof resolved[key] === 'object') {
-            // Recurse for nested objects
-            resolved[key] = this.resolvePlaceholders(resolved[key], history);
+            }
+            return currentValue;
         }
+        
+        this.logger.warn('SymphonyRuntime', `Referenced step ${stepIndex + 1} not found or failed.`, { stepIndex: stepIndex + 1, historyCount: history.length });
+        return undefined; // Step not found or failed
+    };
+
+    const traverseAndResolve = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') {
+            return obj;
+        }
+
+        if (Array.isArray(obj)) {
+            return obj.map(item => traverseAndResolve(item));
+        }
+
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                if (typeof obj[key] === 'string') {
+                    const strValue = obj[key];
+
+                    // Case 1: The entire string is a placeholder. Replace it with the resolved value, preserving type.
+                    const fullMatch = strValue.match(fullPlaceholderRegex);
+                    if (fullMatch) {
+                        const [, stepIndexStr, propertyPath] = fullMatch;
+                        const resolvedValue = resolveValue(stepIndexStr, propertyPath);
+                        if (resolvedValue !== undefined) {
+                            obj[key] = resolvedValue;
+                        }
+                        continue; // Move to next key
+                    }
+
+                    // Case 2: The string contains one or more placeholders (partial substitution).
+                    // The result must be a string.
+                    obj[key] = strValue.replace(partialPlaceholderRegex, (match, stepIndexStr, propertyPath) => {
+                        const resolvedValue = resolveValue(stepIndexStr, propertyPath);
+                        if (resolvedValue === undefined) {
+                            return match; // Keep original placeholder if not found
+                        }
+                        return typeof resolvedValue === 'object' ? JSON.stringify(resolvedValue) : String(resolvedValue);
+                    });
+
+                } else if (typeof obj[key] === 'object') {
+                    // Recurse for nested objects or arrays
+                    traverseAndResolve(obj[key]);
+                }
+            }
+        }
+        return obj;
     }
 
-    return resolved;
+    return traverseAndResolve(resolved);
   }
 
   private async executeSingleShotTask(task: string, contextManager: RuntimeContextManager, agentConfig: AgentConfig, conversation: Conversation): Promise<void> {

@@ -5,10 +5,6 @@ import { LLMRequest, LLMMessage, LLMConfig as RichLLMAgentConfig } from "../../l
 import { SystemPromptService } from "../../agents/sysprompt";
 import { ExecutionState } from "../context/ExecutionState";
 import { LLMHandler } from '../../llm/handler';
-import { RuntimeExecutionResult, RuntimeTask } from '../types';
-import { logger, LogCategory } from '../../utils/logger';
-import { ToolRegistry } from '../../tools/standard/registry';
-import { ToolConfig } from '../../types/tool.types';
 import { LLMError, ToolError, ValidationError, ErrorCode, ErrorUtils } from '../../errors/index';
 
 /**
@@ -484,23 +480,5 @@ IF NO TOOL IS NEEDED: your JSON object MUST contain a "tool_name" (string) key s
             tokenUsage: llmResponse.usage,
             toolsExecuted: toolResults.length > 0 ? toolResults : undefined
         };
-    }
-
-    private async executeLLMCall(task: RuntimeTask): Promise<RuntimeExecutionResult> {
-        try {
-            // ... existing implementation ...
-        } catch (error: any) {
-            // Convert to structured error
-            if (error instanceof LLMError) {
-                throw error;
-            }
-
-            throw new LLMError(
-                ErrorCode.LLM_API_ERROR,
-                'LLM completion failed',
-                error,
-                { component: 'ExecutionEngine', operation: 'executeLLMCall', task: task.id }
-            );
-        }
     }
 } 

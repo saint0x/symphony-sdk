@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService } from '../db/IDatabaseService';
 import { ValidationError } from '../errors/index';
 
 export interface MemoryConfig {

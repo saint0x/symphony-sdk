@@ -1,89 +1,151 @@
-import { symphony } from './src/index';
-import { envConfig } from './src/utils/env';
-import * as assert from 'assert';
+/**
+ * Symphony SDK: Standard Tools Stress Test
+ *
+ * This test is designed to be a comprehensive stress test for an agent's ability
+ * to use and chain all the standard tools available in the Symphony SDK.
+ *
+ * It will force the agent to perform a complex, multi-step task that requires:
+ * - Web searching for information (`webSearch`)
+ * - Writing initial findings to a file (`writeFile`)
+ * - Reading that file back (`readFile`)
+ * - Parsing the document to extract key information (`parseDocument`)
+ * - Generating new code based on the parsed info (`writeCode`)
+ * - Saving the final code to a new file (`writeFile`)
+ */
 
-const logger = symphony.logger;
+import { Symphony } from './src/symphony';
+import { AgentConfig } from './src/types/sdk';
+import fs from 'fs/promises';
+import path from 'path';
 
-async function runAgentStdToolsTest() {
-    logger.info('TestRunner', '=== TEST: Agent Standard Tools (ponder, writeCode) ===');
+// Agent Configuration for the Standard Tools Stress Test
+const stdToolsAgentConfig: AgentConfig = {
+  name: 'StdToolAgent',
+  description: 'An AI agent equipped with all standard tools to perform complex, multi-step tasks.',
+  task: 'Analyze information from the web, process it through files, and generate code based on the findings.',
+  tools: ['webSearch', 'readFile', 'writeFile', 'parseDocument', 'ponder', 'writeCode', 'createPlan'],
+  llm: {
+    model: 'gpt-4o-mini',
+    provider: 'openai',
+    temperature: 0.2,
+  },
+  systemPrompt: `You are a powerful, multi-tool AI agent. Your goal is to solve complex tasks by creating and executing a plan that uses your available tools in a logical sequence.
+  
+  **Core Workflow:**
+  1.  **Understand & Plan:** Use the 'createPlan' tool to break down the user's request into a sequence of concrete tool calls.
+  2.  **Gather Information:** Use 'webSearch', 'readFile', etc., to get the necessary information.
+  3.  **Process & Reason:** Use 'parseDocument' and 'ponder' to understand and synthesize the information.
+  4.  **Create & Act:** Use 'writeCode' and 'writeFile' to produce the final output.
+  5.  **Data Flow:** You MUST pass the output from one step as the input to the next logical step.`,
+  maxCalls: 15,
+  log: {
+    inputs: true,
+    outputs: true,
+    llmCalls: true,
+    toolCalls: true,
+  },
+};
+
+async function runStdToolsStressTest() {
+  console.log('🚀 Starting Standard Tools Stress Test');
+  console.log('=========================================\n');
+
+  const tempFilePath = path.join(process.cwd(), 'temp-research-notes.md');
+  const finalCodePath = path.join(process.cwd(), 'builder-pattern-example.rs');
+
+  try {
+    // Clean up any artifacts from previous runs
+    await fs.rm(tempFilePath, { force: true });
+    await fs.rm(finalCodePath, { force: true });
 
     // Initialize Symphony
+    const symphony = new Symphony({
+      llm: {
+        provider: 'openai',
+        apiKey: process.env.OPENAI_API_KEY || '',
+      },
+      db: { enabled: false },
+      runtime: {
+        enhancedRuntime: true,
+        planningThreshold: 'complex',
+        reflectionEnabled: false, // Keep reflection off for this test
+      },
+    });
+
     await symphony.initialize();
-    
-    // Get agent service
-    const agentService = await symphony.getService('agent');
-    assert.ok(agentService, 'Agent service should be available');
+    console.log('✅ Symphony SDK initialized successfully\n');
 
-    // Step 1: Create an agent
-    logger.info('TestRunner', 'Step 1: Creating a new agent...');
-    const testAgent = await agentService.create({
-        name: 'testArchitectAgent',
-        description: 'Software Architect',
-        task: 'Ponder on software design principles and generate elegant code solutions.',
-        tools: ['ponder', 'writeCode'], // Explicitly provide the tools the agent can use
-        llm: { model: envConfig.defaultModel } // Add the required LLM configuration
-    });
-    assert.ok(testAgent, 'Agent creation should be successful');
-    logger.info('TestRunner', `Agent '${testAgent.name}' created successfully.`);
+    // Create the agent
+    const agent = await symphony.agent.create(stdToolsAgentConfig);
+    console.log(`✅ ${agent.name} agent created\n`);
 
-    // Step 2: Define a complex prompt and execute it
-    logger.info('TestRunner', 'Step 2: Executing a complex task with the agent...');
-    const prompt = `
-        First, deeply ponder on the design of a robust and scalable cron job system in Node.js. 
-        Consider aspects like error handling, logging, and preventing overlapping job executions.
-        After pondering, write the TypeScript code for a simple cron job implementation that logs 
-        'Executing scheduled task' to the console every 5 seconds. Use the 'node-cron' library.
+    // Define the complex, multi-step task for the agent
+    const stressTestTask = `
+      Follow these steps precisely:
+      1.  First, perform a web search to find a clear explanation of the "Builder Pattern" in the Rust programming language.
+      2.  Second, write the key concepts of the Builder Pattern you found into a file named "${tempFilePath}".
+      3.  Third, read the content of the file "${tempFilePath}".
+      4.  Fourth, parse the content of that file to extract the core principles of the Builder Pattern.
+      5.  Finally, using the parsed principles as your primary specification, write a new, simple, and complete Rust code example that implements the Builder Pattern for a 'Computer' struct with fields for 'cpu' (String) and 'ram_gb' (u32). Save this code into a file named "${finalCodePath}".
     `;
-    
-    // The agent's execute method is now the main entry point for tasks.
-    // The AgentExecutor is designed to take the high-level task and orchestrate tool use.
-    const result = await testAgent.executeTask(prompt);
 
-    // Step 3: Verify the result
-    logger.info('TestRunner', 'Step 3: Verifying the execution result...');
-    
-    // Debug: Log the full result structure
-    logger.info('TestRunner', 'Debug - Full result structure:', {
-        success: result.success,
-        error: result.error,
-        result: result.result
-    });
-    
-    assert.strictEqual(result.success, true, `Agent execution should succeed. Error: ${result.error}`);
-    assert.ok(result.result, 'Execution result object should be present');
-    
-    // Extract the final content from the correct location
-    let finalContent: string = '';
-    
-    // Check if there are tool executions with results
-    if (result.result.toolsExecuted && result.result.toolsExecuted.length > 0) {
-        // Get content from the first tool execution result
-        const toolResult = result.result.toolsExecuted[0];
-        if (toolResult.result && toolResult.result.response) {
-            finalContent = toolResult.result.response;
-        }
-    }
-    
-    // Fallback to the main response if no tool execution found
-    if (!finalContent && result.result.response) {
-        finalContent = result.result.response;
-    }
-    
-    assert.ok(finalContent, 'The final response content should exist.');
-    logger.info('TestRunner', 'Final content extracted:', finalContent.substring(0, 200) + '...');
-    
-    // Check for the expected cron job implementation
-    assert.ok(finalContent.includes('node-cron') && finalContent.includes('Executing scheduled task'), 'The generated code should contain the expected cron job implementation.');
+    console.log('🎯 Starting tool chain stress test task...\n');
+    const result = await agent.run(stressTestTask);
 
-    logger.info('TestRunner', 'Generated Code Snippet:\n' + finalContent);
-    logger.info('TestRunner', '\n🎉🎉🎉 Agent Standard Tools Test PASSED! 🎉🎉🎉');
-    process.exitCode = 0;
+    if (result.success) {
+      console.log('✅ AGENT EXECUTION SUCCEEDED');
+    } else {
+      console.error('❌ AGENT EXECUTION FAILED');
+      console.error(`   Error: ${result.error}`);
+    }
+
+    console.log('\n🔍 Verifying final output file...');
+
+    // Verify that the final code file was created and has valid content
+    try {
+      const finalCode = await fs.readFile(finalCodePath, 'utf-8');
+      console.log('✅ Final code file created successfully.');
+      console.log('--- FINAL CODE ---');
+      console.log(finalCode);
+      console.log('------------------');
+
+      const lowerCaseCode = finalCode.toLowerCase();
+      if (
+        !lowerCaseCode.includes('struct computer') ||
+        !lowerCaseCode.includes('struct computerbuilder') ||
+        !lowerCaseCode.includes('cpu: string') ||
+        !lowerCaseCode.includes('ram_gb: u32') ||
+        !lowerCaseCode.includes('impl computerbuilder')
+      ) {
+        throw new Error('The generated Rust code does not seem to implement the Builder Pattern for a Computer correctly.');
+      }
+      console.log('✅ Final code content is valid.');
+    } catch (error) {
+      console.error('❌ Final code file verification failed.', error);
+      throw error;
+    }
+
+  } catch (error: any) {
+    console.error('\n💥 Test execution failed:', error.message);
+    if (error.stack) {
+      console.error('Stack trace:', error.stack);
+    }
+    process.exit(1);
+  } finally {
+    // Clean up the created files
+    await fs.rm(tempFilePath, { force: true });
+    await fs.rm(finalCodePath, { force: true });
+    console.log('\n🧹 Cleaned up temporary files.');
+  }
 }
 
-runAgentStdToolsTest().catch(err => {
-    logger.error('TestRunner', 'Agent Standard Tools TEST SCRIPT FAILED:', { message: err.message, stack: err.stack });
-    process.exitCode = 1;
-}).finally(() => {
-    // A timeout is added to allow any async logging to complete.
-    setTimeout(() => process.exit(process.exitCode || 0), 1000);
-}); 
+// Execute the test
+runStdToolsStressTest()
+  .then(() => {
+    console.log('\n✨ Standard Tools Stress Test completed successfully!');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('\n💥 Standard Tools Stress Test failed:', error);
+    process.exit(1);
+  }); 

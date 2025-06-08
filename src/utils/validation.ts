@@ -1,6 +1,6 @@
 import { logger, LogCategory } from './logger';
 import { ValidationConfig } from '../types/sdk';
-import { ValidationError, ErrorCode } from '../errors/index';
+import { ValidationError } from '../errors/index';
 
 type ValidationSchema = {
     type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'function';
@@ -227,21 +227,6 @@ export class ValidationManager {
         if (schema.validate && !schema.validate(value)) {
             errors.push(`${fullPath} failed custom validation`);
         }
-    }
-
-    private getSchema(schemaName: string): any {
-        const schema = this.schemas.get(schemaName);
-        if (!schema) {
-            throw new ValidationError(
-                `Schema not found: ${schemaName}`,
-                { 
-                    schemaName, 
-                    availableSchemas: Array.from(this.schemas.keys()) 
-                },
-                { component: 'ValidationService', operation: 'getSchema' }
-            );
-        }
-        return schema;
     }
 
     static validateString(value: any, name: string): void {

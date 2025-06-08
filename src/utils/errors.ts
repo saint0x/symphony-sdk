@@ -247,7 +247,7 @@ export class Errors {
    * Determine if error is recoverable
    */
   private static isRecoverable(code: ErrorCode): boolean {
-    const recoverableCodes = new Set([
+    const recoverableCodes = new Set<ErrorCode>([
       ErrorCodes.LLM_RATE_LIMITED,
       ErrorCodes.TOOL_EXECUTION_FAILED,
       ErrorCodes.DB_QUERY_FAILED,

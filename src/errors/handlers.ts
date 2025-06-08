@@ -4,8 +4,8 @@
  * Advanced error handling patterns: retry logic, circuit breakers, and recovery strategies.
  */
 
-import { Result, ErrorResult, SuccessResult, ErrorUtils, SymphonyError, ErrorSeverity } from './index';
 import { Logger } from '../utils/logger';
+import { Result, ErrorUtils, SymphonyError, ErrorSeverity } from './index';
 
 // ==========================================
 // RETRY CONFIGURATION
@@ -261,7 +261,7 @@ export class CircuitBreaker {
         }
     }
 
-    private onFailure(error: SymphonyError): void {
+    private onFailure(_error: SymphonyError): void {
         this.state.failureCount++;
         this.state.lastFailureTime = Date.now();
 
@@ -333,10 +333,7 @@ export class ResilienceManager {
     private circuitBreakers: Map<string, CircuitBreaker> = new Map();
     private logger: Logger;
 
-    constructor(
-        retryConfig?: Partial<RetryConfig>,
-        circuitBreakerConfig?: Partial<CircuitBreakerConfig>
-    ) {
+    constructor(retryConfig?: Partial<RetryConfig>) {
         this.retryHandler = new RetryHandler(retryConfig);
         this.logger = Logger.getInstance('ResilienceManager');
     }

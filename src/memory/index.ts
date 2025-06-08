@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService } from '../db/IDatabaseService';
 
 // Export new memory service
 export { MemoryService } from './service';

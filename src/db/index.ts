@@ -19,7 +19,6 @@ export type {
   WhereCondition,
   OrderRule,
   JoinClause,
-  IDatabaseService,
   DatabaseHealth,
   DatabaseStats,
   XMLPattern,
@@ -27,6 +26,9 @@ export type {
   ContextSession,
   ToolExecution
 } from './types';
+
+// Export IDatabaseService interface from the correct module
+export type { IDatabaseService } from './IDatabaseService';
 
 // Export error classes
 export {

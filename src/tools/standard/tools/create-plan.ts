@@ -38,52 +38,71 @@ Each object in the array represents a single, concrete step.
 1.  **Tool-Centric:** Every single step MUST map directly to one of the provided tools, or be a non-tool step for reasoning or summarization.
 2.  **JSON ONLY:** Your entire output must be a single, raw JSON array. Do not include any text, markdown, or explanations before or after the JSON.
 3.  **Data Flow:** The 'parameters' for a step can and should reference the output of a previous step. Use a placeholder string like '{{step_1_output}}' to indicate this.
-4.  **Strict Schema:** Each JSON object in the array must have these exact keys:
+4.  **Complete Parameters:** Include ALL required parameters for each tool. For writeCode, include 'language' and 'filePath' when saving code to files.
+5.  **File Operations:** When the objective mentions saving files to specific paths, ensure the filePath parameter is included.
+6.  **Strict Schema:** Each JSON object in the array must have these exact keys:
     - "step": A number representing the order of execution.
     - "useTool": A boolean (true/false) indicating if a tool is being called.
     - "tool": If useTool is true, the exact name of the tool. If useTool is false, this MUST be "none".
     - "description": A concise description of what this step achieves.
     - "parameters": If useTool is true, a JSON object of the parameters for the tool. If useTool is false, this can be an empty object.
 
+**Tool Parameter Guidelines:**
+- webSearch: Use "query" parameter
+- writeFile: Use "filePath" and "content" parameters  
+- readFile: Use "filePath" parameter
+- parseDocument: Use "content" parameter
+- writeCode: Use "spec" parameter, and include "language" and "filePath" when saving code
+- ponder: Use "query" parameter
+
 **Example:**
 [
   {
     "step": 1,
     "useTool": true,
-    "tool": "ponder",
-    "description": "Analyze the project requirements to inform the architecture.",
+    "tool": "webSearch",
+    "description": "Search for information about the Builder Pattern in Rust.",
     "parameters": {
-      "query": "Analyze the requirements for a production-grade Rust cron job, focusing on scheduler, jobs, config, and error handling."
+      "query": "Builder Pattern Rust programming language explanation examples"
     }
   },
   {
     "step": 2,
     "useTool": true,
     "tool": "writeFile",
-    "description": "Create the project's Cargo.toml file.",
+    "description": "Save search results to a research file.",
     "parameters": {
-      "filePath": "./code-review.md",
-      "content": "Code Review: {{step_1_output.conclusion.summary}}"
+      "filePath": "/path/to/research-notes.md",
+      "content": "Research findings: {{step_1_output}}"
     }
   },
   {
     "step": 3,
     "useTool": true,
-    "tool": "writeFile",
-    "description": "Create the main application entry point.",
+    "tool": "readFile",
+    "description": "Read the research file contents.",
     "parameters": {
-      "filePath": "./cron-job/src/main.rs",
-      "content": "fn main() {\\n    println!(\\"Hello, from the cron job!\\");\\n}"
+      "filePath": "/path/to/research-notes.md"
     }
   },
   {
     "step": 4,
     "useTool": true,
-    "tool": "writeFile",
-    "description": "Create the project's Cargo.toml file.",
+    "tool": "parseDocument",
+    "description": "Parse the research content to extract key principles.",
     "parameters": {
-      "filePath": "./cron-job/Cargo.toml",
-      "content": "[package]\\nname = \\"cron-job\\"\\nversion = \\"0.1.0\\"\\nedition = \\"2021\\"\\n\\n[dependencies]"
+      "content": "{{step_3_output.content}}"
+    }
+  },
+  {
+    "step": 5,
+    "useTool": true,
+    "tool": "writeCode",
+    "description": "Generate Rust code implementing the Builder Pattern and save to file.",
+    "parameters": {
+      "spec": "Based on these principles: {{step_4_output}}, create a simple Rust implementation of the Builder Pattern for a Computer struct with cpu (String) and ram_gb (u32) fields",
+      "language": "rust",
+      "filePath": "/path/to/example.rs"
     }
   }
 ]`

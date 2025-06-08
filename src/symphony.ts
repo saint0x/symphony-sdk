@@ -3,14 +3,14 @@ import { ToolLifecycleState, AgentConfig, TeamConfig, ToolResult } from './types
 import { IToolService, IAgentService, ITeamService, IValidationManager } from './types/interfaces';
 import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
+import { ToolRegistry } from './tools/standard/registry';
 // @ts-ignore
 import { LLMConfig as RichLLMConfig, LLMFunctionDefinition } from './llm/types';
-import { IDatabaseService, DatabaseConfig, TableSchema } from './db/types';
+import { IDatabaseService, DatabaseConfig, TableSchema } from './db/IDatabaseService';
 import { DatabaseService } from './db/service';
 import { CacheIntelligenceService } from './cache/service';
 import { MemoryService } from './memory/service';
 import { StreamingService } from './streaming/service';
-import { ToolRegistry } from './tools/standard/registry';
 import { TeamCoordinator } from './teams/coordinator';
 import { AgentExecutor } from './agents/executor';
 // import { envConfig } from './utils/env';

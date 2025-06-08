@@ -3,10 +3,10 @@ import { ToolConfig as CoreToolConfig, INlpService } from '../../types/tool.type
 import { Logger } from '../../utils/logger';
 import { standardTools } from './index';
 import { ContextAPI } from '../../cache/context-api';
-import { IDatabaseService } from '../../db/types';
+import { IDatabaseService } from '../../db/IDatabaseService';
 import { LLMFunctionDefinition } from '../../llm/types';
 import { ToolUsageVerifier } from '../../utils/verification';
-import { ToolError, ValidationError, ErrorCode, ErrorUtils } from '../../errors/index';
+import { ToolError, ValidationError, ErrorCode } from '../../errors/index';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;

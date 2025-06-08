@@ -1,7 +1,7 @@
 import { CommandMapProcessor, CacheResult, PatternMatch } from './map-processor';
 import { ContextTreeBuilder, ContextTree, ContextQuery } from './tree-builder';
 import { Logger } from '../utils/logger';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService } from '../db/IDatabaseService';
 
 export interface IntelligenceOptions {
     enablePatternMatching?: boolean;

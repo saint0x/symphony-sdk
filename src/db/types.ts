@@ -1,3 +1,7 @@
+/**
+ * Database Types and Interfaces
+ */
+
 // Database Service Types for Symphony
 // Clean interfaces for SQL abstraction and adapter pattern
 
@@ -155,66 +159,6 @@ export interface JoinClause {
   rightField: string;
 }
 
-// Database service interface
-export interface IDatabaseService {
-  // Initialization
-  initialize(config?: DatabaseConfig): Promise<void>;
-  disconnect(): Promise<void>;
-  
-  // Adapter management
-  use(adapter: string | DatabaseAdapter, config?: any): Promise<void>;
-  
-  // Key-value operations
-  get(key: string, namespace?: string): Promise<any>;
-  set(key: string, value: any, options?: SetOptions): Promise<void>;
-  delete(key: string, namespace?: string): Promise<boolean>;
-  find(pattern: string, filter?: Record<string, any>, namespace?: string): Promise<any[]>;
-  
-  // Table operations
-  table(name: string): TableOperations;
-  
-  // Schema management
-  schema: {
-    create(tableName: string, schema: TableSchema): Promise<void>;
-    drop(tableName: string): Promise<void>;
-    exists(tableName: string): Promise<boolean>;
-    describe(tableName: string): Promise<TableSchema>;
-  };
-  
-  // Utilities
-  health(): Promise<DatabaseHealth>;
-  stats(): Promise<DatabaseStats>;
-  backup?(path?: string): Promise<void>;
-  
-  // Raw access (escape hatch)
-  raw?(sql: string, params?: any[]): Promise<any[]>;
-  
-  // Cache Intelligence Methods
-  getXMLPatterns(activeOnly?: boolean): Promise<XMLPattern[]>;
-  saveXMLPattern(pattern: Omit<XMLPattern, 'id'>): Promise<void>;
-  updatePatternConfidence(patternId: string, newConfidence: number): Promise<void>;
-  recordPatternExecution(execution: PatternExecution): Promise<void>;
-  
-  // Session and Context Methods
-  getSessionContext(sessionId: string): Promise<SessionContext | null>;
-  getToolExecutions(sessionId: string, limit?: number): Promise<ToolExecution[]>;
-  getWorkflowExecutions(sessionId: string): Promise<any[]>;
-  recordToolExecution(execution: Omit<ToolExecution, 'id'>): Promise<void>;
-  
-  // Health check for cache intelligence
-  healthCheck(): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; [key: string]: any }>;
-
-  // --- Methods for StoredNlpPattern (Managed by NlpService) ---
-  findNlpPatternRecord(query: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern | null>;
-  saveNlpPatternRecord(pattern: StoredNlpPattern): Promise<StoredNlpPattern>; 
-  getNlpPatternRecordById(id: string): Promise<StoredNlpPattern | null>;
-  getNlpPatternRecordsByTool(toolName: string): Promise<StoredNlpPattern[]>;
-  updateNlpPatternRecord(id: string, updates: Partial<Omit<StoredNlpPattern, 'id' | 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern | null>;
-  deleteNlpPatternRecord(id: string): Promise<boolean>;
-  countNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<number>;
-  getAllNlpPatternRecords(query?: Partial<Omit<StoredNlpPattern, 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern[]>;
-}
-
 export interface DatabaseHealth {
   connected: boolean;
   adapter: string;
@@ -348,7 +292,4 @@ export class DatabaseQueryError extends DatabaseError {
     super(message, 'QUERY_ERROR', details);
     this.name = 'DatabaseQueryError';
   }
-}
-
-// Add StoredNlpPattern if it's not already visible here, or ensure import from tool.types
-import { StoredNlpPattern } from '../types/tool.types'; 
+} 

@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger';
-import { IDatabaseService, SetOptions } from '../db/types';
+import { IDatabaseService, SetOptions } from '../db/IDatabaseService';
 
 // Legacy cache interface for backward compatibility
 export interface CacheEntry {

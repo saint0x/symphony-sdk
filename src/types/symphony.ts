@@ -1,7 +1,7 @@
 import { ToolLifecycleState } from './sdk';
 import { LLMHandler } from '../llm/handler';
 import { Logger } from '../utils/logger';
-import { IDatabaseService, DatabaseConfig } from '../db/types';
+import { IDatabaseService, DatabaseConfig } from '../db/IDatabaseService';
 import { LLMConfig as RichLLMConfig } from '../llm/types';
 import { IToolService, IAgentService, ITeamService, IValidationManager } from './interfaces';
 import { IntelligenceOptions } from '../cache/service';

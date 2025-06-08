@@ -1,6 +1,5 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
 import fs from 'fs/promises';
-import path from 'path';
 import { ValidationError } from '../../../errors/index';
 
 export const readFileTool: ToolConfig = {
@@ -14,26 +13,28 @@ export const readFileTool: ToolConfig = {
     },
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
-            const { path } = params;
-            if (!path) {
+            const { path: legacyPath, filePath: newPath } = params;
+            const filePath = newPath || legacyPath;
+            
+            if (!filePath) {
                 throw new ValidationError(
-                    'Path parameter is required',
+                    'Path (or filePath) parameter is required',
                     { provided: params, required: ['path'] },
                     { component: 'ReadFileTool', operation: 'execute' }
                 );
             }
 
-            const content = await fs.readFile(path, 'utf-8');
-            const stats = await fs.stat(path);
+            const content = await fs.readFile(filePath, 'utf-8');
+            const stats = await fs.stat(filePath);
 
             return {
                 success: true,
                 result: {
                     content,
                     metadata: {
-                        format: params.format || path.split('.').pop()?.toLowerCase() || '',
+                        format: params.format || filePath.split('.').pop()?.toLowerCase() || '',
                         size: stats.size,
-                        path,
+                        path: filePath,
                         type: 'file'
                     }
                 }

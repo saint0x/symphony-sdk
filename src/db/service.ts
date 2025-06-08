@@ -1,7 +1,6 @@
 import { Logger } from '../utils/logger';
 import { SQLiteAdapter } from './adapters/sqlite';
 import {
-  IDatabaseService,
   DatabaseConfig,
   DatabaseAdapter,
   SetOptions,
@@ -19,6 +18,7 @@ import {
 } from './types';
 import { StoredNlpPattern } from '../types/tool.types';
 import { mapNlpPatternQueryToDbRecord, nlpPatternToDbRecord, dbRecordToNlpPattern } from './mappers';
+import { IDatabaseService } from './IDatabaseService';
 
 export class DatabaseService implements IDatabaseService {
   private adapter: DatabaseAdapter | null = null;

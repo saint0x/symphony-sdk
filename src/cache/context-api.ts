@@ -1,7 +1,7 @@
 import { CommandMapProcessor, Pattern as CommandMapPattern, RuntimeToolCallDetails } from './map-processor';
 import { ContextTreeBuilder, ContextQuery } from './tree-builder';
 import { Logger } from '../utils/logger';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService } from '../db/IDatabaseService';
 import { ToolResult } from '../types/sdk';
 import { 
     IContextAPI,

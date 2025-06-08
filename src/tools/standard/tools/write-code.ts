@@ -1,19 +1,55 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
 import { LLMHandler } from '../../../llm/handler';
+import fs from 'fs/promises';
+import path from 'path';
 
 export const writeCodeTool: ToolConfig = {
     name: 'writeCodeTool',
     description: 'Generate code using LLM',
     type: 'code',
     config: {
-        inputs: ['prompt', 'spec', 'query', 'language', 'context'],
+        inputs: ['prompt', 'spec', 'query', 'language', 'context', 'filePath'],
         outputs: ['code', 'explanation'],
     },
     handler: async (params: any): Promise<ToolResult<any>> => {
         try {
             // Accept 'prompt', 'spec', and 'query' for flexibility
-            let spec = params.prompt || params.spec || params.query;
-            const { language = 'javascript', context = {}, components } = params;
+            let spec = params.prompt || params.spec || params.query || params.specification;
+            const { context = {}, components, filePath } = params;
+            
+            // Auto-detect language from spec or filePath
+            let language = params.language;
+            if (!language) {
+                if (filePath) {
+                    const ext = path.extname(filePath).toLowerCase();
+                    const languageMap: Record<string, string> = {
+                        '.rs': 'rust',
+                        '.js': 'javascript',
+                        '.ts': 'typescript',
+                        '.py': 'python',
+                        '.go': 'go',
+                        '.java': 'java',
+                        '.cpp': 'cpp',
+                        '.c': 'c',
+                        '.cs': 'csharp'
+                    };
+                    language = languageMap[ext] || 'text';
+                } else if (spec) {
+                    // Auto-detect from spec content
+                    const specLower = spec.toLowerCase();
+                    if (specLower.includes('rust') || specLower.includes('cargo')) {
+                        language = 'rust';
+                    } else if (specLower.includes('typescript')) {
+                        language = 'typescript';
+                    } else if (specLower.includes('python')) {
+                        language = 'python';
+                    } else {
+                        language = 'javascript'; // default
+                    }
+                } else {
+                    language = 'javascript'; // default
+                }
+            }
 
             if (components) {
                 spec = `Implement the following components: ${JSON.stringify(components, null, 2)}`;
@@ -48,17 +84,36 @@ Requirements:
 - Add comments for complex logic
 - Follow ${language} best practices
 - Make it production-ready
+- IMPORTANT: Generate ONLY the code, no markdown formatting or code blocks
 
-Provide working code that can be immediately used.`
+Provide working ${language} code that can be immediately used.`
                     }
                 ],
                 temperature: 0.3, // Lower temperature for more consistent code
                 maxTokens: 1500
             });
 
-            const generatedCode = response.toString();
+            let generatedCode = response.toString().trim();
+            
+            // Clean up any markdown code blocks that might have been generated
+            if (generatedCode.startsWith('```')) {
+                const lines = generatedCode.split('\n');
+                lines.shift(); // Remove first ```language line
+                if (lines[lines.length - 1].trim() === '```') {
+                    lines.pop(); // Remove last ``` line
+                }
+                generatedCode = lines.join('\n');
+            }
             
             console.log(`[WRITECODE] Generated ${generatedCode.length} characters of ${language} code`);
+
+            // Save to file if filePath is provided
+            if (filePath) {
+                const dir = path.dirname(filePath);
+                await fs.mkdir(dir, { recursive: true });
+                await fs.writeFile(filePath, generatedCode, 'utf-8');
+                console.log(`[WRITECODE] Saved code to ${filePath}`);
+            }
 
             // Generate explanation
             const explanationResponse = await llm.complete({
@@ -87,6 +142,8 @@ Provide working code that can be immediately used.`
                     context,
                     spec: spec,
                     codeLength: generatedCode.length,
+                    filePath: filePath || null,
+                    savedToFile: !!filePath,
                     timestamp: new Date().toISOString(),
                     model: 'LLM-generated'
                 }
