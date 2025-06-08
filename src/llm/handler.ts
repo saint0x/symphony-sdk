@@ -8,6 +8,7 @@ import {
 import { OpenAIProvider } from './providers/openai';
 import { logger, LogCategory } from '../utils/logger';
 import { envConfig } from '../utils/env';
+import { LLMError, ConfigurationError, ErrorCode } from '../errors/index';
 
 export class LLMHandler {
     private static instance: LLMHandler;
@@ -73,23 +74,34 @@ export class LLMHandler {
                 }
             });
         } else {
-            throw new Error('OpenAI API key is required in environment configuration');
+            throw new LLMError(
+                ErrorCode.MISSING_API_KEY,
+                'OpenAI API key is required in environment configuration',
+                { component: 'LLMHandler', operation: 'initializeDefaultProviders' }
+            );
         }
     }
 
     async registerProvider(config: LLMConfig): Promise<void> {
         const providerName = config.provider?.toLowerCase();
         if (!providerName) {
-            throw new Error('Provider name must be specified in LLMConfig');
+            throw new ConfigurationError(
+                'Provider name must be specified in LLMConfig',
+                { config },
+                { component: 'LLMHandler', operation: 'registerProvider' }
+            );
         }
 
         // For now, only OpenAI is instantiated, extend this for other providers
         if (providerName !== 'openai') {
             logger.warn(LogCategory.AI, `Provider ${providerName} not fully supported for dynamic registration, only OpenAI for now.`);
-            // throw new Error(`Provider ${providerName} is not supported for dynamic registration yet.`);
             // Allow it to proceed if it's just updating an existing openai config
             if (providerName !== 'openai' && !this.providers.has(providerName)) {
-                 throw new Error(`Provider ${providerName} is not supported for dynamic registration yet.`);
+                throw new ConfigurationError(
+                    `Provider ${providerName} is not supported for dynamic registration yet`,
+                    { providerName, supportedProviders: ['openai'] },
+                    { component: 'LLMHandler', operation: 'registerProvider' }
+                );
             }
         }
 
@@ -98,7 +110,12 @@ export class LLMHandler {
             // Ensure API key from environment for OpenAI for security, can be adapted for other providers
             if (providerName === 'openai') {
                 if (!envConfig.openaiApiKey) {
-                    throw new Error('OpenAI API key not found in environment for registration.');
+                    throw new LLMError(
+                        ErrorCode.MISSING_API_KEY,
+                        'OpenAI API key not found in environment for registration',
+                        { providerName },
+                        { component: 'LLMHandler', operation: 'registerProvider' }
+                    );
                 }
                 finalConfig.apiKey = envConfig.openaiApiKey;
             }
@@ -128,7 +145,11 @@ export class LLMHandler {
                     // const updatedProvider = new WhatEverProvider(finalConfig);
                     // this.providers.set(providerName, updatedProvider);
                 } else {
-                     throw new Error(`No existing provider ${providerName} to update and dynamic creation not supported.`);
+                    throw new ConfigurationError(
+                        `No existing provider ${providerName} to update and dynamic creation not supported`,
+                        { providerName, existingProviders: Array.from(this.providers.keys()) },
+                        { component: 'LLMHandler', operation: 'registerProvider' }
+                    );
                 }
             }
             
@@ -149,12 +170,24 @@ export class LLMHandler {
     getProvider(name?: string): LLMProvider {
         const providerName = name?.toLowerCase() || this.defaultProvider;
         if (!providerName) {
-            throw new Error('No default provider set');
+            throw new ConfigurationError(
+                'No default provider set',
+                { availableProviders: Array.from(this.providers.keys()) },
+                { component: 'LLMHandler', operation: 'getProvider' }
+            );
         }
 
         const provider = this.providers.get(providerName);
         if (!provider) {
-            throw new Error(`Provider not found: ${providerName}`);
+            throw new LLMError(
+                ErrorCode.LLM_API_ERROR,
+                `Provider not found: ${providerName}`,
+                { 
+                    requestedProvider: providerName,
+                    availableProviders: Array.from(this.providers.keys())
+                },
+                { component: 'LLMHandler', operation: 'getProvider' }
+            );
         }
 
         return provider;
@@ -163,7 +196,11 @@ export class LLMHandler {
     async complete(request: LLMRequest): Promise<LLMResponse> {
         const targetProviderName = request.provider?.toLowerCase() || this.defaultProvider;
         if (!targetProviderName) {
-            throw new Error('No provider specified in request and no default provider set.');
+            throw new ConfigurationError(
+                'No provider specified in request and no default provider set',
+                { request, availableProviders: Array.from(this.providers.keys()) },
+                { component: 'LLMHandler', operation: 'complete' }
+            );
         }
 
         let providerInstance = this.providers.get(targetProviderName);
@@ -180,9 +217,25 @@ export class LLMHandler {
                     maxTokens: request.llmConfig?.maxTokens,
                 });
                 providerInstance = this.providers.get(targetProviderName);
-                if (!providerInstance) throw new Error(`Failed to dynamically initialize provider: ${targetProviderName}`);
+                if (!providerInstance) {
+                    throw new LLMError(
+                        ErrorCode.LLM_API_ERROR,
+                        `Failed to dynamically initialize provider: ${targetProviderName}`,
+                        { targetProviderName, request },
+                        { component: 'LLMHandler', operation: 'complete' }
+                    );
+                }
             } else {
-                throw new Error(`Provider ${targetProviderName} not found or not configured for on-demand initialization.`);
+                throw new LLMError(
+                    ErrorCode.LLM_API_ERROR,
+                    `Provider ${targetProviderName} not found or not configured for on-demand initialization`,
+                    { 
+                        targetProviderName, 
+                        availableProviders: Array.from(this.providers.keys()),
+                        hasOpenAIKey: !!envConfig.openaiApiKey
+                    },
+                    { component: 'LLMHandler', operation: 'complete' }
+                );
             }
         }
         
@@ -204,7 +257,11 @@ export class LLMHandler {
     ): AsyncGenerator<LLMResponse> {
         const targetProviderName = request.provider?.toLowerCase() || providerName?.toLowerCase() || this.defaultProvider;
         if (!targetProviderName) {
-            throw new Error('No provider specified in request or argument, and no default provider set.');
+            throw new ConfigurationError(
+                'No provider specified in request or argument, and no default provider set',
+                { request, providerName, availableProviders: Array.from(this.providers.keys()) },
+                { component: 'LLMHandler', operation: 'completeStream' }
+            );
         }
 
         let providerInstance = this.providers.get(targetProviderName);
@@ -220,9 +277,25 @@ export class LLMHandler {
                     maxTokens: request.llmConfig?.maxTokens,
                 });
                 providerInstance = this.providers.get(targetProviderName);
-                if (!providerInstance) throw new Error(`Failed to dynamically initialize provider for stream: ${targetProviderName}`);
+                if (!providerInstance) {
+                    throw new LLMError(
+                        ErrorCode.LLM_API_ERROR,
+                        `Failed to dynamically initialize provider for stream: ${targetProviderName}`,
+                        { targetProviderName, request },
+                        { component: 'LLMHandler', operation: 'completeStream' }
+                    );
+                }
             } else {
-                throw new Error(`Provider ${targetProviderName} not found or not configured for on-demand initialization for stream.`);
+                throw new LLMError(
+                    ErrorCode.LLM_API_ERROR,
+                    `Provider ${targetProviderName} not found or not configured for on-demand initialization for stream`,
+                    { 
+                        targetProviderName, 
+                        availableProviders: Array.from(this.providers.keys()),
+                        hasOpenAIKey: !!envConfig.openaiApiKey
+                    },
+                    { component: 'LLMHandler', operation: 'completeStream' }
+                );
             }
         }
         

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PlanningEngineInterface, RuntimeDependencies, ExecutionPlan, TaskAnalysis, TaskComplexity, PlannedStep } from "../RuntimeTypes";
 import { ToolResult, AgentConfig } from "../../types/sdk";
 import { ExecutionState } from '../context/ExecutionState';
+import { ToolError, ErrorCode } from '../../errors/index';
 
 /**
  * The PlanningEngine is responsible for analyzing tasks and creating execution plans.
@@ -88,8 +89,14 @@ export class PlanningEngine implements PlanningEngineInterface {
                 }
             });
 
-            if (!planToolResult.success || !planToolResult.result?.plan?.generatedPlan) {
-                throw new Error(`createPlanTool failed or returned an invalid plan: ${planToolResult.error}`);
+            if (!planToolResult.success || !planToolResult.result || !planToolResult.result.response) {
+                throw new ToolError(
+                    'createPlanTool',
+                    ErrorCode.TOOL_EXECUTION_FAILED,
+                    `createPlanTool failed or returned an invalid plan: ${planToolResult.error}`,
+                    { planToolResult, task },
+                    { component: 'PlanningEngine', operation: 'createPlan' }
+                );
             }
 
             // For now, we'll treat the raw LLM output as the plan steps.

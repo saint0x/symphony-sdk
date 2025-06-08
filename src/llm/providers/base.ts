@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { ExecutionMetrics } from '../../types/sdk';
 import { logger, LogCategory } from '../../utils/logger';
+import { ConfigurationError, LLMError, ValidationError, ErrorCode } from '../../errors/index';
 
 export interface ExtendedLLMConfig extends LLMConfig {
     topP?: number;
@@ -42,7 +43,11 @@ export abstract class BaseLLMProvider implements LLMProvider {
 
     constructor(config: ExtendedLLMConfig) {
         if (!config.provider) {
-            throw new Error('Provider name is required');
+            throw new ConfigurationError(
+                'Provider name is required',
+                { config },
+                { component: 'BaseLLMProvider', operation: 'constructor' }
+            );
         }
         this.name = config.provider;
         this.config = {
@@ -62,10 +67,23 @@ export abstract class BaseLLMProvider implements LLMProvider {
 
     protected validateApiKey(): void {
         if (!this.config.apiKey) {
-            throw new Error(`API key not provided for ${this.name} provider`);
+            throw new LLMError(
+                ErrorCode.MISSING_API_KEY,
+                `API key not provided for ${this.name} provider`,
+                { provider: this.name },
+                { component: 'BaseLLMProvider', operation: 'validateApiKey' }
+            );
         }
         if (typeof this.config.apiKey !== 'string') {
-            throw new Error(`Invalid API key type for ${this.name} provider`);
+            throw new ValidationError(
+                `Invalid API key type for ${this.name} provider`,
+                { 
+                    provider: this.name, 
+                    apiKeyType: typeof this.config.apiKey,
+                    expectedType: 'string'
+                },
+                { component: 'BaseLLMProvider', operation: 'validateApiKey' }
+            );
         }
     }
 
@@ -89,20 +107,46 @@ export abstract class BaseLLMProvider implements LLMProvider {
 
     protected validateRequest(request: LLMRequest): void {
         if (!request.messages || !Array.isArray(request.messages)) {
-            throw new Error('Invalid request: messages must be an array');
+            throw new ValidationError(
+                'Invalid request: messages must be an array',
+                { request, messageType: typeof request.messages },
+                { component: 'BaseLLMProvider', operation: 'validateRequest' }
+            );
         }
 
         if (request.messages.length === 0) {
-            throw new Error('Invalid request: messages array cannot be empty');
+            throw new ValidationError(
+                'Invalid request: messages array cannot be empty',
+                { request },
+                { component: 'BaseLLMProvider', operation: 'validateRequest' }
+            );
         }
 
         if (request.functions && !this.supportsFunctions) {
-            throw new Error(`${this.name} provider does not support function calling`);
+            throw new LLMError(
+                ErrorCode.LLM_API_ERROR,
+                `${this.name} provider does not support function calling`,
+                { 
+                    provider: this.name, 
+                    supportsFunctions: this.supportsFunctions,
+                    functionsRequested: request.functions.length
+                },
+                { component: 'BaseLLMProvider', operation: 'validateRequest' }
+            );
         }
 
         request.messages.forEach((message, index) => {
             if (!message.role || !message.content) {
-                throw new Error(`Invalid message at index ${index}: must have role and content`);
+                throw new ValidationError(
+                    `Invalid message at index ${index}: must have role and content`,
+                    { 
+                        message, 
+                        index, 
+                        hasRole: !!message.role, 
+                        hasContent: !!message.content 
+                    },
+                    { component: 'BaseLLMProvider', operation: 'validateRequest' }
+                );
             }
         });
 
@@ -123,6 +167,17 @@ export abstract class BaseLLMProvider implements LLMProvider {
             }
         });
 
-        throw new Error(`${this.name} provider error: ${error.message}`);
+        // If it's already a SymphonyError, just re-throw it
+        if (error.code && error.component) {
+            throw error;
+        }
+
+        // Convert generic errors to LLMError
+        throw new LLMError(
+            ErrorCode.LLM_API_ERROR,
+            `${this.name} provider error: ${error.message}`,
+            error,
+            { component: 'BaseLLMProvider', operation: 'handleError' }
+        );
     }
 } 

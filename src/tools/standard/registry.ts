@@ -6,6 +6,7 @@ import { ContextAPI } from '../../cache/context-api';
 import { IDatabaseService } from '../../db/types';
 import { LLMFunctionDefinition } from '../../llm/types';
 import { ToolUsageVerifier } from '../../utils/verification';
+import { ToolError, ValidationError, ErrorCode, ErrorUtils } from '../../errors/index';
 
 export class ToolRegistry {
     private static instance: ToolRegistry;
@@ -174,13 +175,21 @@ export class ToolRegistry {
         try {
             const tool = this.tools.get(toolName);
             if (!tool) {
-                return {
-                    success: false,
-                    error: `Tool '${toolName}' not found. Available tools: ${Array.from(this.tools.keys()).join(', ')}`
-                };
+                const availableTools = Array.from(this.tools.keys());
+                throw new ToolError(
+                    toolName,
+                    ErrorCode.TOOL_NOT_FOUND,
+                    `Tool '${toolName}' not found`,
+                    { 
+                        toolName, 
+                        availableTools,
+                        totalAvailable: availableTools.length
+                    },
+                    { component: 'ToolRegistry', operation: 'executeTool' }
+                );
             }
 
-            // <<< INTEGRATION START: Input Validation >>>
+            // Input Validation
             if (tool.inputSchema) {
                 const validationResult = ToolUsageVerifier.verifyData(params, tool.inputSchema, `${toolName}.inputParams`);
                 if (!validationResult.isValid) {
@@ -188,23 +197,30 @@ export class ToolRegistry {
                         errors: validationResult.errors,
                         paramsReceived: params
                     });
-                    return {
-                        success: false,
-                        error: `Input validation failed for ${toolName}: ${validationResult.errors.map(e => `${e.path}: ${e.message}`).join('; ')}`,
-                        details: validationResult.errors // Provide detailed errors
-                    };
+                    
+                    throw new ValidationError(
+                        `Input validation failed for ${toolName}: ${validationResult.errors.map(e => `${e.path}: ${e.message}`).join('; ')}`,
+                        { 
+                            toolName,
+                            validationErrors: validationResult.errors,
+                            paramsReceived: params
+                        },
+                        { component: 'ToolRegistry', operation: 'executeTool' }
+                    );
                 }
                 this.logger.info('ToolRegistry', `Input validated successfully for tool: ${toolName}`);
             }
-            // <<< INTEGRATION END: Input Validation >>>
 
             // Ensure the tool has a handler
             if (!tool.handler) {
                 this.logger.error('ToolRegistry', `Tool ${toolName} does not have a handler function.`);
-                return {
-                    success: false,
-                    error: `Tool ${toolName} is not executable (no handler).`
-                };
+                throw new ToolError(
+                    toolName,
+                    ErrorCode.TOOL_EXECUTION_FAILED,
+                    `Tool ${toolName} is not executable (no handler)`,
+                    { toolName, hasHandler: false },
+                    { component: 'ToolRegistry', operation: 'executeTool' }
+                );
             }
 
             this.logger.info('ToolRegistry', `Executing tool: ${toolName}`, {
@@ -226,7 +242,7 @@ export class ToolRegistry {
             // Auto-update learning context for non-context-management tools
             if (this.contextAPI && tool.type !== 'context_management') {
                 try {
-                    // <<< FIX START: Explicitly record the execution before learning >>>
+                    // Record the execution before learning
                     const db = this.contextAPI['database']; // Access private member for fix
                     if (db) {
                         await db.table('tool_executions').insert({
@@ -238,7 +254,6 @@ export class ToolRegistry {
                             created_at: new Date(startTime).toISOString()
                         });
                     }
-                    // <<< FIX END >>>
 
                     await this.contextAPI.updateLearningContext({
                         toolName,
@@ -267,11 +282,40 @@ export class ToolRegistry {
 
             return enhancedResult;
 
-        } catch (error) {
-            this.logger.error('ToolRegistry', `Tool execution failed: ${toolName}`, { error });
+        } catch (error: any) {
+            this.logger.error('ToolRegistry', `Tool execution failed: ${toolName}`, { 
+                error: error.message,
+                toolName,
+                params
+            });
+
+            // If it's already a SymphonyError, convert to ToolResult format
+            if (error instanceof ToolError || error instanceof ValidationError) {
+                return {
+                    success: false,
+                    error: error.getUserMessage(),
+                    details: error.details,
+                    metrics: {
+                        duration: 0,
+                        startTime: Date.now(),
+                        endTime: Date.now()
+                    }
+                };
+            }
+
+            // Convert generic errors to ToolError and return as ToolResult
+            const toolError = new ToolError(
+                toolName,
+                ErrorCode.TOOL_EXECUTION_FAILED,
+                `Tool execution failed: ${error.message}`,
+                { originalError: error, toolName, params },
+                { component: 'ToolRegistry', operation: 'executeTool' }
+            );
+
             return {
                 success: false,
-                error: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
+                error: toolError.getUserMessage(),
+                details: toolError.details,
                 metrics: {
                     duration: 0,
                     startTime: Date.now(),

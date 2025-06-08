@@ -1,5 +1,6 @@
 import { Logger } from '../utils/logger';
 import { IDatabaseService } from '../db/types';
+import { ValidationError } from '../errors/index';
 
 export interface MemoryConfig {
     shortTerm?: {
@@ -158,7 +159,11 @@ export class MemoryService {
         }
     ): Promise<void> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'store' }
+            );
         }
 
         const startTime = Date.now();
@@ -219,7 +224,11 @@ export class MemoryService {
         }
     ): Promise<any> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'retrieve' }
+            );
         }
 
         const startTime = Date.now();
@@ -267,7 +276,11 @@ export class MemoryService {
 
     async search(query: MemoryQuery): Promise<MemoryEntry[]> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'search' }
+            );
         }
 
         const startTime = Date.now();
@@ -331,7 +344,11 @@ export class MemoryService {
         namespace?: string
     ): Promise<boolean> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'delete' }
+            );
         }
 
         try {
@@ -353,7 +370,11 @@ export class MemoryService {
 
     async clear(type?: 'short_term' | 'long_term', namespace?: string): Promise<number> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'clear' }
+            );
         }
 
         try {
@@ -383,7 +404,11 @@ export class MemoryService {
 
     async aggregate(query: MemoryQuery): Promise<AggregationResult> {
         if (!this.initialized || !this.config.enableAggregation) {
-            throw new Error('Memory aggregation not available');
+            throw new ValidationError(
+                'Memory aggregation not available',
+                { aggregationEnabled: this.config.enableAggregation },
+                { component: 'MemoryService', operation: 'aggregate' }
+            );
         }
 
         const startTime = Date.now();
@@ -433,7 +458,11 @@ export class MemoryService {
 
     async getStats(): Promise<MemoryStats> {
         if (!this.initialized) {
-            throw new Error('MemoryService not initialized');
+            throw new ValidationError(
+                'MemoryService not initialized',
+                { initialized: this.initialized },
+                { component: 'MemoryService', operation: 'getStats' }
+            );
         }
 
         try {

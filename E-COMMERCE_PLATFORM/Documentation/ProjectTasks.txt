@@ -1,7 +1,0 @@
-Task Assignment for E-COMMERCE PLATFORM:
-
-- Research Responsibilities: Agent A
-- Development Responsibilities: Agent B
-- Documentation Responsibilities: Agent TechnicalWriter
-
-Focus on leveraging specialized capabilities for documentation and organization of deliverables.

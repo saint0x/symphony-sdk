@@ -4,6 +4,12 @@ import { ToolResult, AgentConfig } from "../../types/sdk";
 import { LLMRequest, LLMMessage, LLMConfig as RichLLMAgentConfig } from "../../llm/types";
 import { SystemPromptService } from "../../agents/sysprompt";
 import { ExecutionState } from "../context/ExecutionState";
+import { LLMHandler } from '../../llm/handler';
+import { RuntimeExecutionResult, RuntimeTask } from '../RuntimeTypes';
+import { logger, LogCategory } from '../../utils/logger';
+import { ToolRegistry } from '../../tools/standard/registry';
+import { ToolConfig } from '../../types/tool.types';
+import { LLMError, ToolError, ValidationError, ErrorCode, ErrorUtils } from '../../errors/index';
 
 /**
  * The ExecutionEngine is responsible for the core "magic" of tool execution.
@@ -71,20 +77,26 @@ export class ExecutionEngine implements ExecutionEngineInterface {
                 return await this._executeSingleStep(task, systemPrompt, agentConfig, state);
             }
 
-        } catch (error) {
-            this.dependencies.logger.error('ExecutionEngine', 'Task execution failed', { error });
-            const fallbackResult = {
-                response: `Agent ${agentConfig.name} encountered an error processing: ${task}`,
-                error: error instanceof Error ? error.message : String(error),
-                fallback: true,
-                timestamp: new Date().toISOString()
-            };
+        } catch (error: any) {
+            this.dependencies.logger.error('ExecutionEngine', 'Task execution failed', { 
+                error: error.message, 
+                task, 
+                agentName: agentConfig.name 
+            });
 
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                result: fallbackResult
-            };
+            if (error instanceof ToolError || error instanceof LLMError || error instanceof ValidationError) {
+                // Already a SymphonyError, re-throw
+                throw error;
+            }
+
+            // Convert generic errors
+            const symphonyError = ErrorUtils.convertError(
+                error,
+                'ExecutionEngine',
+                'execute',
+                { task, agentName: agentConfig.name }
+            );
+            throw symphonyError;
         }
     }
 
@@ -378,7 +390,12 @@ IF NO TOOL IS NEEDED: your JSON object MUST contain a "tool_name" (string) key s
 
         if (!llmResponse) {
             this.dependencies.logger.error('ExecutionEngine', 'LLM completion returned null/undefined.');
-            throw new Error('LLM completion failed.');
+            throw new LLMError(
+                ErrorCode.LLM_API_ERROR,
+                'LLM completion failed - no response received',
+                { task, agentConfig: agentConfig.name },
+                { component: 'ExecutionEngine', operation: '_analyzeAndExecute' }
+            );
         }
 
         let toolResults: any[] = [];
@@ -416,5 +433,23 @@ IF NO TOOL IS NEEDED: your JSON object MUST contain a "tool_name" (string) key s
             tokenUsage: llmResponse.usage,
             toolsExecuted: toolResults.length > 0 ? toolResults : undefined
         };
+    }
+
+    private async executeLLMCall(task: RuntimeTask): Promise<RuntimeExecutionResult> {
+        try {
+            // ... existing implementation ...
+        } catch (error: any) {
+            // Convert to structured error
+            if (error instanceof LLMError) {
+                throw error;
+            }
+
+            throw new LLMError(
+                ErrorCode.LLM_API_ERROR,
+                'LLM completion failed',
+                error,
+                { component: 'ExecutionEngine', operation: 'executeLLMCall', task: task.id }
+            );
+        }
     }
 } 

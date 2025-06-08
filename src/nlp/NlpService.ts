@@ -12,6 +12,7 @@ import { Logger } from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import { ValidationError, ErrorCode } from '../errors/index';
 
 /**
  * NlpService provides functionalities to manage NLP patterns associated with tools,
@@ -75,13 +76,25 @@ export class NlpService implements INlpService {
             } else if (path.extname(filePath).toLowerCase().match(/\.ya?ml$/)) {
                 // Placeholder for YAML parsing logic if js-yaml is added
                 this.logger.warn('seedPatternsFromFile', 'YAML parsing is not yet implemented. Skipping YAML file.');
-                throw new Error('YAML parsing not implemented.');
+                throw new ValidationError(
+                    'YAML parsing not implemented',
+                    { filePath, extension: path.extname(filePath) },
+                    { component: 'NlpService', operation: 'seedPatternsFromFile' }
+                );
             } else {
-                throw new Error(`Unsupported file format: ${path.extname(filePath)}. Only .json and .yaml/.yml are supported.`);
+                throw new ValidationError(
+                    `Unsupported file format: ${path.extname(filePath)}. Only .json and .yaml/.yml are supported.`,
+                    { filePath, extension: path.extname(filePath), supportedFormats: ['.json', '.yaml', '.yml'] },
+                    { component: 'NlpService', operation: 'seedPatternsFromFile' }
+                );
             }
 
             if (!Array.isArray(patternsData)) {
-                throw new Error('File content must be an array of NlpPatternDefinition objects.');
+                throw new ValidationError(
+                    'File content must be an array of NlpPatternDefinition objects',
+                    { filePath, contentType: typeof patternsData },
+                    { component: 'NlpService', operation: 'seedPatternsFromFile' }
+                );
             }
             return this.seedPatterns(patternsData, options);
         } catch (error: any) {
@@ -128,7 +141,11 @@ export class NlpService implements INlpService {
                     };
                     const updated = await this.databaseService.updateNlpPatternRecord(existingPattern.id, updates);
                     this.logger.info('ensurePatternPersistedInternal', `[DEBUG] Update result: ${updated ? 'success' : 'null'} for ${patternDef.toolName}`);
-                    if (!updated) throw new Error('DB updateNlpPatternRecord returned null');
+                    if (!updated) throw new ValidationError(
+                        'DB updateNlpPatternRecord returned null',
+                        { patternId: existingPattern.id, updates },
+                        { component: 'NlpService', operation: 'updateNlpPattern' }
+                    );
                     return { status: 'updated', pattern: updated };
                 } else {
                     this.logger.info('ensurePatternPersistedInternal', `[DEBUG] Skipped existing pattern ID: ${existingPattern.id} for ${patternDef.toolName}, forceOverwrite=${forceOverwrite}, patternDef.id=${patternDef.id}`);
@@ -164,7 +181,11 @@ export class NlpService implements INlpService {
         this.logger.info('ensurePatternPersisted', `[DEBUG] Internal call returned: ${outcome.status} for ${patternDef.toolName}`);
         if (outcome.status === 'failed' || !outcome.pattern) {
             this.logger.error('ensurePatternPersisted', `ensurePatternPersisted failed for tool '${patternDef.toolName}'`, { error: outcome.error });
-            throw outcome.error || new Error(`Failed to ensure pattern persistence for ${patternDef.toolName}`);
+            throw outcome.error || new ValidationError(
+                'Failed to ensure pattern persistence',
+                { toolName: patternDef.toolName },
+                { component: 'NlpService', operation: 'ensurePatternPersisted' }
+            );
         }
         this.logger.info('ensurePatternPersisted', `[DEBUG] Exiting successfully for ${patternDef.toolName}`);
         return outcome.pattern;
@@ -186,7 +207,11 @@ export class NlpService implements INlpService {
         const outcome = await this.ensurePatternPersistedInternal(patternDef, options?.allowUpdate, false);
         if (outcome.status === 'failed' || !outcome.pattern) {
             this.logger.error('addNlpPattern', `addNlpPattern failed for tool '${patternDef.toolName}'`, { error: outcome.error });
-            throw outcome.error || new Error(`Failed to add pattern for ${patternDef.toolName}`);
+            throw outcome.error || new ValidationError(
+                'Failed to add pattern',
+                { toolName: patternDef.toolName },
+                { component: 'NlpService', operation: 'addNlpPattern' }
+            );
         }
         if (outcome.status === 'skipped' && !options?.allowUpdate) {
              this.logger.warn('addNlpPattern', `Pattern for tool ${patternDef.toolName} already exists and allowUpdate was false.`);
@@ -196,17 +221,31 @@ export class NlpService implements INlpService {
     }
 
     async updateNlpPattern(patternId: string, updates: Partial<Omit<StoredNlpPattern, 'id' | 'createdAt' | 'updatedAt'>>): Promise<StoredNlpPattern> {
-        this.logger.debug('updateNlpPattern', `Updating NLP pattern ID: ${patternId}`);
-        const updatedPattern = await this.databaseService.updateNlpPatternRecord(patternId, updates);
-        if (!updatedPattern) {
-            throw new Error(`Failed to update NLP pattern or pattern not found: ${patternId}`);
+        this.logger.info('NlpService', `Updating NLP pattern: ${patternId}`);
+        const updated = await this.databaseService.updateNlpPatternRecord(patternId, updates);
+        if (!updated) {
+            throw new ValidationError(
+                'DB updateNlpPatternRecord returned null',
+                { patternId, updates },
+                { component: 'NlpService', operation: 'updateNlpPattern' }
+            );
         }
-        return updatedPattern;
+        return updated;
     }
 
     async deleteNlpPattern(patternId: string): Promise<boolean> {
-        this.logger.debug('deleteNlpPattern', `Deleting NLP pattern ID: ${patternId}`);
-        return this.databaseService.deleteNlpPatternRecord(patternId);
+        this.logger.info('NlpService', `Attempting to delete NLP pattern: ${patternId}`);
+        
+        const deleted = await this.databaseService.deleteNlpPatternRecord(patternId);
+        if (!deleted) {
+            throw new ValidationError(
+                `Failed to update NLP pattern or pattern not found: ${patternId}`,
+                { patternId },
+                { component: 'NlpService', operation: 'deleteNlpPattern' }
+            );
+        }
+        
+        return deleted;
     }
 
     async loadPatternToRuntime(pattern: NlpPatternDefinition): Promise<void> {

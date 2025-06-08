@@ -8,6 +8,7 @@ import {
 } from '../types/sdk';
 import { ToolRegistry } from './standard/registry';
 import { Logger } from '../utils/logger';
+import { ToolError, ValidationError, ErrorCode } from '../errors/index';
 
 // Re-export types for external use
 export type { ToolChain, ToolChainStep };
@@ -81,7 +82,13 @@ export class ChainExecutor {
                     } else {
                         failedSteps.push(stepId);
                         if (!this.config.continueOnStepFailure) {
-                            throw new Error(`Step ${stepId} failed: ${result.error}`);
+                            throw new ToolError(
+                                stepId,
+                                ErrorCode.TOOL_EXECUTION_FAILED,
+                                `Step ${stepId} failed: ${result.error}`,
+                                { stepId, result, chainId: chain.id },
+                                { component: 'ChainExecutor', operation: 'executeStepGroup' }
+                            );
                         }
                     }
                     stepTimings[stepId] = result.metrics?.duration || 0;
@@ -240,11 +247,19 @@ export class ChainExecutor {
             if (step.depends_on) {
                 for (const depId of step.depends_on) {
                     if (!context.stepResults.has(depId)) {
-                        throw new Error(`Dependency not met: step ${depId} not completed`);
+                        throw new ValidationError(
+                            `Dependency not met: step ${depId} not completed`,
+                            { stepId: step.id, dependencyId: depId, completedSteps: Array.from(context.stepResults.keys()) },
+                            { component: 'ToolsExecutor', operation: 'checkDependencies' }
+                        );
                     }
                     const depResult = context.stepResults.get(depId);
                     if (!depResult?.success) {
-                        throw new Error(`Dependency failed: step ${depId} was not successful`);
+                        throw new ValidationError(
+                            `Dependency failed: step ${depId} was not successful`,
+                            { stepId: step.id, dependencyId: depId, dependencyResult: depResult },
+                            { component: 'ToolsExecutor', operation: 'checkDependencies' }
+                        );
                     }
                 }
             }
@@ -275,6 +290,16 @@ export class ChainExecutor {
                 duration: result.metrics?.duration || 0,
                 executionId: context.executionId
             });
+
+            if (!result.success) {
+                throw new ToolError(
+                    step.id,
+                    ErrorCode.TOOL_EXECUTION_FAILED,
+                    `Step ${step.id} failed: ${result.error}`,
+                    { step, result },
+                    { component: 'ToolsExecutor', operation: 'executeStep' }
+                );
+            }
 
             return result;
 

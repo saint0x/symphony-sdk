@@ -1,6 +1,7 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
 import fs from 'fs/promises';
 import path from 'path';
+import { ValidationError } from '../../../errors/index';
 
 export const writeFileTool: ToolConfig = {
     name: 'writeFileTool',
@@ -15,7 +16,11 @@ export const writeFileTool: ToolConfig = {
             const { path: filePath, content, encoding = 'utf-8' } = params;
             
             if (!filePath || content === undefined) {
-                throw new Error('Path and content parameters are required');
+                throw new ValidationError(
+                    'Path and content parameters are required',
+                    { provided: params, required: ['path', 'content'] },
+                    { component: 'WriteFileTool', operation: 'execute' }
+                );
             }
 
             // Ensure directory exists

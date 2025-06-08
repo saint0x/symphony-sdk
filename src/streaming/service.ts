@@ -1,5 +1,6 @@
 import { Logger } from '../utils/logger';
 import { EventEmitter } from 'events';
+import { ValidationError } from '../errors/index';
 
 export interface StreamingConfig {
     enableRealTimeUpdates?: boolean;
@@ -109,11 +110,22 @@ export class StreamingService extends EventEmitter {
 
     createStream(options: StreamOptions): string {
         if (!this.initialized) {
-            throw new Error('StreamingService not initialized');
+            throw new ValidationError(
+                'StreamingService not initialized',
+                { initialized: this.initialized },
+                { component: 'StreamingService', operation: 'createStream' }
+            );
         }
 
         if (this.activeStreams.size >= this.config.maxConcurrentStreams!) {
-            throw new Error('Maximum concurrent streams limit reached');
+            throw new ValidationError(
+                'Maximum concurrent streams limit reached',
+                { 
+                    currentStreams: this.activeStreams.size, 
+                    maxAllowed: this.config.maxConcurrentStreams 
+                },
+                { component: 'StreamingService', operation: 'createStream' }
+            );
         }
 
         const streamId = options.id;
@@ -266,7 +278,11 @@ export class StreamingService extends EventEmitter {
     subscribe(streamId: string, callback: (update: ProgressUpdate) => void): () => void {
         const context = this.activeStreams.get(streamId);
         if (!context) {
-            throw new Error(`Stream ${streamId} not found`);
+            throw new ValidationError(
+                `Stream ${streamId} not found`,
+                { streamId, availableStreams: Array.from(this.activeStreams.keys()) },
+                { component: 'StreamingService', operation: 'subscribe' }
+            );
         }
 
         context.subscribers.add(callback);

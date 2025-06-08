@@ -1,5 +1,6 @@
 import { logger, LogCategory } from './logger';
 import { ValidationConfig } from '../types/sdk';
+import { ValidationError, ErrorCode } from '../errors/index';
 
 type ValidationSchema = {
     type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'function';
@@ -134,7 +135,14 @@ export class ValidationManager {
     validate(config: any, schemaName: string): ValidationResult {
         const schema = this.schemas.get(schemaName);
         if (!schema) {
-            throw new Error(`Schema not found: ${schemaName}`);
+            throw new ValidationError(
+                `Schema not found: ${schemaName}`,
+                { 
+                    schemaName, 
+                    availableSchemas: Array.from(this.schemas.keys()) 
+                },
+                { component: 'ValidationService', operation: 'validate' }
+            );
         }
 
         const errors: string[] = [];
@@ -220,6 +228,91 @@ export class ValidationManager {
             errors.push(`${fullPath} failed custom validation`);
         }
     }
+
+    private getSchema(schemaName: string): any {
+        const schema = this.schemas.get(schemaName);
+        if (!schema) {
+            throw new ValidationError(
+                `Schema not found: ${schemaName}`,
+                { 
+                    schemaName, 
+                    availableSchemas: Array.from(this.schemas.keys()) 
+                },
+                { component: 'ValidationService', operation: 'getSchema' }
+            );
+        }
+        return schema;
+    }
+
+    static validateString(value: any, name: string): void {
+        if (typeof value !== 'string') {
+            throw new ValidationError(
+                `${name} must be a string`,
+                { provided: typeof value, expected: 'string', name },
+                { component: 'ValidationService', operation: 'validateString' }
+            );
+        }
+    }
+
+    static validateObject(value: any, name: string): void {
+        if (typeof value !== 'object' || value === null) {
+            throw new ValidationError(
+                `${name} must be an object`,
+                { provided: typeof value, expected: 'object', name },
+                { component: 'ValidationService', operation: 'validateObject' }
+            );
+        }
+    }
+
+    static validateArray(value: any, name: string): void {
+        if (!Array.isArray(value)) {
+            throw new ValidationError(
+                `${name} must be an array`,
+                { provided: typeof value, expected: 'array', name },
+                { component: 'ValidationService', operation: 'validateArray' }
+            );
+        }
+    }
+
+    static validateNumber(value: any, name: string): void {
+        if (typeof value !== 'number') {
+            throw new ValidationError(
+                `${name} must be a number`,
+                { provided: typeof value, expected: 'number', name },
+                { component: 'ValidationService', operation: 'validateNumber' }
+            );
+        }
+    }
+
+    static validateBoolean(value: any, name: string): void {
+        if (typeof value !== 'boolean') {
+            throw new ValidationError(
+                `${name} must be a boolean`,
+                { provided: typeof value, expected: 'boolean', name },
+                { component: 'ValidationService', operation: 'validateBoolean' }
+            );
+        }
+    }
+
+    static validateFunction(value: any, name: string): void {
+        if (typeof value !== 'function') {
+            throw new ValidationError(
+                `${name} must be a function`,
+                { provided: typeof value, expected: 'function', name },
+                { component: 'ValidationService', operation: 'validateFunction' }
+            );
+        }
+    }
+
+    static validateRequired(value: any, name: string): void {
+        if (value === undefined || value === null) {
+            throw new ValidationError(
+                `${name} must be defined`,
+                { provided: value, name },
+                { component: 'ValidationService', operation: 'validateRequired' }
+            );
+        }
+    }
 }
 
 // Export singleton instance
@@ -257,18 +350,15 @@ export function validateOutput(output: Record<string, any>, schema: Record<strin
     return validateConfig(output, schema);
 }
 
-export class ValidationError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ValidationError';
-    }
-}
-
 export function validateSchema(data: any, schema: ValidationConfig['schema']): void {
     for (const [key, rules] of Object.entries(schema)) {
         // Check required fields
         if (rules.required && (data[key] === undefined || data[key] === null)) {
-            throw new ValidationError(`Required field '${key}' is missing`);
+            throw new ValidationError(
+                `Required field '${key}' is missing`,
+                { field: key, provided: data[key] },
+                { component: 'ValidationSchema', operation: 'validateSchema' }
+            );
         }
 
         // Skip validation if field is not present and not required
@@ -279,14 +369,18 @@ export function validateSchema(data: any, schema: ValidationConfig['schema']): v
         // Type validation
         if (rules.type && typeof data[key] !== rules.type) {
             throw new ValidationError(
-                `Field '${key}' should be of type '${rules.type}' but got '${typeof data[key]}'`
+                `Field '${key}' should be of type '${rules.type}' but got '${typeof data[key]}'`,
+                { field: key, expected: rules.type, actual: typeof data[key] },
+                { component: 'ValidationSchema', operation: 'validateSchema' }
             );
         }
 
         // Enum validation
         if (rules.enum && !rules.enum.includes(data[key])) {
             throw new ValidationError(
-                `Field '${key}' should be one of [${rules.enum.join(', ')}] but got '${data[key]}'`
+                `Field '${key}' should be one of [${rules.enum.join(', ')}] but got '${data[key]}'`,
+                { field: key, allowedValues: rules.enum, provided: data[key] },
+                { component: 'ValidationSchema', operation: 'validateSchema' }
             );
         }
 
@@ -294,7 +388,9 @@ export function validateSchema(data: any, schema: ValidationConfig['schema']): v
         if (rules.type === 'string' && rules.maxLength !== undefined) {
             if (data[key].length > rules.maxLength) {
                 throw new ValidationError(
-                    `Field '${key}' should not exceed ${rules.maxLength} characters`
+                    `Field '${key}' should not exceed ${rules.maxLength} characters`,
+                    { field: key, maxLength: rules.maxLength, actualLength: data[key].length },
+                    { component: 'ValidationSchema', operation: 'validateSchema' }
                 );
             }
         }
@@ -416,42 +512,70 @@ export function validatePipelineConfig(config: any): void {
 
 export function assertString(value: unknown, name: string): asserts value is string {
     if (typeof value !== 'string') {
-        throw new Error(`${name} must be a string`);
+        throw new ValidationError(
+            `${name} must be a string`,
+            { provided: typeof value, expected: 'string', name },
+            { component: 'ValidationAssertion', operation: 'assertString' }
+        );
     }
 }
 
 export function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null) {
-        throw new Error(`${name} must be an object`);
+        throw new ValidationError(
+            `${name} must be an object`,
+            { provided: typeof value, expected: 'object', name },
+            { component: 'ValidationAssertion', operation: 'assertObject' }
+        );
     }
 }
 
 export function assertArray(value: unknown, name: string): asserts value is unknown[] {
     if (!Array.isArray(value)) {
-        throw new Error(`${name} must be an array`);
+        throw new ValidationError(
+            `${name} must be an array`,
+            { provided: typeof value, expected: 'array', name },
+            { component: 'ValidationAssertion', operation: 'assertArray' }
+        );
     }
 }
 
 export function assertNumber(value: unknown, name: string): asserts value is number {
     if (typeof value !== 'number') {
-        throw new Error(`${name} must be a number`);
+        throw new ValidationError(
+            `${name} must be a number`,
+            { provided: typeof value, expected: 'number', name },
+            { component: 'ValidationAssertion', operation: 'assertNumber' }
+        );
     }
 }
 
 export function assertBoolean(value: unknown, name: string): asserts value is boolean {
     if (typeof value !== 'boolean') {
-        throw new Error(`${name} must be a boolean`);
+        throw new ValidationError(
+            `${name} must be a boolean`,
+            { provided: typeof value, expected: 'boolean', name },
+            { component: 'ValidationAssertion', operation: 'assertBoolean' }
+        );
     }
 }
 
 export function assertFunction(value: unknown, name: string): asserts value is Function {
     if (typeof value !== 'function') {
-        throw new Error(`${name} must be a function`);
+        throw new ValidationError(
+            `${name} must be a function`,
+            { provided: typeof value, expected: 'function', name },
+            { component: 'ValidationAssertion', operation: 'assertFunction' }
+        );
     }
 }
 
 export function assertDefined<T>(value: T | undefined | null, name: string): asserts value is T {
     if (value === undefined || value === null) {
-        throw new Error(`${name} must be defined`);
+        throw new ValidationError(
+            `${name} must be defined`,
+            { provided: value, name },
+            { component: 'ValidationAssertion', operation: 'assertDefined' }
+        );
     }
 } 

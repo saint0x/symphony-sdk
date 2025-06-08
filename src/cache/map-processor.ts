@@ -2,7 +2,8 @@ import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import { readFileSync } from 'fs';
 import { Logger } from '../utils/logger';
-import { IDatabaseService } from '../db/types';
+import { IDatabaseService, XMLPattern } from '../db/types';
+import { ValidationError } from '../errors/index';
 
 const parseXMLAsync = promisify(parseString);
 
@@ -115,7 +116,11 @@ export class CommandMapProcessor {
 
         const commandMap = parsed.CommandMap;
         if (!commandMap || !commandMap.PatternGroup) {
-            throw new Error('Invalid command map XML structure');
+            throw new ValidationError(
+                'Invalid command map XML structure',
+                { xmlStructure: parsed },
+                { component: 'MapProcessor', operation: 'parseCommandMapXML' }
+            );
         }
 
         for (const group of commandMap.PatternGroup) {

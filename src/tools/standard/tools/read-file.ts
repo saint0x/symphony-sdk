@@ -1,5 +1,7 @@
 import { ToolConfig, ToolResult } from '../../../types/sdk';
 import fs from 'fs/promises';
+import path from 'path';
+import { ValidationError } from '../../../errors/index';
 
 export const readFileTool: ToolConfig = {
     name: 'readFileTool',
@@ -14,7 +16,11 @@ export const readFileTool: ToolConfig = {
         try {
             const { path } = params;
             if (!path) {
-                throw new Error('Path parameter is required');
+                throw new ValidationError(
+                    'Path parameter is required',
+                    { provided: params, required: ['path'] },
+                    { component: 'ReadFileTool', operation: 'execute' }
+                );
             }
 
             const content = await fs.readFile(path, 'utf-8');

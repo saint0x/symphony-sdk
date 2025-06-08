@@ -1,228 +1,241 @@
 import { logger, LogCategory } from '../../utils/logger';
-import { LLMConfig, LLMRequest, LLMResponse, LLMProvider, LLMRequestConfig } from '../types';
-import { createMetricsTracker } from '../../utils/metrics';
-import { Logger } from '../../utils/logger';
-import { envConfig } from '../../utils/env';
+import { LLMConfig, LLMRequest, LLMResponse, LLMRequestConfig } from '../types';
 import OpenAI from 'openai';
+import { BaseLLMProvider, ExtendedLLMConfig } from './base';
+import { LLMError, ErrorCode } from '../../errors/index';
 
-interface OpenAICompletion {
-    content: string | null;
-    usage: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-    };
-    functionCall?: {
-        id?: string;
-        name: string;
-        arguments: string;
-    };
-    tool_calls?: {
-        id: string;
-        type: 'function';
-        function: {
-            name: string;
-            arguments: string;
-        };
-    }[];
-}
-
-export class OpenAIProvider implements LLMProvider {
+export class OpenAIProvider extends BaseLLMProvider {
     readonly name = 'openai';
     readonly supportsStreaming = true;
+    readonly supportsFunctions = true;
     private client: OpenAI;
-    private config: LLMConfig;
-    private logger: Logger;
-    private model: string;
 
-    constructor(config?: LLMConfig) {
-        const openAIKey = config?.apiKey || envConfig.openaiApiKey;
-        if (!openAIKey) {
-            throw new Error('OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable or provide it in config.');
+    constructor(config: LLMConfig) {
+        // Convert to ExtendedLLMConfig with defaults
+        const extendedConfig: ExtendedLLMConfig = {
+            ...config,
+            provider: 'openai',
+            apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
+            model: config?.model || 'gpt-3.5-turbo',
+            timeout: config?.timeout || 30000
+        };
+
+        // Check for API key early
+        if (!extendedConfig.apiKey) {
+            throw new LLMError(
+                ErrorCode.MISSING_API_KEY,
+                'OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable or provide it in config.',
+                { 
+                    hasEnvKey: !!process.env.OPENAI_API_KEY,
+                    hasConfigKey: !!config?.apiKey 
+                },
+                { component: 'OpenAIProvider', operation: 'constructor' }
+            );
         }
-        this.client = new OpenAI({ apiKey: openAIKey });
-        this.config = { provider: 'openai', apiKey: openAIKey, ...config };
-        this.logger = Logger.getInstance('OpenAIProvider');
-        this.logger.info('OpenAIProvider', 'OpenAIProvider initialized', { model: this.config.model });
-        this.model = this.config.model || envConfig.defaultModel;
+
+        super(extendedConfig);
+
+        this.client = new OpenAI({
+            apiKey: extendedConfig.apiKey,
+            timeout: extendedConfig.timeout || 30000,
+        });
     }
 
     async initialize(): Promise<void> {
-        // OpenAI doesn't require initialization
+        this.validateApiKey();
+        logger.info(LogCategory.AI, 'OpenAIProvider initialized', {
+            model: this.config.model || 'gpt-3.5-turbo'
+        });
     }
 
-    async complete(request: LLMRequest, configOverride?: LLMRequestConfig): Promise<LLMResponse> {
-        const metrics = createMetricsTracker();
-        // Caching logic is simplified for now, assuming it's handled by LLMHandler or CacheServiceWrapper if available.
-
+    async complete(request: LLMRequest, requestConfig?: LLMRequestConfig): Promise<LLMResponse> {
         try {
-            metrics.trackOperation('request_preparation');
+            this.validateRequest(request);
             
-            const effectiveModel = configOverride?.model || this.model;
-            const effectiveTemp = configOverride?.temperature ?? this.config.temperature;
-            const effectiveMaxTokens = configOverride?.maxTokens ?? this.config.maxTokens;
+            const model = requestConfig?.model || this.config.model || 'gpt-3.5-turbo';
+            const temperature = requestConfig?.temperature || this.config.temperature || 0.7;
+            const maxTokens = requestConfig?.maxTokens || this.config.maxTokens;
 
-            this.logger.info('OpenAIProvider', 'Making OpenAI API request via SDK client with effective config:', {
-                model: effectiveModel,
-                temperature: effectiveTemp,
-                maxTokens: effectiveMaxTokens,
-                expectsJsonResponse: request.expectsJsonResponse,
-                numMessages: request.messages.length,
-            });
-
-            const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
-                model: effectiveModel,
-                messages: request.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-                temperature: effectiveTemp ?? 0.7,
-                max_tokens: effectiveMaxTokens ?? 2000,
+            const openaiRequest: OpenAI.Chat.ChatCompletionCreateParams = {
+                model,
+                messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+                temperature,
+                max_tokens: maxTokens,
+                stream: false
             };
 
-            if (request.expectsJsonResponse) { 
-                completionParams.response_format = { type: 'json_object' };
-                this.logger.info('OpenAIProvider', 'OpenAI request: JSON mode enabled via response_format due to expectsJsonResponse flag.');
-            }
-
-            metrics.trackOperation('api_request');
-            const response: OpenAI.Chat.Completions.ChatCompletion = await this.client.chat.completions.create(completionParams);
-
-            metrics.trackOperation('response_processing');
-            
-            const rawMessage = response.choices[0].message;
-            const usage = response.usage;
-
-            const llmCompletion: OpenAICompletion = {
-                content: rawMessage.content,
-                usage: {
-                    prompt_tokens: usage?.prompt_tokens || 0,
-                    completion_tokens: usage?.completion_tokens || 0,
-                    total_tokens: usage?.total_tokens || 0,
-                },
-                functionCall: rawMessage.function_call ? { name: rawMessage.function_call.name!, arguments: rawMessage.function_call.arguments } : undefined,
-                tool_calls: rawMessage.tool_calls as any,
-            };
-
-            if (request.response_format?.type === 'json_object') {
-                this.logger.info('OpenAIProvider', 'OpenAI response in JSON mode. Content is the JSON payload.', { content: rawMessage.content });
-            }
-            
-            // Caching (if re-introduced) would happen here using a proper cache service.
-
-            return this.formatResponse(llmCompletion);
-        } catch (error) {
-            this.logger.error('OpenAIProvider', 'OpenAI API complete method error (SDK client)', {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            if (error instanceof OpenAI.APIError) {
-                throw new Error(`OpenAI API error (${error.status}): ${error.message} (Type: ${error.type})`);
-            }
-            throw error;
-        }
-    }
-
-    private formatResponse(completion: OpenAICompletion): LLMResponse {
-        const now = Date.now();
-        return {
-            content: completion.content,
-            model: this.model,
-            role: 'assistant',
-            functionCall: completion.functionCall,
-            tool_calls: completion.tool_calls,
-            usage: {
-                prompt_tokens: completion.usage.prompt_tokens,
-                completion_tokens: completion.usage.completion_tokens,
-                total_tokens: completion.usage.total_tokens
-            },
-            metrics: {
-                duration: 0,
-                startTime: now,
-                endTime: now,
-                tokenUsage: {
-                    input: completion.usage.prompt_tokens,
-                    output: completion.usage.completion_tokens,
-                    total: completion.usage.total_tokens
+            // Add function support if provided
+            if (request.functions && request.functions.length > 0) {
+                if (!this.supportsFunctions) {
+                    throw new LLMError(
+                        ErrorCode.LLM_API_ERROR,
+                        'This provider does not support function calling',
+                        { provider: this.name, functions: request.functions },
+                        { component: 'OpenAIProvider', operation: 'complete' }
+                    );
                 }
-            },
-            toString() {
-                return String(this.content);
+                
+                openaiRequest.tools = request.functions.map(func => ({
+                    type: 'function' as const,
+                    function: {
+                        name: func.name,
+                        description: func.description,
+                        parameters: func.parameters
+                    }
+                }));
+                
+                if (request.functionCall) {
+                    if (request.functionCall === 'auto') {
+                        openaiRequest.tool_choice = 'auto';
+                    } else if (request.functionCall === 'none') {
+                        openaiRequest.tool_choice = 'none';
+                    } else if (typeof request.functionCall === 'object' && request.functionCall.name) {
+                        openaiRequest.tool_choice = {
+                            type: 'function',
+                            function: { name: request.functionCall.name }
+                        };
+                    }
+                }
             }
-        };
+
+            const response = await this.client.chat.completions.create(openaiRequest);
+            const choice = response.choices[0];
+            const content = choice.message.content || '';
+
+            return {
+                content,
+                model: model,
+                role: 'assistant',
+                usage: response.usage ? {
+                    prompt_tokens: response.usage.prompt_tokens,
+                    completion_tokens: response.usage.completion_tokens,
+                    total_tokens: response.usage.total_tokens
+                } : {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0
+                },
+                tool_calls: choice.message.tool_calls?.map(call => ({
+                    id: call.id,
+                    type: call.type,
+                    function: call.function
+                })),
+                toString() {
+                    return String(content);
+                }
+            };
+        } catch (error: any) {
+            throw this.handleError(error);
+        }
     }
 
-    async *completeStream(request: LLMRequest, configOverride?: LLMRequestConfig): AsyncIterable<LLMResponse> {
-        // If JSON mode is requested, it's better to use the non-streaming complete() method
-        // as the entire JSON object is expected as one coherent unit.
-        if (request.response_format?.type === 'json_object') {
-            logger.warn(LogCategory.AI, 'OpenAI completeStream: JSON mode requested. Falling back to non-streaming complete() call.');
-            const response = await this.complete(request);
-            yield response;
-            return;
-        }
-
-        // Proceed with text streaming if not in JSON mode.
-        // The old check for 'effectiveUseFunctionCalling && request.functions' is removed as that paradigm is gone.
-        logger.info(LogCategory.AI, 'OpenAI completeStream: Proceeding with text streaming.');
-
-        const metrics = createMetricsTracker();
+    async *completeStream(request: LLMRequest, requestConfig?: LLMRequestConfig): AsyncIterable<LLMResponse> {
         try {
-            metrics.trackOperation('stream_preparation');
-            const apiKey = this.config.apiKey;
-            if (!apiKey) throw new Error('OpenAI API key not found in provider config');
+            this.validateRequest(request);
+            
+            const model = requestConfig?.model || this.config.model || 'gpt-3.5-turbo';
+            const temperature = requestConfig?.temperature || this.config.temperature || 0.7;
+            const maxTokens = requestConfig?.maxTokens || this.config.maxTokens;
 
-            const effectiveModel = configOverride?.model || this.model;
-            const effectiveTemp = configOverride?.temperature ?? this.config.temperature;
-            const effectiveMaxTokens = configOverride?.maxTokens ?? this.config.maxTokens;
-
-            const body: any = {
-                model: effectiveModel,
-                messages: request.messages,
-                temperature: effectiveTemp ?? 0.7,
-                max_tokens: effectiveMaxTokens ?? 2000,
+            const openaiRequest: OpenAI.Chat.ChatCompletionCreateParams = {
+                model,
+                messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+                temperature,
+                max_tokens: maxTokens,
                 stream: true
             };
-             logger.info(LogCategory.AI, 'Making OpenAI streaming API request (no function calls)', { model: effectiveModel });
+
+            const apiKey = this.config.apiKey;
+            if (!apiKey) {
+                throw new LLMError(
+                    ErrorCode.MISSING_API_KEY,
+                    'OpenAI API key not found in provider config',
+                    { hasConfigKey: !!this.config.apiKey },
+                    { component: 'OpenAIProvider', operation: 'completeStream' }
+                );
+            }
 
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
+                    'Authorization': `Bearer ${apiKey}`,
                 },
-                body: JSON.stringify(body)
+                body: JSON.stringify(openaiRequest),
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                this.logger.error(LogCategory.AI, 'OpenAI API streaming error response:', { status: response.status, errorText });
+                let errorJson;
                 try {
-                    const errorJson = JSON.parse(errorText);
-                    throw new Error(`OpenAI API streaming error (${response.status}): ${errorJson.error?.message || errorText}`);
-                } catch (e) {
-                    throw new Error(`OpenAI API streaming error (${response.status}): ${errorText}`);
+                    errorJson = JSON.parse(errorText);
+                } catch {
+                    throw new LLMError(
+                        ErrorCode.LLM_API_ERROR,
+                        `OpenAI API streaming error (${response.status}): ${errorText}`,
+                        { status: response.status, responseText: errorText },
+                        { component: 'OpenAIProvider', operation: 'completeStream' }
+                    );
                 }
+                throw new LLMError(
+                    response.status === 429 ? ErrorCode.LLM_RATE_LIMITED : ErrorCode.LLM_API_ERROR,
+                    `OpenAI API streaming error (${response.status}): ${errorJson.error?.message || errorText}`,
+                    { status: response.status, error: errorJson },
+                    { component: 'OpenAIProvider', operation: 'completeStream' }
+                );
             }
-            if (!response.body) throw new Error('No response body received for stream');
+
+            if (!response.body) {
+                throw new LLMError(
+                    ErrorCode.LLM_API_ERROR,
+                    'No response body received for stream',
+                    { status: response.status },
+                    { component: 'OpenAIProvider', operation: 'completeStream' }
+                );
+            }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+
             try {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
+
                     const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                    const lines = chunk.split('\n');
+
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
-                            const dataStr = line.slice(6);
-                            if (dataStr.trim() === '[DONE]') break;
-                            const data = JSON.parse(dataStr);
-                            if (data.choices?.[0]?.delta?.content) {
-                                yield {
-                                    content: data.choices[0].delta.content,
-                                    model: this.model,
-                                    role: 'assistant',
-                                    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-                                    toString() { return String(this.content); }
-                                };
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+
+                            try {
+                                const parsed = JSON.parse(data);
+                                const choice = parsed.choices?.[0];
+                                if (choice) {
+                                    const deltaContent = choice.delta?.content || '';
+                                    yield {
+                                        content: deltaContent,
+                                        model: model,
+                                        role: 'assistant',
+                                        usage: parsed.usage ? {
+                                            prompt_tokens: parsed.usage.prompt_tokens,
+                                            completion_tokens: parsed.usage.completion_tokens,
+                                            total_tokens: parsed.usage.total_tokens
+                                        } : {
+                                            prompt_tokens: 0,
+                                            completion_tokens: 0,
+                                            total_tokens: 0
+                                        },
+                                        toString() {
+                                            return String(deltaContent);
+                                        }
+                                    };
+                                }
+                            } catch (parseError) {
+                                // Skip malformed chunks
+                                continue;
                             }
                         }
                     }
@@ -230,11 +243,71 @@ export class OpenAIProvider implements LLMProvider {
             } finally {
                 reader.releaseLock();
             }
-        } catch (error) {
-            logger.error(LogCategory.AI, 'OpenAI streaming error', {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
+        } catch (error: any) {
+            throw this.handleError(error);
         }
+    }
+
+    protected handleError(error: any): never {
+        logger.error(LogCategory.AI, `${this.name} provider error`, {
+            metadata: {
+                error: error.message,
+                stack: error.stack
+            }
+        });
+
+        // Convert OpenAI-specific errors to SymphonyErrors
+        if (error.status === 401) {
+            throw new LLMError(
+                ErrorCode.MISSING_API_KEY,
+                'OpenAI API authentication failed - invalid API key',
+                error,
+                { component: 'OpenAIProvider', operation: 'handleError' }
+            );
+        }
+
+        if (error.status === 429) {
+            throw new LLMError(
+                ErrorCode.LLM_RATE_LIMITED,
+                'OpenAI API rate limit exceeded',
+                error,
+                { component: 'OpenAIProvider', operation: 'handleError' }
+            );
+        }
+
+        if (error.status === 402 || error.message?.includes('quota')) {
+            throw new LLMError(
+                ErrorCode.LLM_QUOTA_EXCEEDED,
+                'OpenAI API quota exceeded',
+                error,
+                { component: 'OpenAIProvider', operation: 'handleError' }
+            );
+        }
+
+        if (error.status >= 400 && error.status < 500) {
+            throw new LLMError(
+                ErrorCode.LLM_INVALID_RESPONSE,
+                `OpenAI API client error: ${error.message}`,
+                error,
+                { component: 'OpenAIProvider', operation: 'handleError' }
+            );
+        }
+
+        if (error.status >= 500) {
+            throw new LLMError(
+                ErrorCode.LLM_API_ERROR,
+                `OpenAI API server error: ${error.message}`,
+                error,
+                { component: 'OpenAIProvider', operation: 'handleError' }
+            );
+        }
+
+        // Generic fallback
+        throw new LLMError(
+            ErrorCode.LLM_API_ERROR,
+            `OpenAI API error: ${error.message}`,
+            error,
+            { component: 'OpenAIProvider', operation: 'handleError' }
+        );
     }
 }

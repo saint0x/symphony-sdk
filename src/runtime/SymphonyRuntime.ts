@@ -19,6 +19,7 @@ import { Logger } from '../utils/logger';
 import { PlanningEngine } from './engines/PlanningEngine';
 import { ReflectionEngine } from './engines/ReflectionEngine';
 import { RuntimeContextManager } from './context/RuntimeContextManager';
+import { SymphonyError, ErrorCode, ErrorCategory, ErrorSeverity } from '../errors/index';
 
 /**
  * Default runtime configuration
@@ -77,9 +78,48 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
     return this.initializationPromise;
   }
 
-  async execute(task: string, agentConfig: AgentConfig): Promise<RuntimeResult> {
+  async execute(
+    task: string,
+    agentConfig: AgentConfig,
+    _sessionId?: string,
+    _executionOptions?: {
+        planFirst?: boolean;
+        streaming?: boolean;
+        maxSteps?: number;
+    }
+  ): Promise<RuntimeResult> {
+    if (this.status !== 'ready') {
+        throw new SymphonyError({
+            code: ErrorCode.EXECUTION_FAILED,
+            category: ErrorCategory.RUNTIME,
+            severity: ErrorSeverity.HIGH,
+            message: `Runtime not ready. Status: ${this.status}`,
+            details: { status: this.status, task, agentConfig: agentConfig.name },
+            context: { component: 'SymphonyRuntime', operation: 'execute' },
+            userGuidance: 'Ensure the runtime is properly initialized before executing tasks.',
+            recoveryActions: ['Initialize the runtime', 'Check runtime configuration'],
+            timestamp: new Date(),
+            component: 'SymphonyRuntime',
+            operation: 'execute'
+        });
+    }
+
     await this.initialize();
-    if (this.status !== 'ready') throw new Error(`Runtime not ready. Status: ${this.status}`);
+    if (this.status !== 'ready') {
+        throw new SymphonyError({
+            code: ErrorCode.EXECUTION_FAILED,
+            category: ErrorCategory.RUNTIME,
+            severity: ErrorSeverity.HIGH,
+            message: `Runtime not ready after initialization. Status: ${this.status}`,
+            details: { status: this.status, task, agentConfig: agentConfig.name },
+            context: { component: 'SymphonyRuntime', operation: 'execute' },
+            userGuidance: 'Runtime failed to initialize properly. Check logs for initialization errors.',
+            recoveryActions: ['Check runtime dependencies', 'Review initialization logs', 'Restart the runtime'],
+            timestamp: new Date(),
+            component: 'SymphonyRuntime',
+            operation: 'execute'
+        });
+    }
 
     const startTime = Date.now();
     const executionId = uuidv4();
@@ -167,7 +207,29 @@ export class SymphonyRuntime implements SymphonyRuntimeInterface {
   private async validateDependencies(): Promise<void> {
     const { toolRegistry, contextAPI, llmHandler, logger } = this.dependencies;
     if (!toolRegistry || !contextAPI || !llmHandler || !logger) {
-      throw new Error('Missing required runtime dependencies.');
+      throw new SymphonyError({
+        code: ErrorCode.MISSING_DEPENDENCY,
+        category: ErrorCategory.CONFIGURATION,
+        severity: ErrorSeverity.CRITICAL,
+        message: 'Missing required runtime dependencies',
+        details: { 
+          hasToolRegistry: !!this.dependencies.toolRegistry,
+          hasContextAPI: !!this.dependencies.contextAPI,
+          hasLLMHandler: !!this.dependencies.llmHandler,
+          hasLogger: !!this.dependencies.logger
+        },
+        context: { component: 'SymphonyRuntime', operation: 'validateDependencies' },
+        userGuidance: 'Ensure all required dependencies are provided when creating the runtime.',
+        recoveryActions: [
+          'Verify toolRegistry is provided',
+          'Verify contextAPI is provided', 
+          'Verify llmHandler is provided',
+          'Verify logger is provided'
+        ],
+        timestamp: new Date(),
+        component: 'SymphonyRuntime',
+        operation: 'validateDependencies'
+      });
     }
   }
 
