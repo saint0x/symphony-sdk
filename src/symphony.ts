@@ -5,7 +5,7 @@ import { Logger } from './utils/logger';
 import { LLMHandler } from './llm/handler';
 // @ts-ignore
 import { LLMConfig as RichLLMConfig, LLMFunctionDefinition } from './llm/types';
-import { IDatabaseService } from './db/types';
+import { IDatabaseService, DatabaseConfig, TableSchema } from './db/types';
 import { DatabaseService } from './db/service';
 import { CacheIntelligenceService } from './cache/service';
 import { MemoryService } from './memory/service';
@@ -323,6 +323,7 @@ export class Symphony implements Partial<ISymphony> {
     private _contextIntelligenceApi: IContextAPI;
     private _nlpService: INlpService;
     private _runtime: SymphonyRuntime;
+    private _databaseEnabled: boolean;
 
     readonly name = 'Symphony';
     readonly initialized = false;
@@ -354,13 +355,25 @@ export class Symphony implements Partial<ISymphony> {
         this._llm = LLMHandler.getInstance();
         this._metrics = new MetricsService();
         
-        // Ensure a default DB config exists if none is provided
-        const dbConfig = config.db || {
-            adapter: 'sqlite',
-            path: ':memory:'
-        };
+        // Determine if database should be enabled
+        this._databaseEnabled = this.shouldEnableDatabase(config.db);
+        
+        // Create appropriate database service
+        if (this._databaseEnabled) {
+            // Configure SQLite with proper file path when enabled
+            const dbConfig = this.configureDatabaseForProduction(config.db);
+            this._logger.info('Symphony', 'Database enabled - configuring SQLite with persistent storage', {
+                adapter: dbConfig.adapter,
+                path: dbConfig.path
+            });
+            this._db = new DatabaseService(dbConfig);
+        } else {
+            // Create mock database service for disabled mode
+            this._logger.info('Symphony', 'Database disabled - using in-memory mock services');
+            this._db = this.createMockDatabaseService();
+        }
 
-        this._db = new DatabaseService(dbConfig);
+        // Initialize services that depend on database state
         this._cache = CacheIntelligenceService.getInstance(this._db);
         this._memory = MemoryService.getInstance(this._db);
         this._streaming = StreamingService.getInstance();
@@ -371,7 +384,13 @@ export class Symphony implements Partial<ISymphony> {
         
         const sharedToolRegistry = ToolRegistry.getInstance();
         this._tools = sharedToolRegistry;
-        sharedToolRegistry.initializeContextIntegration(this._db);
+        
+        // Only initialize context integration if database is enabled
+        if (this._databaseEnabled) {
+            sharedToolRegistry.initializeContextIntegration(this._db);
+        } else {
+            this._logger.info('Symphony', 'Skipping database context integration - database disabled');
+        }
         
         const runtimeDependencies: RuntimeDependencies = {
             toolRegistry: sharedToolRegistry,
@@ -392,10 +411,170 @@ export class Symphony implements Partial<ISymphony> {
         this.team = teamServiceInstance;
         this.validation = validationServiceInstance;
 
-        this._logger.info('Symphony', 'Core services instantiated. Context intelligence integration with ToolRegistry prepared.', {
+        this._logger.info('Symphony', 'Core services instantiated', {
+            databaseEnabled: this._databaseEnabled,
             contextTools: this._tools.getContextTools(),
             totalToolsRegisteredInitially: this._tools.getAvailableTools().length
         });
+    }
+
+    private shouldEnableDatabase(dbConfig?: DatabaseConfig): boolean {
+        // If no config provided, default to disabled
+        if (!dbConfig) {
+            return false;
+        }
+        
+        // If explicitly disabled, return false
+        if (dbConfig.enabled === false) {
+            return false;
+        }
+        
+        // If explicitly enabled, return true
+        if (dbConfig.enabled === true) {
+            return true;
+        }
+        
+        // If config contains database settings, assume enabled
+        if (dbConfig.adapter || dbConfig.path || dbConfig.connection) {
+            return true;
+        }
+        
+        // Default to disabled if no clear indication
+        return false;
+    }
+
+    private configureDatabaseForProduction(dbConfig?: DatabaseConfig): DatabaseConfig {
+        const defaultConfig: DatabaseConfig = {
+            enabled: true,
+            adapter: 'sqlite',
+            path: './symphony.db',
+            options: {
+                timeout: 30000,
+                autoBackup: true,
+                maxSize: '100MB'
+            }
+        };
+
+        if (!dbConfig) {
+            return defaultConfig;
+        }
+
+        return {
+            ...defaultConfig,
+            ...dbConfig,
+            enabled: true, // Force enabled since we're in production mode
+            adapter: dbConfig.adapter || 'sqlite',
+            path: dbConfig.path || './symphony.db'
+        };
+    }
+
+    private createMockDatabaseService(): IDatabaseService {
+        const logger = this._logger;
+        const inMemoryStore = new Map<string, any>();
+        
+        // Create a mock database service that works entirely in memory
+        return {
+            async initialize(): Promise<void> {
+                logger.info('MockDatabase', 'Mock database service initialized (in-memory mode)');
+            },
+            
+            async disconnect(): Promise<void> {
+                inMemoryStore.clear();
+                logger.info('MockDatabase', 'Mock database disconnected');
+            },
+            
+            async use(): Promise<void> {
+                // No-op for mock
+            },
+            
+            async get(key: string, namespace?: string): Promise<any> {
+                const fullKey = namespace ? `${namespace}:${key}` : key;
+                return inMemoryStore.get(fullKey);
+            },
+            
+            async set(key: string, value: any, options?: any): Promise<void> {
+                const namespace = options?.namespace;
+                const fullKey = namespace ? `${namespace}:${key}` : key;
+                inMemoryStore.set(fullKey, value);
+            },
+            
+            async delete(key: string, namespace?: string): Promise<boolean> {
+                const fullKey = namespace ? `${namespace}:${key}` : key;
+                return inMemoryStore.delete(fullKey);
+            },
+            
+            async find(): Promise<any[]> {
+                return Array.from(inMemoryStore.values());
+            },
+            
+            table(): any {
+                // Return mock table operations
+                return {
+                    insert: async () => ({ id: Date.now(), rowsAffected: 1, success: true }),
+                    find: async () => [],
+                    findOne: async () => null,
+                    count: async () => 0,
+                    update: async () => ({ rowsAffected: 0, success: true }),
+                    delete: async () => ({ rowsDeleted: 0, success: true }),
+                    where: function() { return this; },
+                    orderBy: function() { return this; },
+                    limit: function() { return this; },
+                    exists: async () => false
+                };
+            },
+            
+            schema: {
+                create: async () => {},
+                drop: async () => {},
+                exists: async () => false,
+                describe: async () => ({})
+            },
+            
+            async health() {
+                return {
+                    connected: true,
+                    adapter: 'mock',
+                    performance: { avgQueryTime: 0, totalQueries: 0, errorRate: 0 },
+                    storage: { size: '0MB', tableCount: 0, recordCount: 0 }
+                };
+            },
+            
+            async stats() {
+                return {
+                    adapter: 'mock',
+                    uptime: 0,
+                    totalQueries: 0,
+                    successfulQueries: 0,
+                    failedQueries: 0,
+                    avgQueryTime: 0,
+                    slowestQuery: { sql: '', time: 0 },
+                    fastestQuery: { sql: '', time: 0 },
+                    tablesUsed: [],
+                    namespaces: ['default']
+                };
+            },
+            
+            // Mock implementations for cache intelligence methods
+            async getXMLPatterns() { return []; },
+            async saveXMLPattern() {},
+            async updatePatternConfidence() {},
+            async recordPatternExecution() {},
+            async getSessionContext() { return null; },
+            async getToolExecutions() { return []; },
+            async getWorkflowExecutions() { return []; },
+            async recordToolExecution() {},
+            async healthCheck() { return { status: 'healthy' as const }; },
+            
+            // Mock NLP pattern methods
+            async findNlpPatternRecord() { return null; },
+            async saveNlpPatternRecord(pattern: any) { return pattern; },
+            async getNlpPatternRecordById() { return null; },
+            async getNlpPatternRecordsByTool() { return []; },
+            async updateNlpPatternRecord() { return null; },
+            async deleteNlpPatternRecord() { return false; },
+            async countNlpPatternRecords() { return 0; },
+            async getAllNlpPatternRecords() { return []; }
+        };
     }
     
     get state(): ToolLifecycleState { return this._state; }
@@ -428,12 +607,22 @@ export class Symphony implements Partial<ISymphony> {
         }
         
         this._state = ToolLifecycleState.INITIALIZING;
-        this._logger.info('Symphony', 'Initializing Symphony SDK...');
+        this._logger.info('Symphony', 'Initializing Symphony SDK...', {
+            databaseEnabled: this._databaseEnabled
+        });
         
         try {
-            // Initialize DB first as other services depend on it
-            await this.db.initialize(this._config.db);
-            this._logger.info('Symphony', 'Database initialized');
+            // Initialize database only if enabled
+            if (this._databaseEnabled) {
+                await this.db.initialize(this._config.db);
+                this._logger.info('Symphony', 'Database initialized successfully');
+                
+                // Verify database setup and create required tables
+                await this.verifyDatabaseSetup();
+            } else {
+                await this.db.initialize();
+                this._logger.info('Symphony', 'Mock database initialized (in-memory mode)');
+            }
 
             // Initialize services that may depend on the database
             await Promise.all([
@@ -455,13 +644,18 @@ export class Symphony implements Partial<ISymphony> {
             llmHandler.setCacheService(this._cache);
             
             // Initialize NLP service after all other services are ready
-            await this._nlpService.loadAllPersistedPatternsToRuntime();
-            this._logger.info('Symphony', 'NLP Service loaded persisted patterns.');
+            if (this._databaseEnabled) {
+                await this._nlpService.loadAllPersistedPatternsToRuntime();
+                this._logger.info('Symphony', 'NLP Service loaded persisted patterns.');
+            } else {
+                this._logger.info('Symphony', 'NLP Service initialized (no persistent patterns in memory mode).');
+            }
             
             this._state = ToolLifecycleState.READY;
             (this as any).initialized = true;
             (this as any).isInitialized = true;
             this._logger.info('Symphony', 'Symphony SDK Initialization complete', {
+                databaseEnabled: this._databaseEnabled,
                 toolsAvailable: (this.tool as ToolService).registry.getAvailableTools().length
             });
         } catch (error) {
@@ -471,6 +665,82 @@ export class Symphony implements Partial<ISymphony> {
         }
     }
     
+    private async verifyDatabaseSetup(): Promise<void> {
+        if (!this._databaseEnabled) return;
+        
+        this._logger.info('Symphony', 'Verifying database setup and creating required tables...');
+        
+        try {
+            // Define required tables for Symphony
+            const requiredTables: Array<{ name: string; schema: TableSchema }> = [
+                {
+                    name: 'tool_executions',
+                    schema: {
+                        id: { type: 'integer', primary: true, autoIncrement: true },
+                        execution_id: { type: 'string', required: true, unique: true },
+                        tool_name: { type: 'string', required: true, index: true },
+                        session_id: { type: 'string', index: true },
+                        parameters: { type: 'json' },
+                        result: { type: 'json' },
+                        success: { type: 'boolean', required: true },
+                        execution_time_ms: { type: 'integer' },
+                        error_details: { type: 'string' },
+                        created_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' }
+                    }
+                },
+                {
+                    name: 'patterns',
+                    schema: {
+                        id: { type: 'string', primary: true },
+                        tool_name: { type: 'string', required: true, index: true },
+                        nlp_pattern: { type: 'string', required: true },
+                        confidence_score: { type: 'real', default: 0.5 },
+                        usage_count: { type: 'integer', default: 0 },
+                        success_count: { type: 'integer', default: 0 },
+                        source: { type: 'string' },
+                        created_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' },
+                        updated_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' }
+                    }
+                },
+                {
+                    name: 'context_sessions',
+                    schema: {
+                        id: { type: 'integer', primary: true, autoIncrement: true },
+                        session_id: { type: 'string', required: true, unique: true },
+                        session_type: { type: 'string', default: 'user' },
+                        started_at: { type: 'datetime', default: 'CURRENT_TIMESTAMP' },
+                        last_activity: { type: 'datetime', default: 'CURRENT_TIMESTAMP' },
+                        ended_at: { type: 'datetime' },
+                        active: { type: 'boolean', default: true },
+                        context_data: { type: 'json' }
+                    }
+                }
+            ];
+
+            // Create tables if they don't exist
+            for (const table of requiredTables) {
+                const exists = await this.db.schema.exists(table.name);
+                if (!exists) {
+                    await this.db.schema.create(table.name, table.schema);
+                    this._logger.info('Symphony', `Created table: ${table.name}`);
+                } else {
+                    this._logger.info('Symphony', `Table exists: ${table.name}`);
+                }
+            }
+
+            // Verify tables can be accessed
+            for (const table of requiredTables) {
+                const count = await this.db.table(table.name).count();
+                this._logger.info('Symphony', `Table '${table.name}': ${count} records`);
+            }
+
+            this._logger.info('Symphony', 'Database setup verification completed successfully');
+        } catch (error) {
+            this._logger.error('Symphony', 'Database setup verification failed', { error });
+            throw error;
+        }
+    }
+
     async getService(name: string): Promise<any> {
         const services: Record<string, any> = {
             tool: this.tool,
